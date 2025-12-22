@@ -1,33 +1,33 @@
-import { client } from "@/lib/sanity/client";
-import { TEAMS_QUERY } from "@/lib/sanity/queries";
+// 1. Import the smart fetcher we created
+import { getTeams } from "@/lib/sanity/client"; 
 import LeaderboardTable from "@/components/LeaderboardTable";
 
-// Define Data Shape
+// Define Data Shape (Matches what getTeams returns)
 interface TeamData {
   _id: string;
   name: string;
   player?: string;
-  logoUrl: string;
+  logo: string;
   played: number;
   won: number;
   drawn: number;
   lost: number;
   gf: number;
   ga: number;
-  gd: number;
   pts: number;
 }
 
-// This is an ASYNC component that does the heavy lifting
 export default async function LeaderboardSection() {
-  // Artificial delay to test the Skeleton (Optional - remove in production)
-  // await new Promise((resolve) => setTimeout(resolve, 2000));
+  // 2. USE THE NEW FUNCTION
+  // We use || [] to ensure that if Sanity fails, it returns an empty array instead of crashing
+  const rawTeams = (await getTeams()) || [];
 
-  const rawTeams: TeamData[] = await client.fetch(TEAMS_QUERY, {}, { cache: 'no-store' });
-
-  const formattedTeams = rawTeams.map((team) => ({
+  // 3. Map the data
+  // Since our getTeams() query already calculates sorting and matches fields,
+  // we just need to ensure the ID mapping is correct for the table.
+  const formattedTeams = rawTeams.map((team: TeamData) => ({
     ...team,
-    id: team._id,
+    id: team._id, // Map Sanity's _id to the Table's expected id
     player: team.player || "TBD",
   }));
 
