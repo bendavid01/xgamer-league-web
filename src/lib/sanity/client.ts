@@ -1,33 +1,30 @@
 import { createClient } from "next-sanity";
 import imageUrlBuilder from "@sanity/image-url";
 
-// 1. CONNECTION SETUP (This defines 'client')
 export const client = createClient({
   projectId: "aqtsgm5o", 
   dataset: "production",
   apiVersion: "2024-01-01",
-  useCdn: false, 
+  
+  // 🛡️ SECURITY UPDATE:
+  // Set to TRUE. This forces the app to use Sanity's Edge Cache.
+  // Even if 100 people refresh at once, Sanity only gets 1 request.
+  useCdn: true, 
 });
 
-// 2. IMAGE HELPER
 const builder = imageUrlBuilder(client);
 export function urlFor(source: any) {
   return builder.image(source);
 }
 
-// 3. FETCH FUNCTION (Now it can see 'client'!)
 export async function getTeams() {
   return client.fetch(
-    // LOGIC UPDATE: 
-    // - Sort by 'pts' (Points)
-    // - Then calculate '(gf - ga)' for Goal Difference sorting
-    // - Then 'gf' (Goals For)
     `*[_type == "team"] | order(pts desc, (gf - ga) desc, gf desc) {
       _id,
       name,
       player,
       "logo": logo.asset->url,
-      played,   
+      played,
       won,
       drawn,
       lost,
@@ -37,8 +34,10 @@ export async function getTeams() {
     }`,
     {},
     {
-      // REVALIDATION: Updates every 10 seconds
-      next: { revalidate: 10 } 
+      // 🛡️ TRAFFIC CONTROL:
+      // We check for updates only once every 60 seconds.
+      // This makes "Refresh Spam" useless.
+      next: { revalidate: 60 } 
     }
   );
 }

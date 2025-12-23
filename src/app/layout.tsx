@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Footer (Restored) */}
           <footer className="border-t border-slate-800/50 bg-slate-950 py-6 mt-auto">
             <div className="text-center text-slate-500 text-sm">
-              <p>&copy; 2025 X-Gamer League. Secure & Static PWA.</p>
+              <p>&copy; 2026 X-Gamer League. Secure & Static PWA.</p>
             </div>
           </footer>
 
