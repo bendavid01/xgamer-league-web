@@ -1,56 +1,57 @@
-// 👇 1. ADD THIS LINE AT THE VERY TOP (For ISR)
-export const revalidate = 10; 
-
-import { Suspense } from "react";
-import { Activity } from "lucide-react";
-import LeaderboardSection from "@/components/LeaderboardSection";
-import LeaderboardSkeleton from "@/components/LeaderboardSkeleton";
-// 👇 2. ADD THIS IMPORT
-import AutoRefresh from "@/components/AutoRefresh"; 
+import Link from "next/link";
+import { Trophy, Swords } from "lucide-react";
 
 export default function Home() {
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12 py-12">
+    <div className="max-w-7xl mx-auto px-4 py-12 flex flex-col justify-center min-h-[85vh]">
       
-      {/* 👇 3. PASTE THE COMPONENT HERE (Invisible, but working) */}
-      <AutoRefresh />
-
-      {/* Hero Section */}
-      <section className="text-center space-y-6">
-        <div className="inline-block px-4 py-1.5 rounded-full border border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan text-sm font-medium mb-4">
-          SEASON 4 IS LIVE
-        </div>
-        <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-white">
-          RISE TO THE <br />
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-cyan to-neon-purple">
-            FOOTBALL CHALLENGE
+      {/* Header */}
+      <div className="mb-12 text-center space-y-4">
+        <span className="inline-block py-1 px-3 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 text-xs font-mono tracking-widest uppercase">
+          ● Season 1 is Live
+        </span>
+        <h1 className="text-4xl md:text-6xl font-black text-white tracking-tighter">
+          WELCOME TO THE <br />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">
+            ARENA
           </span>
         </h1>
-        <div className="flex justify-center gap-4 pt-4">
-           <button className="px-8 py-3 bg-neon-purple text-white font-bold rounded-lg shadow-[0_0_15px_rgba(168,85,247,0.5)] flex items-center gap-2">
-            View Live Matches <Activity className="w-4 h-4" />
-          </button>
-        </div>
-      </section>
+      </div>
 
-      {/* Leaderboard Section */}
-      <section className="w-full max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-             <span className="w-1 h-8 bg-neon-cyan rounded-full"></span>
-             Leaderboard
-          </h2>
-          <span className="text-xs text-green-400 font-mono border border-green-400/30 px-2 py-1 rounded bg-green-400/10 animate-pulse">
-            ● LIVE FEED
-          </span>
-        </div>
+      {/* Dashboard Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-4xl mx-auto w-full">
+        
+        {/* Match Center Card */}
+        <Link 
+          href="/matches"
+          className="group relative h-64 md:h-80 rounded-3xl overflow-hidden border border-white/10 shadow-2xl transition-all hover:scale-[1.02] hover:shadow-purple-500/20"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-900 to-slate-900 opacity-90 group-hover:opacity-100 transition-opacity" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10">
+            <div className="p-4 bg-white/5 rounded-full mb-4 group-hover:bg-indigo-500/20 transition-colors">
+              <Swords className="w-12 h-12 text-indigo-400" />
+            </div>
+            <h2 className="text-3xl font-bold text-white mb-2">MATCH CENTER</h2>
+            <p className="text-indigo-200/60 font-medium">View Schedules & Results</p>
+          </div>
+        </Link>
 
-        <Suspense fallback={<LeaderboardSkeleton />}>
-          <LeaderboardSection />
-        </Suspense>
+        {/* Leaderboard Card */}
+        <Link 
+          href="/table"
+          className="group relative h-64 md:h-80 rounded-3xl overflow-hidden border border-white/10 shadow-2xl transition-all hover:scale-[1.02] hover:shadow-cyan-500/20"
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-cyan-900 to-slate-900 opacity-90 group-hover:opacity-100 transition-opacity" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10">
+            <div className="p-4 bg-white/5 rounded-full mb-4 group-hover:bg-cyan-500/20 transition-colors">
+              <Trophy className="w-12 h-12 text-cyan-400" />
+            </div>
+            <h2 className="text-3xl font-bold text-white mb-2">LEADERBOARD</h2>
+            <p className="text-cyan-200/60 font-medium">Live Standings & Stats</p>
+          </div>
+        </Link>
 
-      </section>
-
+      </div>
     </div>
   );
 }
