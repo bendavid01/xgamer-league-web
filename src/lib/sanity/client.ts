@@ -1,43 +1,43 @@
 import { createClient } from "next-sanity";
-import imageUrlBuilder from "@sanity/image-url";
 
 export const client = createClient({
   projectId: "aqtsgm5o", 
   dataset: "production",
   apiVersion: "2024-01-01",
-  
-  // 🛡️ SECURITY UPDATE:
-  // Set to TRUE. This forces the app to use Sanity's Edge Cache.
-  // Even if 100 people refresh at once, Sanity only gets 1 request.
   useCdn: true, 
 });
 
-const builder = imageUrlBuilder(client);
-export function urlFor(source: any) {
-  return builder.image(source);
-}
-
-export async function getTeams() {
-  return client.fetch(
-    `*[_type == "team"] | order(pts desc, (gf - ga) desc, gf desc) {
+// Fetch BOTH Teams and Matches in one go for calculation
+export async function getLeagueData() {
+  const query = `{
+    "teams": *[_type == "team"] {
       _id,
       name,
-      player,
-      "logo": logo.asset->url,
-      played,
-      won,
-      drawn,
-      lost,
-      gf,
-      ga,
-      pts
-    }`,
-    {},
-    {
-      // 🛡️ TRAFFIC CONTROL:
-      // We check for updates only once every 60 seconds.
-      // This makes "Refresh Spam" useless.
-      next: { revalidate: 60 } 
+      group
+    },
+    "matches": *[_type == "match" && status == "Completed" && stage == "Group Stage"] {
+      homeTeam->{_id},
+      awayTeam->{_id},
+      homeScore,
+      awayScore
     }
-  );
+  }`;
+
+  return client.fetch(query, {}, { next: { revalidate: 30 } });
+}
+
+// Simple fetch for the Matches Page
+export async function getMatchSchedule() {
+  const query = `*[_type == "match"] | order(date asc) {
+    _id,
+    date,
+    status,
+    homeScore,
+    awayScore,
+    "home": homeTeam->name,
+    "away": awayTeam->name,
+    stage
+  }`;
+  
+  return client.fetch(query, {}, { next: { revalidate: 30 } });
 }
