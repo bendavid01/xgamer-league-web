@@ -16,16 +16,10 @@ const SECRET = process.env.AUDIT_WEBHOOK_SECRET;
 export async function POST(req: NextRequest) {
   // 2. READ SIGNATURE & BODY
   const signature = req.headers.get(SIGNATURE_HEADER_NAME) || "";
-  const bodyText = await req.text(); // We need raw text for math check
+  const bodyText = await req.text(); 
 
   // 3. SECURITY CHECK (The part that was broken)
-  if (!SECRET) {
-    console.error("❌ Missing Secret");
-    return NextResponse.json({ message: "Server Config Error" }, { status: 500 });
-  }
-
-  // This function does the math to prove it's really Sanity
-  if (!isValidSignature(bodyText, signature, SECRET)) {
+  if (!SECRET || !isValidSignature(bodyText, signature, SECRET)) {
     console.error("❌ Invalid Signature");
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
