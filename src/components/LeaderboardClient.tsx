@@ -1,6 +1,6 @@
 "use client"; 
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 type Props = {
   teams: any[];
@@ -65,24 +65,43 @@ export default function LeaderboardClient({ teams, matches }: Props) {
     };
   }, [teams, matches]);
 
+  // Check if Group B has any teams
+  const showGroupB = tables.B.length > 0;
+
+  // Safety: If user is on Group B but it disappears, switch back to A
+  useEffect(() => {
+    if (!showGroupB && activeGroup === "B") {
+      setActiveGroup("A");
+    }
+  }, [showGroupB, activeGroup]);
+
   return (
     <div>
       {/* Header & Tabs */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">Standings</h1>
-        <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
-          {(["A", "B"] as const).map((g) => (
+        
+        {/* Only show Tabs if Group B actually exists */}
+        {showGroupB && (
+          <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-800">
             <button
-              key={g}
-              onClick={() => setActiveGroup(g)}
+              onClick={() => setActiveGroup("A")}
               className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
-                activeGroup === g ? "bg-cyan-500/20 text-cyan-400" : "text-slate-500 hover:text-slate-300"
+                activeGroup === "A" ? "bg-cyan-500/20 text-cyan-400" : "text-slate-500 hover:text-slate-300"
               }`}
             >
-              Group {g}
+              Group A
             </button>
-          ))}
-        </div>
+            <button
+              onClick={() => setActiveGroup("B")}
+              className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
+                activeGroup === "B" ? "bg-cyan-500/20 text-cyan-400" : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              Group B
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table */}

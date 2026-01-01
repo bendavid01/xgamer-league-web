@@ -1,13 +1,14 @@
 import { createClient } from "next-sanity";
 
+// 1. Define the Client
 export const client = createClient({
-  projectId: "aqtsgm5o", 
+  projectId: "aqtsgm5o", // Your Project ID
   dataset: "production",
   apiVersion: "2024-01-01",
-  useCdn: true, 
+  useCdn: true,
 });
 
-// Fetch BOTH Teams and Matches in one go for calculation
+// 2. Fetch League Data (Teams + Completed Group Matches)
 export async function getLeagueData() {
   const query = `{
     "teams": *[_type == "team"] {
@@ -23,14 +24,22 @@ export async function getLeagueData() {
     }
   }`;
 
-  return client.fetch(query, {}, { next: { revalidate: 30 } });
+  // ⚡ Fast Revalidation (5 seconds)
+  const data = await client.fetch(query, {}, { next: { revalidate: 5 } });
+
+  // 🛡️ Safety: Return empty arrays if data is null to prevent crashes
+  return {
+    teams: data?.teams || [],
+    matches: data?.matches || []
+  };
 }
 
-// Simple fetch for the Matches Page
+// 3. Fetch Match Schedule (Sorted by SYSTEM CREATION TIME)
 export async function getMatchSchedule() {
-  const query = `*[_type == "match"] | order(date asc) {
+  // 👇 CHANGED: 'order(date asc)' -> 'order(_createdAt asc)'
+  const query = `*[_type == "match"] | order(_createdAt asc) {
     _id,
-    date,
+    _createdAt, // Sanity's automatic timestamp
     status,
     homeScore,
     awayScore,
@@ -39,5 +48,5 @@ export async function getMatchSchedule() {
     stage
   }`;
   
-  return client.fetch(query, {}, { next: { revalidate: 30 } });
+  return client.fetch(query, {}, { next: { revalidate: 5 } });
 }
