@@ -1,78 +1,83 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "next-sanity";
+import { isValidSignature, SIGNATURE_HEADER_NAME } from "@sanity/webhook"; // 👈 New Import
 
-// 1. CONFIGURATION (Server-Side Only)
+// 1. CONFIGURATION
 const auditClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
   dataset: process.env.NEXT_PUBLIC_SANITY_DATASET,
-  token: process.env.SANITY_API_WRITE_TOKEN, // 👈 Pulled from Vercel Env
+  token: process.env.SANITY_API_WRITE_TOKEN,
   apiVersion: "2024-01-01",
-  useCdn: false, // Must be false for writing
+  useCdn: false,
 });
 
-const WEBHOOK_SECRET = process.env.AUDIT_WEBHOOK_SECRET;
+const SECRET = process.env.AUDIT_WEBHOOK_SECRET;
 
 export async function POST(req: NextRequest) {
   try {
-    // 2. SECURITY: SHARED SECRET CHECK
-    // We expect the header 'Authorization' to contain our secret string.
-    const signature = req.headers.get("authorization");
+    // 2. SECURITY: CRYPTOGRAPHIC VERIFICATION
+    // Sanity sends the signature in a special header.
+    const signature = req.headers.get(SIGNATURE_HEADER_NAME) || "";
     
-    if (!WEBHOOK_SECRET || signature !== WEBHOOK_SECRET) {
-      console.warn("[AUDIT] Unauthorized access attempt");
+    // We need the raw text to verify the signature
+    const bodyText = await req.text();
+
+    if (!SECRET) {
+      console.error("❌ Missing AUDIT_WEBHOOK_SECRET");
+      return NextResponse.json({ message: "Server Config Error" }, { status: 500 });
+    }
+
+    // This checks if the Hash matches the Body + Secret
+    if (!isValidSignature(bodyText, signature, SECRET)) {
+      console.warn("⚠️ Invalid Signature");
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     // 3. PARSE PAYLOAD
-    const body = await req.json();
-    const { _id, _type } = body;
+    const body = JSON.parse(bodyText);
+    const { _id, _type, ...current } = body;
+    const previous = body.before || {};
 
     if (_type !== "match") {
       return NextResponse.json({ message: "Ignored type" }, { status: 200 });
     }
 
-    // 4. CALCULATE DIFF (Before vs After)
-    const current = body;
-    const previous = body.before || {}; 
-
+    // 4. DIFF CALCULATION
     const changes: string[] = [];
 
-    // Status Change
+    // Status
     if (previous.status !== current.status) {
-      changes.push(`Status: ${previous.status || "New"} ➝ ${current.status}`);
+      changes.push(`Status: ${previous.status || "New"} -> ${current.status}`);
     }
 
-    // Score Change
-    const prevScore = `${previous.homeScore ?? "?"}-${previous.awayScore ?? "?"}`;
-    const currScore = `${current.homeScore ?? "?"}-${current.awayScore ?? "?"}`;
-    
+    // Score
+    const prevScore = `${previous.homeScore ?? 0}-${previous.awayScore ?? 0}`;
+    const currScore = `${current.homeScore ?? 0}-${current.awayScore ?? 0}`;
     if (prevScore !== currScore) {
-      changes.push(`Score: ${prevScore} ➝ ${currScore}`);
+      changes.push(`Score: ${prevScore} -> ${currScore}`);
     }
 
-    // Group Change
+    // Group
     if (previous.group !== current.group && previous.group) {
-      changes.push(`Group: ${previous.group} ➝ ${current.group}`);
+      changes.push(`Group: ${previous.group} -> ${current.group}`);
     }
 
-    // 5. WRITE LOG (Only if something changed)
+    // 5. WRITE LOG
     if (changes.length > 0) {
       await auditClient.create({
         _type: "auditLog",
         action: "MATCH_UPDATE",
         description: changes.join(" | "),
-        match: { _type: "reference", _ref: _id }, // 👈 Correct Field Name
+        match: { _type: "reference", _ref: _id },
         timestamp: new Date().toISOString(),
-        actor: "sanity-studio",
       });
-      console.log(`[AUDIT] Success: ${_id}`);
+      console.log(`✅ [AUDIT] Logged: ${_id}`);
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
 
   } catch (error) {
-    // 6. QUIET FAILURE (Don't spam retries)
-    console.error("[AUDIT ERROR]", error);
-    return NextResponse.json({ message: "Error logged" }, { status: 200 });
+    console.error("🔥 [AUDIT ERROR]", error);
+    return NextResponse.json({ error: "Internal Error" }, { status: 500 });
   }
 }
