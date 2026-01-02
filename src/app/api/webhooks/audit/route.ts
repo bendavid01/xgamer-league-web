@@ -18,11 +18,13 @@ export async function POST(req: NextRequest) {
   const signature = req.headers.get(SIGNATURE_HEADER_NAME) || "";
   const bodyText = await req.text(); 
 
-  // 3. SECURITY CHECK (The part that was broken)
-  if (!SECRET || !isValidSignature(bodyText, signature, SECRET)) {
-    console.error("❌ Invalid Signature");
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-  }
+  // 3. SECURITY CHECK — shared secret via Authorization header
+const auth = req.headers.get("authorization");
+
+if (!SECRET || auth !== `Bearer ${SECRET}`) {
+  console.error("❌ Unauthorized webhook request");
+  return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+}
 
   // 4. PROCESS DATA
   const body = JSON.parse(bodyText);
