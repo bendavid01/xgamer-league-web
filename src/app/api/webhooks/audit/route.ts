@@ -6,7 +6,7 @@ import { isValidSignature, SIGNATURE_HEADER_NAME } from "@sanity/webhook";
 const auditClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
   dataset: process.env.NEXT_PUBLIC_SANITY_DATASET,
-  token: process.env.SANITY_API_WRITE_TOKEN, 
+  token: process.env.SANITY_API_WRITE_TOKEN,
   apiVersion: "2024-01-01",
   useCdn: false,
 });
@@ -16,15 +16,17 @@ const SECRET = process.env.AUDIT_WEBHOOK_SECRET;
 export async function POST(req: NextRequest) {
   // 2. READ SIGNATURE & BODY
   const signature = req.headers.get(SIGNATURE_HEADER_NAME) || "";
-  const bodyText = await req.text(); 
+  const bodyText = await req.text();
 
   // 3. SECURITY CHECK — shared secret via Authorization header
-const auth = req.headers.get("authorization");
+  const auth = req.headers.get("authorization");
 
-if (!SECRET || auth !== `Bearer ${SECRET}`) {
-  console.error("❌ Unauthorized webhook request");
-  return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-}
+  if (!SECRET || auth !== `Bearer ${SECRET}`) {
+    console.error("❌ Unauthorized webhook request");
+    console.error(`Received Auth: ${auth ? "Present" : "Missing"}`);
+    console.error(`Expected Secret Length: ${SECRET ? SECRET.length : "Missing"}`);
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
 
   // 4. PROCESS DATA
   const body = JSON.parse(bodyText);
@@ -55,7 +57,7 @@ if (!SECRET || auth !== `Bearer ${SECRET}`) {
       match: { _type: "reference", _ref: _id },
       timestamp: new Date().toISOString(),
     });
-    console.log(`✅ Logged: ${_id}`);
+    console.log(`✅ Logged audit entry for match: ${_id}`);
   }
 
   return NextResponse.json({ success: true }, { status: 200 });

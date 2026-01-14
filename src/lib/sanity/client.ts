@@ -5,7 +5,7 @@ export const client = createClient({
   projectId: "aqtsgm5o", // Your Project ID
   dataset: "production",
   apiVersion: "2024-01-01",
-  useCdn: true,
+  useCdn: false,
 });
 
 // 2. Fetch League Data (Teams + Completed Group Matches)
@@ -47,6 +47,6 @@ export async function getMatchSchedule() {
     "away": awayTeam->name,
     stage
   }`;
-  
+
   return client.fetch(query, {}, { next: { revalidate: 5 } });
 }
