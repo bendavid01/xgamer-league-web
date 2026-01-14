@@ -16,7 +16,7 @@ export async function getLeagueData() {
       name,
       group
     },
-    "matches": *[_type == "match" && status == "Completed" && stage == "Group Stage"] {
+    "matches": *[_type == "match" && status == "completed" && stage == "Group Stage"] {
       homeTeam->{_id},
       awayTeam->{_id},
       homeScore,
