@@ -3,7 +3,7 @@ import { CheckCircle2, PlayCircle, Clock } from "lucide-react";
 import AutoRefresh from "@/components/AutoRefresh"; // ✅ Added AutoRefresh
 
 // ⚡ Update Speed: Check for new scores every 5 seconds
-export const revalidate = 5; 
+export const revalidate = 5;
 
 export default async function MatchesPage() {
   const matches = await getMatchSchedule();
@@ -11,16 +11,16 @@ export default async function MatchesPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
       <AutoRefresh /> {/* 🔄 Auto-refreshes the UI */}
-      
+
       <h1 className="text-2xl font-bold text-white mb-6">Match Center</h1>
 
       {matches.map((match: any) => {
-        const isCompleted = match.status === "Completed";
-        const isLive = match.status === "Live";
+        const isCompleted = match.status === "completed";
+        const isLive = match.status === "live";
 
         return (
           <div key={match._id} className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 flex items-center justify-between hover:border-slate-700 transition-all">
-            
+
             {/* STATUS ICON (Date Removed) */}
             <div className="w-8 flex justify-center">
               {isLive ? (
@@ -53,11 +53,11 @@ export default async function MatchesPage() {
                 {match.away}
               </span>
             </div>
-            
+
           </div>
         );
       })}
-      
+
       {matches.length === 0 && (
         <div className="text-center py-10 text-slate-500">No matches scheduled.</div>
       )}
