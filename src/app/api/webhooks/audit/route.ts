@@ -54,7 +54,8 @@ export async function POST(req: NextRequest) {
       _type: "auditLog",
       action: "MATCH_UPDATE",
       description: changes.join(" | "),
-      match: { _type: "reference", _ref: _id.replace(/^drafts\./, "") }, // 👈 FORCE STABLE ID
+      // Store as weak so a match can be deleted without breaking referential integrity
+      match: { _type: "reference", _ref: _id.replace(/^drafts\./, ""), _weak: true }, // 👈 FORCE STABLE ID
       timestamp: new Date().toISOString(),
     });
     console.log(`✅ Logged audit entry for match: ${_id.replace(/^drafts\./, "")}`);
