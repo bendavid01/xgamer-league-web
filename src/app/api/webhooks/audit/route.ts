@@ -54,10 +54,10 @@ export async function POST(req: NextRequest) {
       _type: "auditLog",
       action: "MATCH_UPDATE",
       description: changes.join(" | "),
-      match: { _type: "reference", _ref: _id },
+      match: { _type: "reference", _ref: _id.replace(/^drafts\./, "") }, // 👈 FORCE STABLE ID
       timestamp: new Date().toISOString(),
     });
-    console.log(`✅ Logged audit entry for match: ${_id}`);
+    console.log(`✅ Logged audit entry for match: ${_id.replace(/^drafts\./, "")}`);
   }
 
   return NextResponse.json({ success: true }, { status: 200 });

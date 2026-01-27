@@ -8,15 +8,6 @@ export const revalidate = 5;
 export default async function MatchesPage() {
   const matches = await getMatchSchedule();
 
-  // 🔍 DEBUGGING: Print exact status to Vercel Logs
-  console.log("🔍 MATCH DEBUG:", JSON.stringify(matches.map((m: any) => ({
-    id: m._id,
-    home: m.home,
-    away: m.away,
-    status: m.status,   // <--- checking this specific value
-    score: `${m.homeScore}-${m.awayScore}`
-  })), null, 2));
-
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-4">
       <AutoRefresh /> {/* 🔄 Auto-refreshes the UI */}
