@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "next-sanity";
 import { isValidSignature, SIGNATURE_HEADER_NAME } from "@sanity/webhook";
-import { createHash } from "crypto";
 
 const auditClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
@@ -193,21 +192,12 @@ function resolveTeamAuditEvent(
 }
 
 /**
- * Deterministic audit log ID for idempotency.
- * Same payload (retry) = same ID = createOrReplace overwrites, no duplicates.
- * Format: audit.<eventType>.<entityId>.<payloadRevOrHash>
+ * Idempotent audit log ID at MEANING level (not revision).
+ * Same eventType + entityId = same doc = createOrReplace overwrites duplicates.
+ * Multiple webhook deliveries per edit all resolve to one audit doc.
  */
-function buildAuditId(
-  eventType: string,
-  entityId: string,
-  payload: { _id?: string; _rev?: string; current?: unknown; previous?: unknown }
-): string {
-  const rev =
-    (payload.current as { _rev?: string })?._rev ??
-    (payload.previous as { _rev?: string })?._rev ??
-    payload._rev;
-  const suffix = rev ?? createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 12);
-  return `audit.${eventType}.${entityId}.${suffix}`;
+function buildAuditId(eventType: string, entityId: string): string {
+  return `audit.${eventType}.${entityId}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -229,6 +219,14 @@ export async function POST(req: NextRequest) {
   const payload = JSON.parse(bodyText);
   const current = (payload.current ?? payload.after ?? payload) as Record<string, unknown>;
   const previous = (payload.previous ?? payload.before ?? {}) as Record<string, unknown>;
+
+  // Ignore draft documents / draft transitions — only process published docs
+  const docId = (current?._id ?? previous?._id ?? payload?._id ?? payload?.projectDocumentId) as
+    | string
+    | undefined;
+  if (typeof docId === "string" && docId.startsWith("drafts.")) {
+    return NextResponse.json({ message: "Ignored (draft)" }, { status: 200 });
+  }
 
   const type = (current?._type ?? payload?._type ?? previous?._type) as string;
   if (type !== "match" && type !== "team") {
@@ -264,11 +262,7 @@ export async function POST(req: NextRequest) {
   }
 
   const entityId = event.matchId ?? event.teamId ?? "unknown";
-  const auditId = buildAuditId(event.eventType, entityId, {
-    ...payload,
-    current: payload.current ?? payload,
-    previous: payload.previous ?? payload,
-  });
+  const auditId = buildAuditId(event.eventType, entityId);
 
   // WHY: createOrReplace + deterministic ID = idempotent; retries don't create duplicates
   await auditClient.createOrReplace({
