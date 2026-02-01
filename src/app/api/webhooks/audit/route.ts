@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "next-sanity";
 import { isValidSignature, SIGNATURE_HEADER_NAME } from "@sanity/webhook";
+import { createHash } from "crypto";
 
 const auditClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
@@ -12,18 +13,18 @@ const auditClient = createClient({
 
 const SECRET = process.env.AUDIT_WEBHOOK_SECRET;
 
-type AuditEventType =
-  | "SCORE_CHANGED"
-  | "MATCH_COMPLETED"
-  | "MATCH_PUBLISHED"
+type MatchAuditEventType =
   | "MATCH_DELETED"
   | "MATCH_CREATED"
-  | "TEAM_CREATED"
-  | "TEAM_UPDATED"
-  | "TEAM_DELETED";
+  | "MATCH_COMPLETED"
+  | "SCORE_CHANGED"
+  | "MATCH_PUBLISHED"
+  | "MATCH_UPDATED";
+
+type TeamAuditEventType = "TEAM_DELETED" | "TEAM_CREATED" | "TEAM_UPDATED";
 
 type AuditEvent = {
-  eventType: AuditEventType;
+  eventType: MatchAuditEventType | TeamAuditEventType;
   title: string;
   description: string;
   matchId?: string;
@@ -34,31 +35,179 @@ const cleanId = (id?: string) => (id ? id.replace(/^drafts\./, "") : undefined);
 
 const buildRef = (id?: string) => (id ? { _type: "reference", _ref: id, _weak: true } : undefined);
 
-function selectSingleEvent(events: AuditEvent[]): AuditEvent[] {
-  // Only allow both SCORE_CHANGED and MATCH_COMPLETED together; otherwise pick highest priority
-  if (
-    events.length === 2 &&
-    events.some((e) => e.eventType === "SCORE_CHANGED") &&
-    events.some((e) => e.eventType === "MATCH_COMPLETED")
-  ) {
-    return events;
-  }
-
-  if (events.length <= 1) return events;
-
-  const priority: Record<AuditEventType, number> = {
-    MATCH_COMPLETED: 3,
-    MATCH_PUBLISHED: 2,
-    SCORE_CHANGED: 1,
-    MATCH_DELETED: 4,
-    MATCH_CREATED: 4,
-    TEAM_CREATED: 4,
-    TEAM_UPDATED: 3,
-    TEAM_DELETED: 4,
+/**
+ * Deterministic single event resolver for MATCH documents.
+ * Rules evaluated in order; first match wins. ONE event per webhook.
+ * WHY: Previous multi-event + priority approach caused duplicates and wrong logs.
+ */
+function resolveMatchAuditEvent(
+  previous: Record<string, unknown>,
+  current: Record<string, unknown>,
+  operation: string
+): AuditEvent | null {
+  const prev = previous as {
+    status?: string;
+    deleted?: boolean;
+    homeScore?: number;
+    awayScore?: number;
+    group?: string;
+    stage?: string;
+    homeTeam?: unknown;
+    awayTeam?: unknown;
+  };
+  const curr = current as {
+    status?: string;
+    deleted?: boolean;
+    homeScore?: number;
+    awayScore?: number;
+    group?: string;
+    stage?: string;
+    homeTeam?: unknown;
+    awayTeam?: unknown;
   };
 
-  const [top] = [...events].sort((a, b) => (priority[b.eventType] ?? 0) - (priority[a.eventType] ?? 0));
-  return [top];
+  const matchId = cleanId((current?._id ?? previous?._id) as string);
+
+  // 1) Hard delete operation (should not happen with soft delete, but handle for safety)
+  if (operation === "delete") {
+    return { eventType: "MATCH_DELETED", title: "Match deleted", description: "Match removed", matchId };
+  }
+
+  // 2) Create operation
+  if (operation === "create") {
+    return {
+      eventType: "MATCH_CREATED",
+      title: "Match created",
+      description: `Match created with status ${curr?.status ?? "unknown"}`,
+      matchId,
+    };
+  }
+
+  // 3) Soft delete: deleted flipped from false/undefined to true
+  if (curr?.deleted === true && prev?.deleted !== true) {
+    return { eventType: "MATCH_DELETED", title: "Match deleted", description: "Match soft-deleted", matchId };
+  }
+
+  // 4) MATCH_COMPLETED absorbs score changes (checked before score change)
+  if (prev?.status !== "completed" && curr?.status === "completed") {
+    return {
+      eventType: "MATCH_COMPLETED",
+      title: "Match completed",
+      description: `Status: ${prev?.status ?? "unknown"} -> completed`,
+      matchId,
+    };
+  }
+
+  // 5) Score changed
+  const scoreChanged =
+    prev?.homeScore !== curr?.homeScore || prev?.awayScore !== curr?.awayScore;
+  if (scoreChanged) {
+    const prevScore = `${prev?.homeScore ?? 0}-${prev?.awayScore ?? 0}`;
+    const currScore = `${curr?.homeScore ?? 0}-${curr?.awayScore ?? 0}`;
+    return {
+      eventType: "SCORE_CHANGED",
+      title: "Score changed",
+      description: `Score: ${prevScore} -> ${currScore}`,
+      matchId,
+    };
+  }
+
+  // 6) First publish: previous had no status, now scheduled
+  if (prev?.status == null && curr?.status === "scheduled") {
+    return {
+      eventType: "MATCH_PUBLISHED",
+      title: "Match published",
+      description: "Status -> scheduled",
+      matchId,
+    };
+  }
+
+  // 7) Meaningful fields changed (status, group, stage, teams)
+  const meaningfulFieldsChanged =
+    prev?.status !== curr?.status ||
+    prev?.group !== curr?.group ||
+    prev?.stage !== curr?.stage ||
+    prev?.homeTeam !== curr?.homeTeam ||
+    prev?.awayTeam !== curr?.awayTeam;
+
+  if (meaningfulFieldsChanged) {
+    const changes: string[] = [];
+    if (prev?.status !== curr?.status) changes.push(`status: ${prev?.status ?? "n/a"} -> ${curr?.status ?? "n/a"}`);
+    if (prev?.group !== curr?.group) changes.push(`group: ${prev?.group ?? "n/a"} -> ${curr?.group ?? "n/a"}`);
+    if (prev?.stage !== curr?.stage) changes.push(`stage: ${prev?.stage ?? "n/a"} -> ${curr?.stage ?? "n/a"}`);
+    return {
+      eventType: "MATCH_UPDATED",
+      title: "Match updated",
+      description: changes.length ? changes.join(" | ") : "Match updated",
+      matchId,
+    };
+  }
+
+  // 8) No meaningful change — ignore
+  return null;
+}
+
+/**
+ * Deterministic single event resolver for TEAM documents.
+ */
+function resolveTeamAuditEvent(
+  previous: Record<string, unknown>,
+  current: Record<string, unknown>,
+  operation: string
+): AuditEvent | null {
+  const prev = previous as { name?: string; group?: string; squad?: unknown[] };
+  const curr = current as { name?: string; group?: string; squad?: unknown[] };
+
+  const teamId = cleanId((current?._id ?? previous?._id) as string);
+
+  if (operation === "delete") {
+    return { eventType: "TEAM_DELETED", title: "Team deleted", description: "Team removed", teamId };
+  }
+
+  if (operation === "create") {
+    return {
+      eventType: "TEAM_CREATED",
+      title: "Team created",
+      description: `Team created: ${curr?.name ?? "unknown"}`,
+      teamId,
+    };
+  }
+
+  const changes: string[] = [];
+  if (prev?.name !== curr?.name) changes.push(`name: ${prev?.name ?? "n/a"} -> ${curr?.name ?? "n/a"}`);
+  if (prev?.group !== curr?.group) changes.push(`group: ${prev?.group ?? "n/a"} -> ${curr?.group ?? "n/a"}`);
+  if (JSON.stringify(prev?.squad ?? []) !== JSON.stringify(curr?.squad ?? [])) {
+    changes.push(
+      `squad updated (${(prev?.squad ?? []).length} -> ${(curr?.squad ?? []).length} players)`
+    );
+  }
+
+  if (changes.length === 0) return null;
+
+  return {
+    eventType: "TEAM_UPDATED",
+    title: "Team updated",
+    description: changes.join(" | "),
+    teamId,
+  };
+}
+
+/**
+ * Deterministic audit log ID for idempotency.
+ * Same payload (retry) = same ID = createOrReplace overwrites, no duplicates.
+ * Format: audit.<eventType>.<entityId>.<payloadRevOrHash>
+ */
+function buildAuditId(
+  eventType: string,
+  entityId: string,
+  payload: { _id?: string; _rev?: string; current?: unknown; previous?: unknown }
+): string {
+  const rev =
+    (payload.current as { _rev?: string })?._rev ??
+    (payload.previous as { _rev?: string })?._rev ??
+    payload._rev;
+  const suffix = rev ?? createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 12);
+  return `audit.${eventType}.${entityId}.${suffix}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -78,133 +227,60 @@ export async function POST(req: NextRequest) {
   }
 
   const payload = JSON.parse(bodyText);
-  const current = payload.current ?? payload.after ?? payload;
-  const previous = payload.previous ?? payload.before ?? {};
+  const current = (payload.current ?? payload.after ?? payload) as Record<string, unknown>;
+  const previous = (payload.previous ?? payload.before ?? {}) as Record<string, unknown>;
 
-  const type = current?._type ?? payload?._type ?? previous?._type;
+  const type = (current?._type ?? payload?._type ?? previous?._type) as string;
   if (type !== "match" && type !== "team") {
     return NextResponse.json({ message: "Ignored" }, { status: 200 });
   }
 
+  const operation =
+    payload.transition ?? payload.operation ?? (previous?._id && !current?._id ? "delete" : "update");
+
   const isDelete =
-    payload.transition === "delete" ||
-    payload.operation === "delete" ||
+    operation === "delete" ||
     payload._deleted === true ||
-    current === null ||
-    current?._deleted === true;
+    (current === null || (current as { _deleted?: boolean })?._deleted === true);
 
-  const isCreate =
-    payload.transition === "create" ||
-    payload.operation === "create" ||
-    (!previous?._id && !isDelete);
-
-  const matchId = type === "match" ? cleanId(current?._id ?? payload?._id ?? previous?._id) : undefined;
-  const teamId = type === "team" ? cleanId(current?._id ?? payload?._id ?? previous?._id) : undefined;
-
-  const events: AuditEvent[] = [];
+  let event: AuditEvent | null = null;
 
   if (type === "match") {
-    if (isDelete) {
-      events.push({
-        eventType: "MATCH_DELETED",
-        title: "Match deleted",
-        description: "Match removed",
-        matchId: matchId ?? cleanId(previous?._id),
-      });
-    } else if (isCreate) {
-      events.push({
-        eventType: "MATCH_CREATED",
-        title: "Match created",
-        description: `Match created with status ${current?.status ?? "unknown"}`,
-        matchId,
-      });
-    } else {
-      const scoreChanged =
-        previous?.homeScore !== current?.homeScore || previous?.awayScore !== current?.awayScore;
-      const statusChanged = previous?.status !== current?.status;
-
-      if (scoreChanged) {
-        const prevScore = `${previous?.homeScore ?? 0}-${previous?.awayScore ?? 0}`;
-        const currScore = `${current?.homeScore ?? 0}-${current?.awayScore ?? 0}`;
-        events.push({
-          eventType: "SCORE_CHANGED",
-          title: "Score changed",
-          description: `Score: ${prevScore} -> ${currScore}`,
-          matchId,
-        });
-      }
-
-      if (statusChanged && previous?.status !== "completed" && current?.status === "completed") {
-        events.push({
-          eventType: "MATCH_COMPLETED",
-          title: "Match completed",
-          description: `Status: ${previous?.status ?? "unknown"} -> completed`,
-          matchId,
-        });
-      } else if (statusChanged && current?.status === "scheduled") {
-        events.push({
-          eventType: "MATCH_PUBLISHED",
-          title: "Match published",
-          description: `Status: ${previous?.status ?? "unknown"} -> scheduled`,
-          matchId,
-        });
-      }
-    }
+    event = resolveMatchAuditEvent(
+      isDelete ? (previous ?? {}) : previous,
+      isDelete ? {} : current,
+      isDelete ? "delete" : operation
+    );
+  } else if (type === "team") {
+    event = resolveTeamAuditEvent(
+      isDelete ? (previous ?? {}) : previous,
+      isDelete ? {} : current,
+      isDelete ? "delete" : operation
+    );
   }
 
-  if (type === "team") {
-    if (isDelete) {
-      events.push({
-        eventType: "TEAM_DELETED",
-        title: "Team deleted",
-        description: "Team removed",
-        teamId,
-      });
-    } else if (isCreate) {
-      events.push({
-        eventType: "TEAM_CREATED",
-        title: "Team created",
-        description: `Team created: ${current?.name ?? "unknown"}`,
-        teamId,
-      });
-    } else {
-      const changes: string[] = [];
-      if (previous?.name !== current?.name) changes.push(`name: ${previous?.name ?? "n/a"} -> ${current?.name ?? "n/a"}`);
-      if (previous?.group !== current?.group) changes.push(`group: ${previous?.group ?? "n/a"} -> ${current?.group ?? "n/a"}`);
-      if (JSON.stringify(previous?.squad ?? []) !== JSON.stringify(current?.squad ?? [])) {
-        changes.push(
-          `squad updated (${(previous?.squad ?? []).length} -> ${(current?.squad ?? []).length} players)`
-        );
-      }
-
-      events.push({
-        eventType: "TEAM_UPDATED",
-        title: "Team updated",
-        description: changes.length ? changes.join(" | ") : "Team updated",
-        teamId,
-      });
-    }
-  }
-
-  const selectedEvents = selectSingleEvent(events);
-
-  if (selectedEvents.length === 0) {
+  if (!event) {
     return NextResponse.json({ message: "Ignored" }, { status: 200 });
   }
 
-  await Promise.all(
-    selectedEvents.map((event) =>
-      auditClient.create({
-        _type: "auditLog",
-        eventType: event.eventType,
-        title: event.title,
-        description: event.description,
-        match: buildRef(event.matchId),
-        team: buildRef(event.teamId),
-        timestamp: new Date().toISOString(),
-      })
-    )
-  );
+  const entityId = event.matchId ?? event.teamId ?? "unknown";
+  const auditId = buildAuditId(event.eventType, entityId, {
+    ...payload,
+    current: payload.current ?? payload,
+    previous: payload.previous ?? payload,
+  });
 
-  return NextResponse.json({ success: true, logged: selectedEvents.map((e) => e.eventType) }, { status: 200 });
+  // WHY: createOrReplace + deterministic ID = idempotent; retries don't create duplicates
+  await auditClient.createOrReplace({
+    _id: auditId,
+    _type: "auditLog",
+    eventType: event.eventType,
+    title: event.title,
+    description: event.description,
+    match: buildRef(event.matchId),
+    team: buildRef(event.teamId),
+    timestamp: new Date().toISOString(),
+  });
+
+  return NextResponse.json({ success: true, logged: event.eventType }, { status: 200 });
 }

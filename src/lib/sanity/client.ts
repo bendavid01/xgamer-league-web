@@ -9,6 +9,7 @@ export const client = createClient({
 });
 
 // 2. Fetch League Data (Teams + Completed Group Matches)
+// WHY: Exclude deleted matches (soft delete); they must be treated as non-existent.
 export async function getLeagueData() {
   const query = `{
     "teams": *[_type == "team"] {
@@ -16,7 +17,7 @@ export async function getLeagueData() {
       name,
       group
     },
-    "matches": *[_type == "match" && status == "completed" && stage == "Group Stage"] {
+    "matches": *[_type == "match" && status == "completed" && stage == "Group Stage" && deleted != true] {
       homeTeam->{_id},
       awayTeam->{_id},
       homeScore,
@@ -35,9 +36,9 @@ export async function getLeagueData() {
 }
 
 // 3. Fetch Match Schedule (Sorted by SYSTEM CREATION TIME)
+// WHY: Exclude deleted matches from schedule.
 export async function getMatchSchedule() {
-  // 👇 CHANGED: 'order(date asc)' -> 'order(_createdAt asc)'
-  const query = `*[_type == "match"] | order(_createdAt asc) {
+  const query = `*[_type == "match" && deleted != true] | order(_createdAt asc) {
     _id,
     _createdAt, // Sanity's automatic timestamp
     status,
