@@ -71,3 +71,19 @@ test("invalid participant counts and IDs rejected", () => {
   assert.throws(() => roundRobin([]));
   assert.throws(() => knockout([entrants(2)[0], entrants(2)[0]]));
 });
+
+test("league phase qualifies the ranked field after every fixture is confirmed", () => {
+  const field = entrants(4);
+  const results = roundRobin(field).map((f) => ({
+    home: f.home!,
+    away: f.away!,
+    homeScore: Number(f.home) < Number(f.away) ? 1 : 0,
+    awayScore: Number(f.home) < Number(f.away) ? 0 : 1,
+  }));
+  const bracket = leagueKnockout(field, results, 2);
+  assert.equal(bracket.length, 1);
+  assert.deepEqual(
+    new Set([bracket[0].home, bracket[0].away]),
+    new Set(["0", "1"]),
+  );
+});

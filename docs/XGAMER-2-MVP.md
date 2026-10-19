@@ -46,3 +46,7 @@ Rollback through Vercel to the previous production deployment; no data rollback 
 ## Performance/accessibility
 
 Server-rendered public pages; only navigation, filters, standings and planner hydrate. System fonts avoid third-party font fetches. One transform animation honors reduced motion; no 60 FPS guarantee is claimed without device profiling. Polling runs every 30 seconds only while visible and online. Tables have captions/row headers and horizontal overflow, navigation has accessible controls, and focus/skip links are provided.
+
+## Known development dependency advisories
+
+The production dependency audit is clean at release time. The full audit still reports 9 development-tool advisories (7 high, 2 moderate) in the Tailwind 3 / ESLint glob and selector parsing dependency tree. These tools process repository source during builds, not public request input. Do not describe the entire dependency tree as vulnerability-free; revisit patched tooling or a Tailwind 4 migration separately.

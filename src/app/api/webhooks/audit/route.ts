@@ -216,9 +216,8 @@ function resolveTeamAuditEvent(
 }
 
 /**
- * Idempotent audit log ID at MEANING level (not revision).
- * Same eventType + entityId = same doc = createOrReplace overwrites duplicates.
- * Multiple webhook deliveries per edit all resolve to one audit doc.
+ * Stable entity/event prefix. The payload hash appended below distinguishes
+ * separate edits while deduplicating identical webhook deliveries.
  */
 function buildAuditId(eventType: string, entityId: string): string {
   return `audit.${eventType}.${entityId}`;
@@ -278,6 +277,19 @@ export async function POST(req: NextRequest) {
     string,
     unknown
   >;
+  for (const document of [current, previous]) {
+    if (
+      !document ||
+      typeof document !== "object" ||
+      Array.isArray(document) ||
+      (document._id !== undefined && typeof document._id !== "string")
+    ) {
+      return NextResponse.json(
+        { message: "Invalid document" },
+        { status: 400 },
+      );
+    }
+  }
 
   // Ignore draft documents / draft transitions — only process published docs
   const docId = (current?._id ??
@@ -333,7 +345,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Invalid entity" }, { status: 400 });
   const auditId = `${buildAuditId(event.eventType, entityId)}.${createHash("sha256").update(bodyText).digest("hex").slice(0, 24)}`;
 
-  // WHY: createOrReplace + deterministic ID = idempotent; retries don't create duplicates
+  // Preserve separate edits and never overwrite an existing event on retry.
   if (!process.env.SANITY_API_WRITE_TOKEN)
     return NextResponse.json(
       { message: "Audit storage unavailable" },

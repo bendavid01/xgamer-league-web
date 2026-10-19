@@ -295,6 +295,7 @@ export default function TournamentPlanner() {
                           </label>
                         </div>
                         {phase === "knockout" &&
+                          scores[f.id] &&
                           scores[f.id]?.home !== "" &&
                           scores[f.id]?.home === scores[f.id]?.away && (
                             <label className="block text-xs text-slate-400 mt-3">

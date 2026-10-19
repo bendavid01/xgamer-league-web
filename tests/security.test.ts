@@ -119,3 +119,26 @@ test("admin endpoints expose no controls without configured authorization", asyn
   assert.equal((await GET()).status, 403);
   assert.equal((await POST()).status, 403);
 });
+
+test("audit rejects malformed nested documents without crashing", async () => {
+  const { POST } = await audit;
+  for (const current of [{ _type: "team", _id: 123 }, [], false]) {
+    const body = JSON.stringify({ operation: "create", current });
+    const signature = await encodeSignatureHeader(
+      body,
+      Date.now(),
+      "test-only-webhook-secret",
+    );
+    assert.equal(
+      (
+        await POST(
+          req(body, {
+            authorization: "Bearer test-only-webhook-secret",
+            "sanity-webhook-signature": signature,
+          }),
+        )
+      ).status,
+      400,
+    );
+  }
+});
