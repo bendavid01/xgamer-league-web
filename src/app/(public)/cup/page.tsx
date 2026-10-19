@@ -7,9 +7,9 @@ export default async function Cup() {
   return (
     <div className="page-shell py-12">
       <PageTitle
-        label="OCTOBER 24 / XGAMER 2.0"
+        label="XGAMER / COMPETITION"
         title="One field. One champion."
-        description="64 players. Four different opponents each. One unified league table. The top eight advance to the knockout rounds."
+        description="Follow confirmed entrants, fixtures and results."
       />
       <div className="flex flex-wrap gap-4 mt-7">
         <Link href="/register" className="button-primary">
@@ -21,7 +21,7 @@ export default async function Cup() {
       </div>
       {!cup ? (
         <p className="notice mt-10">
-          The October Cup is being prepared. Confirmed entrants, fixtures and
+          The competition is being prepared. Confirmed entrants, fixtures and
           announcements will appear here when organizers publish them.
         </p>
       ) : (

@@ -1,12 +1,9 @@
+import { registrationConfigured } from "@/lib/configuration";
 import { body, endpoint, HttpError, response } from "@/lib/api";
 import { registrationInput, register } from "@/lib/registration";
 export async function POST(request: Request) {
   return endpoint(async () => {
-    if (
-      !process.env.DATABASE_URL ||
-      !process.env.PRIVATE_DATA_KEY ||
-      process.env.REGISTRATION_ENABLED !== "true"
-    )
+    if (!registrationConfigured())
       return response(
         {
           error:
