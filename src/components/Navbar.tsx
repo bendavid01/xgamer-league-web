@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, ArrowUpRight } from "lucide-react";
@@ -11,10 +12,18 @@ const items = [
   ["Community", "/community"],
 ];
 export default function Navbar() {
+  const toggle = useRef<HTMLButtonElement>(null);
+  const reduced = useReducedMotion();
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   return (
     <nav
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          setOpen(false);
+          toggle.current?.focus();
+        }
+      }}
       aria-label="Main navigation"
       className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95"
     >
@@ -52,6 +61,7 @@ export default function Navbar() {
           Join the arena <ArrowUpRight size={16} />
         </Link>
         <button
+          ref={toggle}
           aria-label={open ? "Close navigation" : "Open navigation"}
           aria-expanded={open}
           aria-controls="mobile-nav"
@@ -61,26 +71,36 @@ export default function Navbar() {
           {open ? <X /> : <Menu />}
         </button>
       </div>
-      {open && (
-        <div
-          id="mobile-nav"
-          className="lg:hidden page-shell pb-5 flex flex-col gap-1"
-        >
-          {[...items, ["Join the arena", "/register"], ["Rules", "/rules"]].map(
-            ([name, href]) => (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setOpen(false)}
-                aria-current={pathname === href ? "page" : undefined}
-                className="p-3 rounded-lg hover:bg-slate-900"
-              >
-                {name}
-              </Link>
-            ),
-          )}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: reduced ? 0 : 0.22 }}
+            id="mobile-nav"
+            className="lg:hidden overflow-hidden"
+          >
+            <div className="page-shell pb-5 flex flex-col gap-1">
+              {[
+                ...items,
+                ["Join the arena", "/register"],
+                ["Rules", "/rules"],
+              ].map(([name, href]) => (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setOpen(false)}
+                  aria-current={pathname === href ? "page" : undefined}
+                  className="p-3 rounded-lg hover:bg-slate-900"
+                >
+                  {name}
+                </Link>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { motion, useReducedMotion } from "framer-motion";
 import { useState } from "react";
 import {
   roundRobin,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/tournament";
 type Score = { home: string; away: string; winner: string };
 export default function TournamentPlanner() {
+  const reduced = useReducedMotion();
   const [names, setNames] = useState("Player 1\nPlayer 2\nPlayer 3\nPlayer 4");
   const [format, setFormat] = useState("round-robin");
   const [qualifiers, setQualifiers] = useState(2);
@@ -247,7 +249,14 @@ export default function TournamentPlanner() {
             <>
               <div className="grid lg:grid-cols-2 gap-4">
                 {fixtures.map((f) => (
-                  <article className="panel p-5" key={f.id}>
+                  <motion.article
+                    layout={!reduced}
+                    initial={{ opacity: 0, y: reduced ? 0 : 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: reduced ? 0 : 0.28 }}
+                    className="panel bracket-card p-5"
+                    key={f.id}
+                  >
                     <p className="text-xs text-slate-500 mb-3">
                       ROUND {f.round}
                     </p>
@@ -314,7 +323,7 @@ export default function TournamentPlanner() {
                           )}
                       </>
                     )}
-                  </article>
+                  </motion.article>
                 ))}
               </div>
               {(phase === "knockout" ||
@@ -334,12 +343,16 @@ export default function TournamentPlanner() {
               <h3 className="font-bold mb-4">Preview standings</h3>
               <ol className="space-y-3">
                 {table.map((r) => (
-                  <li className="flex justify-between text-sm" key={r.id}>
+                  <motion.li
+                    layout={!reduced}
+                    className="flex justify-between text-sm"
+                    key={r.id}
+                  >
                     <span>{r.name}</span>
                     <span className="text-cyan-300">
                       {r.pts} pts · GD {r.gd}
                     </span>
-                  </li>
+                  </motion.li>
                 ))}
               </ol>
               <p className="text-xs text-slate-500 mt-5">

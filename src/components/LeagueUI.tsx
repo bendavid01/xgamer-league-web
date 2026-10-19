@@ -1,3 +1,4 @@
+import MatchInsight from "./MatchInsight";
 import Link from "next/link";
 import { ArrowUpRight, Swords } from "lucide-react";
 import type { LeagueMatch } from "@/lib/league";
@@ -30,7 +31,7 @@ export function Unavailable() {
 export function MatchCard({ match }: { match: LeagueMatch }) {
   const scored = ["completed", "live"].includes(match.status);
   return (
-    <article className="panel p-5">
+    <article className="panel match-card p-5">
       <div className="flex justify-between gap-3 text-xs mb-5">
         <span className="text-slate-400">
           {match.stage || "League fixture"}
@@ -62,6 +63,7 @@ export function MatchCard({ match }: { match: LeagueMatch }) {
           {match.away?.name || "Participant TBC"}
         </span>
       </div>
+      <MatchInsight match={match} />
     </article>
   );
 }

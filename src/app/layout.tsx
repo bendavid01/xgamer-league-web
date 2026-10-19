@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import RouteMotion from "@/components/RouteMotion";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ export default function RootLayout({
         <div className="min-h-screen flex flex-col">
           <Navbar />
           <main id="content" className="flex-grow">
-            {children}
+            <RouteMotion>{children}</RouteMotion>
           </main>
           <footer className="border-t border-slate-800 py-8">
             <div className="page-shell flex flex-wrap justify-between gap-5 text-sm text-slate-500">

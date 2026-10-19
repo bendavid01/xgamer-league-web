@@ -1,4 +1,5 @@
 "use client";
+import { motion, useReducedMotion } from "framer-motion";
 import { useState } from "react";
 import Link from "next/link";
 import { standings, type Entrant, type Result } from "@/lib/tournament";
@@ -9,6 +10,7 @@ export default function LeaderboardClient({
   teams: (Entrant & { group: string | null })[];
   matches: Result[];
 }) {
+  const reduced = useReducedMotion();
   const groups = [...new Set(teams.map((t) => t.group || "Ungrouped"))].sort();
   const [selected, setSelected] = useState("All");
   const rows = standings(teams, matches).filter(
@@ -46,9 +48,13 @@ export default function LeaderboardClient({
               )}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="standings-body">
             {rows.map((r, i) => (
-              <tr
+              <motion.tr
+                layout={!reduced}
+                initial={false}
+                animate={{ opacity: 1 }}
+                transition={{ duration: reduced ? 0 : 0.25 }}
                 key={r.id}
                 className="border-b border-slate-800/60 hover:bg-slate-800/30"
               >
@@ -67,7 +73,7 @@ export default function LeaderboardClient({
                   </td>
                 ))}
                 <td className="px-4 font-bold text-cyan-300">{r.pts}</td>
-              </tr>
+              </motion.tr>
             ))}
           </tbody>
         </table>

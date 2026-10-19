@@ -1,8 +1,10 @@
 "use client";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useState } from "react";
 import type { LeagueMatch } from "@/lib/league";
 import { MatchCard } from "./LeagueUI";
 export default function MatchCenter({ matches }: { matches: LeagueMatch[] }) {
+  const reduced = useReducedMotion();
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const filtered = matches.filter(
@@ -46,9 +48,21 @@ export default function MatchCenter({ matches }: { matches: LeagueMatch[] }) {
         {filtered.length} matches
       </p>
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filtered.map((m) => (
-          <MatchCard key={m._id} match={m} />
-        ))}
+        <AnimatePresence initial={false} mode="popLayout">
+          {filtered.map((m) => (
+            <motion.div
+              layout={!reduced}
+              key={m._id}
+              initial={false}
+              className="match-motion"
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: reduced ? 1 : 0.98 }}
+              transition={{ duration: reduced ? 0 : 0.22 }}
+            >
+              <MatchCard match={m} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
       {!filtered.length && (
         <p className="notice">No matches match these filters.</p>
