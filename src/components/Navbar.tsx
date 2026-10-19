@@ -4,12 +4,14 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, ArrowUpRight } from "lucide-react";
+import Brand from "@/components/Brand";
 const items = [
   ["Competitions", "/competitions"],
   ["Matches", "/matches"],
   ["Standings", "/table"],
   ["Players", "/players"],
   ["Community", "/community"],
+  ["Rules", "/rules"],
 ];
 export default function Navbar() {
   const toggle = useRef<HTMLButtonElement>(null);
@@ -33,10 +35,7 @@ export default function Navbar() {
           aria-label="X-Gamer home"
           className="text-xl font-black italic tracking-tighter whitespace-nowrap"
         >
-          X-<span className="text-cyan-300">GAMER</span>
-          <span className="text-[10px] align-top ml-2 text-slate-500 not-italic">
-            2.0
-          </span>
+          <Brand />
         </Link>
         <div className="hidden lg:flex gap-6">
           {items.map(([name, href]) => (
@@ -82,21 +81,19 @@ export default function Navbar() {
             className="lg:hidden overflow-hidden"
           >
             <div className="page-shell pb-5 flex flex-col gap-1">
-              {[
-                ...items,
-                ["Join the arena", "/register"],
-                ["Rules", "/rules"],
-              ].map(([name, href]) => (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setOpen(false)}
-                  aria-current={pathname === href ? "page" : undefined}
-                  className="p-3 rounded-lg hover:bg-slate-900"
-                >
-                  {name}
-                </Link>
-              ))}
+              {[...items, ["Join the arena", "/register"]].map(
+                ([name, href]) => (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setOpen(false)}
+                    aria-current={pathname === href ? "page" : undefined}
+                    className="p-3 rounded-lg hover:bg-slate-900"
+                  >
+                    {name}
+                  </Link>
+                ),
+              )}
             </div>
           </motion.div>
         )}

@@ -6,7 +6,8 @@ import {
   useMotionValue,
   useSpring,
 } from "framer-motion";
-import { ArrowUpRight, Trophy } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
+import { XMark } from "@/components/Brand";
 export default function HomeIntro() {
   const reduced = useReducedMotion();
   const x = useMotionValue(0);
@@ -34,6 +35,9 @@ export default function HomeIntro() {
           </Link>
           <Link className="button-secondary" href="/matches">
             Match center
+          </Link>
+          <Link className="insight-link" href="/community">
+            Find your community →
           </Link>
         </div>
         <p className="text-xs text-slate-500 mt-6">
@@ -80,7 +84,7 @@ export default function HomeIntro() {
           <div className="pitch-goal right" />
         </div>
         <div className="trophy-mark">
-          <Trophy size={76} strokeWidth={1.2} />
+          <XMark className="arena-emblem" />
         </div>
         <span className="art-label">THE NEXT CHAPTER</span>
         <span className="art-number">02</span>

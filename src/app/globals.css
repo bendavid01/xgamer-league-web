@@ -364,3 +364,309 @@ nav a[aria-current="page"]::after {
     animation: none !important;
   }
 }
+/* XGamer identity: precision cuts, broadcast type, quiet depth. */
+body {
+  font-family: var(--font-body), Arial, sans-serif;
+}
+h1,
+h2,
+h3,
+.brand-name {
+  font-family: var(--font-display), Impact, sans-serif;
+}
+.hero-title {
+  font-size: clamp(3.4rem, 7.8vw, 7rem);
+  letter-spacing: -0.025em;
+  line-height: 0.96;
+  font-weight: 800;
+}
+.page-title {
+  font-size: clamp(2.8rem, 6.4vw, 5.4rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+h2 {
+  letter-spacing: -0.01em;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: white;
+  font-style: normal;
+}
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  transition: transform 0.3s;
+}
+.brand-name {
+  display: block;
+  font-size: 29px;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  line-height: 1;
+}
+.brand-caption {
+  display: block;
+  font:
+    600 8px var(--font-body),
+    sans-serif;
+  letter-spacing: 0.24em;
+  color: #94a3b8;
+  margin-top: 5px;
+}
+.arena-emblem {
+  width: 145px;
+  height: 145px;
+  filter: drop-shadow(0 0 24px #22d3ee44);
+}
+.hub-hero {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid #164e63;
+  border-radius: 24px;
+  padding: clamp(24px, 5vw, 64px) clamp(22px, 4vw, 48px) 75px;
+  background:
+    radial-gradient(ellipse at 95% 20%, #14516966, transparent 65%), #081222;
+}
+.hub-hero .hero-title {
+  font-size: clamp(3.1rem, 6.5vw, 6rem);
+}
+.hub-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image:
+    linear-gradient(#67e8f908 1px, transparent 1px),
+    linear-gradient(90deg, #67e8f908 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(90deg, transparent, black);
+}
+.hub-emblem {
+  position: absolute;
+  width: 380px;
+  right: -40px;
+  top: 30px;
+  opacity: 0.12;
+  transform: rotate(-9deg);
+}
+.hub-coordinate {
+  position: absolute;
+  bottom: 22px;
+  left: clamp(22px, 4vw, 48px);
+  color: #94a3b8;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+}
+.channel-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+}
+.channel-filters button {
+  min-height: 44px;
+  padding: 8px 13px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #cbd5e1;
+  transition:
+    background 0.18s,
+    color 0.18s;
+}
+.channel-filters button[aria-pressed="true"] {
+  background: #67e8f9;
+  color: #020617;
+  font-weight: 700;
+}
+.channel-card {
+  display: flex;
+  flex-direction: column;
+  padding: 25px;
+  min-width: 0;
+  transition:
+    transform 0.22s,
+    border-color 0.22s,
+    background-color 0.22s;
+}
+.channel-card > div > svg {
+  color: #64748b;
+  transition:
+    transform 0.22s,
+    color 0.22s;
+}
+.channel-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #164e63;
+  background: #08334466;
+  border-radius: 12px;
+  font-weight: 700;
+  color: #a5f3fc;
+}
+.community-guide {
+  background: linear-gradient(120deg, #0c2534, #0f172a88);
+}
+.draft-banner {
+  border: 1px solid #a1620755;
+  background: #42200644;
+  border-radius: 16px;
+  padding: 24px;
+  color: #fde68a;
+}
+.draft-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+.score-tile {
+  padding: 15px 5px;
+  text-align: center;
+  background: #08334455;
+  border: 1px solid #164e63;
+  border-radius: 12px;
+}
+.score-tile strong {
+  display: block;
+  font:
+    800 42px var(--font-display),
+    sans-serif;
+  color: #67e8f9;
+}
+.score-tile span {
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: #94a3b8;
+}
+.rule-detail {
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.rule-detail[open] {
+  border-color: #155e75;
+}
+.rule-detail summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  cursor: pointer;
+  padding: 22px;
+  list-style: none;
+  font-size: 18px;
+  font-weight: 600;
+  min-height: 72px;
+}
+.rule-detail summary::-webkit-details-marker {
+  display: none;
+}
+.rule-number {
+  color: #67e8f9;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.rule-plus {
+  margin-left: auto;
+  color: #67e8f9;
+  transition: transform 0.2s;
+  font-size: 24px;
+}
+.rule-detail[open] .rule-plus {
+  transform: rotate(45deg);
+}
+.rule-body {
+  padding: 0 22px 24px 58px;
+  animation: broadcast-in 0.2s both;
+}
+.footer-social {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #94a3b8;
+  font-size: 12px;
+  transition: color 0.2s;
+}
+.footer-social:hover {
+  color: #67e8f9;
+}
+@media (hover: hover) and (pointer: fine) {
+  .channel-card:hover {
+    transform: translateY(-5px);
+    border-color: #22d3ee88;
+    background-color: #102639;
+  }
+  .channel-card:hover > div > svg {
+    transform: translate(3px, -3px);
+    color: #67e8f9;
+  }
+  a:hover .brand-mark {
+    transform: rotate(-7deg);
+  }
+}
+@media (max-width: 640px) {
+  .hub-emblem {
+    width: 250px;
+    top: 115px;
+    right: -80px;
+    opacity: 0.07;
+  }
+  .hub-coordinate {
+    font-size: 8px;
+    letter-spacing: 0.12em;
+  }
+  .channel-filters {
+    width: 100%;
+  }
+  .channel-filters button {
+    flex: 1;
+    padding-inline: 8px;
+  }
+  .rule-detail summary {
+    padding: 18px;
+    gap: 12px;
+    font-size: 16px;
+  }
+  .rule-body {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .channel-card,
+  .rule-body {
+    animation: none;
+  }
+  .channel-card:hover,
+  a:hover .brand-mark,
+  .channel-card:hover > div > svg {
+    transform: none;
+  }
+}
+@supports (interpolate-size: allow-keywords) {
+  .rule-detail {
+    interpolate-size: allow-keywords;
+  }
+  .rule-detail::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size 0.25s,
+      content-visibility 0.25s allow-discrete;
+  }
+  .rule-detail[open]::details-content {
+    block-size: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rule-detail::details-content {
+    transition: none;
+  }
+}

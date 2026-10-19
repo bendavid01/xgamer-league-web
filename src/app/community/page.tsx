@@ -1,56 +1,70 @@
 import Link from "next/link";
-import { PageTitle } from "@/components/LeagueUI";
+import type { Metadata } from "next";
+import CommunityChannels from "@/components/CommunityChannels";
+import { XMark } from "@/components/Brand";
+import { communityLinks } from "@/lib/community";
+export const metadata: Metadata = {
+  title: "Community",
+  description:
+    "All eight official XGamer channels. Find your rivals, follow the league and explore the draft competition guide.",
+};
 export default function Community() {
-  const invite = process.env.NEXT_PUBLIC_DISCORD_INVITE_URL;
-  const valid =
-    invite &&
-    /^https:\/\/(discord\.gg\/|discord\.com\/invite\/)[a-zA-Z0-9-]+$/.test(
-      invite,
-    );
   return (
-    <div className="page-shell py-12">
-      <PageTitle
-        label="BEYOND THE MATCH"
-        title="Find your people."
-        description="Match arrangements, score evidence and community updates belong with the league organizers."
-      />
-      <div className="grid md:grid-cols-2 gap-5">
-        <article className="panel p-7">
-          <p className="eyebrow">DISCORD</p>
-          <h2 className="text-2xl font-bold mb-4">The community hub</h2>
-          <p className="text-slate-400 leading-relaxed">
-            Discord sign-in, verified tournament roles and match notifications
-            are awaiting integration setup.
+    <div className="page-shell py-10 md:py-16">
+      <section className="hub-hero">
+        <div className="relative z-10 max-w-2xl">
+          <p className="eyebrow">THE COMMUNITY / YOUR HOME GROUND</p>
+          <h1 className="hero-title">
+            RIVALS IN GAME.
+            <br />
+            <span className="text-cyan-300">FAMILY OUTSIDE.</span>
+          </h1>
+          <p className="text-slate-300 text-lg leading-relaxed mt-6 max-w-lg">
+            The final whistle is just the beginning. Meet your next opponent,
+            find your people, and be part of what comes next.
           </p>
-          {valid ? (
+          <div className="flex flex-wrap gap-3 mt-8">
             <a
-              href={invite}
+              className="button-primary"
+              href={communityLinks[0].href}
               target="_blank"
               rel="noopener noreferrer"
-              className="button-primary mt-6"
             >
-              Join Discord
+              Join Discord ↗
+              <span className="sr-only"> (opens in a new tab)</span>
             </a>
-          ) : (
-            <p className="mt-6 text-sm text-amber-300">
-              Official invite not configured yet.
-            </p>
-          )}
-        </article>
-        <article className="panel p-7">
-          <p className="eyebrow">WHATSAPP</p>
-          <h2 className="text-2xl font-bold mb-4">A personal update</h2>
+            <Link className="button-secondary" href="/rules">
+              Read the competition guide →
+            </Link>
+          </div>
+        </div>
+        <XMark className="hub-emblem" />
+        <div className="hub-coordinate" aria-hidden="true">
+          XG / COMMUNITY NETWORK / 08 CHANNELS
+        </div>
+      </section>
+      <CommunityChannels />
+      <section className="community-guide panel mt-10 p-6 md:p-9 flex flex-wrap justify-between items-center gap-6">
+        <div className="max-w-xl">
+          <p className="eyebrow">BEFORE YOUR FIRST KICKOFF</p>
+          <h2 className="text-2xl font-bold mb-3">
+            Great competition starts with respect.
+          </h2>
           <p className="text-slate-400 leading-relaxed">
-            Phone guests will be verified manually by an administrator.
-            Organizers send WhatsApp updates manually after approval and
-            consent. No bot, automatic messages or phone verification is
-            connected.
+            Explore the standings guide and proposed community rules. Draft
+            rules are pending admin approval; confirm your match settings with
+            an organizer.
           </p>
-          <Link className="inline-block text-cyan-300 mt-6" href="/register">
-            Guest registration availability →
-          </Link>
-        </article>
-      </div>
+        </div>
+        <Link className="button-secondary" href="/rules">
+          Explore the rules →
+        </Link>
+      </section>
+      <p className="text-xs text-slate-400 mt-6">
+        External channels open in a new tab. Group access and stream schedules
+        are managed on each platform. Joining a channel does not register you
+        for a competition.
+      </p>
     </div>
   );
 }
