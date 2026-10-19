@@ -17,6 +17,17 @@ export default async function Home() {
   return (
     <div className="editorial-home">
       <HomeIntro />
+      <div className="panel flex flex-wrap items-center justify-between gap-5 p-6 my-5">
+        <div>
+          <p className="eyebrow !mb-2">OCTOBER 24 / THE NEXT CHAPTER</p>
+          <h2 className="text-2xl md:text-3xl font-semibold">
+            64 players. Eight finalists. One champion.
+          </h2>
+        </div>
+        <Link href="/cup" className="button-primary">
+          Explore the October Cup <ArrowUpRight size={18} />
+        </Link>
+      </div>
       <div className="arena-strip">
         <span>PLAY WITH PURPOSE.</span>
         <XMark />

@@ -1,59 +1,38 @@
-import Link from "next/link";
 import { PageTitle } from "@/components/LeagueUI";
-import { Hash, Phone, ShieldCheck } from "lucide-react";
+import RegistrationForm from "@/components/RegistrationForm";
+export const dynamic = "force-dynamic";
 export default function Register() {
+  const enabled =
+    process.env.REGISTRATION_ENABLED === "true" &&
+    !!process.env.DATABASE_URL &&
+    !!process.env.PRIVATE_DATA_KEY;
   return (
     <div className="page-shell py-12">
       <PageTitle
-        label="JOIN THE ARENA"
-        title="Choose how you play."
-        description="Browsing competitions, results and standings is open to everyone. Online registration is not accepting submissions yet."
+        label="YOUR NEXT CHAPTER"
+        title="Earn your place."
+        description="XGamer 2.0 • October 24, 2026. Sixty-four competitors. One road to the final."
       />
-      <p className="notice mb-7">
-        Registration is awaiting secure account setup and the two administrator
-        identities. No phone numbers or personal information are collected on
-        this page.
-      </p>
-      <div className="grid md:grid-cols-3 gap-5">
-        {[
-          [
-            Hash,
-            "Discord guest",
-            "Planned: enter with Discord identity and receive Discord updates. An administrator must approve your entry.",
-          ],
-          [
-            Phone,
-            "Phone / WhatsApp guest",
-            "Planned: submit your phone privately, then wait for manual administrator verification. WhatsApp updates are sent manually; no automatic SMS or WhatsApp verification.",
-          ],
-          [
-            ShieldCheck,
-            "Full account",
-            "Planned: manage your profile and entries. Guest upgrades will require proof of ownership and preserve the same participant record. Chat requires an account.",
-          ],
-        ].map(([Icon, title, description]) => {
-          const I = Icon as typeof Hash;
-          return (
-            <article className="panel p-6" key={String(title)}>
-              <I className="text-cyan-300 mb-5" />
-              <h2 className="font-bold text-xl">{String(title)}</h2>
-              <p className="text-slate-400 text-sm leading-relaxed mt-4">
-                {String(description)}
-              </p>
-              <span className="inline-block mt-6 text-xs text-amber-300">
-                AWAITING SETUP
-              </span>
-            </article>
-          );
-        })}
-      </div>
-      <div className="flex flex-wrap gap-4 mt-8">
-        <Link href="/competitions" className="button-primary">
-          Browse competitions
-        </Link>
-        <Link href="/status" className="button-secondary">
-          See feature status
-        </Link>
+      <div className="grid lg:grid-cols-[1fr_1.2fr] gap-10 mt-10">
+        <aside>
+          <div className="text-8xl font-black text-cyan-200">
+            64<span className="text-3xl text-slate-500"> / 08</span>
+          </div>
+          <h2 className="text-3xl mt-6">
+            The field is limited.
+            <br />
+            Your ambition isn’t.
+          </h2>
+          <p className="text-slate-400 leading-7 mt-5">
+            Play four different opponents in the league phase. Climb the unified
+            standings. Reach the top eight to qualify for the knockout rounds.
+          </p>
+          <p className="notice mt-8">
+            An organizer verifies your contact and game identity before
+            approval. Keep your player ID safe; it stays with your registration.
+          </p>
+        </aside>
+        <RegistrationForm enabled={enabled} />
       </div>
     </div>
   );

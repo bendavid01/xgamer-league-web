@@ -110,14 +110,23 @@ test("audit fails closed without write credentials", async () => {
 });
 test("registration does not accept or persist PII before setup", async () => {
   const { POST } = await import("../src/app/api/registrations/route");
-  const res = await POST();
+  const res = await POST(
+    new Request("https://example.test/api/registrations", { method: "POST" }),
+  );
   assert.equal(res.status, 503);
   assert.equal(res.headers.get("cache-control"), "no-store");
 });
 test("admin endpoints expose no controls without configured authorization", async () => {
   const { GET, POST } = await import("../src/app/api/admin/route");
   assert.equal((await GET()).status, 403);
-  assert.equal((await POST()).status, 403);
+  assert.equal(
+    (
+      await POST(
+        new Request("https://example.test/api/admin", { method: "POST" }),
+      )
+    ).status,
+    403,
+  );
 });
 
 test("audit rejects malformed nested documents without crashing", async () => {

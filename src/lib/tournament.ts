@@ -12,6 +12,67 @@ export type Result = {
   awayScore: number;
 };
 
+/** First N circle rounds: each player gets N unique opponents. */
+export function leaguePhase(entrants: Entrant[], opponents = 4): Fixture[] {
+  validate(entrants);
+  if (
+    entrants.length % 2 ||
+    !Number.isInteger(opponents) ||
+    opponents < 1 ||
+    opponents >= entrants.length
+  )
+    throw new Error("An even field and a valid opponent count are required.");
+  return roundRobin(entrants).filter((f) => f.round <= opponents);
+}
+export function qualifyLeaguePhase(
+  entrants: Entrant[],
+  results: Result[],
+  opponents = 4,
+  playoffWinners: string[] = [],
+) {
+  const expected = new Set(
+    leaguePhase(entrants, opponents).map((f) =>
+      [f.home, f.away].sort().join("|"),
+    ),
+  );
+  const played = results.map((r) => [r.home, r.away].sort().join("|"));
+  if (
+    played.length !== expected.size ||
+    new Set(played).size !== expected.size ||
+    played.some((k) => !expected.has(k))
+  )
+    throw new Error(
+      "Complete every scheduled league fixture before qualification.",
+    );
+  const ranked = standings(entrants, results);
+  if (ranked.length < 8) throw new Error("Eight qualifiers are required.");
+  const a = ranked[7],
+    b = ranked[8];
+  if (b && a.pts === b.pts && a.gd === b.gd && a.gf === b.gf) {
+    const tied = ranked.filter(
+      (p) => p.pts === a.pts && p.gd === a.gd && p.gf === a.gf,
+    );
+    const start = ranked.findIndex((p) => p.id === tied[0].id),
+      needed = 8 - start;
+    if (
+      playoffWinners.length !== needed ||
+      new Set(playoffWinners).size !== needed ||
+      playoffWinners.some((id) => !tied.some((p) => p.id === id))
+    )
+      throw new Error(
+        "The eighth-place tie requires confirmed playoff winners before qualification.",
+      );
+    return [
+      ...ranked.slice(0, start),
+      ...playoffWinners.map((id) => tied.find((p) => p.id === id)!),
+    ];
+  }
+  if (playoffWinners.length)
+    throw new Error(
+      "Playoff overrides are only allowed for a tied qualification cutoff.",
+    );
+  return ranked.slice(0, 8);
+}
 function validate(entrants: Entrant[]) {
   if (entrants.length < 2 || entrants.length > 64)
     throw new Error("Enter between 2 and 64 participants.");

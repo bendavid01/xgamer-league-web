@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts"
   },
   "dependencies": {
     "@sanity/client": "^7.0.0",
@@ -18,11 +19,15 @@
     "gsap": "^3.14.2",
     "lucide-react": "^1.59.0",
     "next": "16.4.2",
+    "next-auth": "^5.0.0-beta.32",
+    "postgres": "^3.4.9",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "tailwind-merge": "^2.3.0"
+    "tailwind-merge": "^2.3.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "@types/minimist": "^1.2.5",
     "@types/node": "^20.12.12",
     "@types/react": "^19.3.0",

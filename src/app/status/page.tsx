@@ -36,9 +36,9 @@ const features = [
     "Identity provider, private database, ownership checks, recovery and account-required chat.",
   ],
   [
-    "Two equal administrators",
-    "Awaiting identities",
-    "Exactly two verified identities; authorization on every private operation.",
+    "Control Center and two equal administrators",
+    "Built · access closed",
+    "Registration review, assigned coordinator operations, score revisions and audit trails. Activation awaits private storage and verified identities.",
   ],
   [
     "Discord integration",

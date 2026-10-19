@@ -1327,3 +1327,8 @@ nav[aria-label="Main navigation"] > .page-shell {
     transform: none;
   }
 }
+.control-input { display:block; width:100%; margin-top:8px; padding:12px 14px; border:1px solid #37505e; border-radius:10px; background:#0a1b28; color:#edfaff; }
+.control-input:focus-visible { outline:2px solid #67e8f9; outline-offset:3px; }
+.control-table { width:100%; text-align:left; border-collapse:collapse; font-size:14px; }
+.control-table th,.control-table td { padding:16px 12px; border-bottom:1px solid #29404e; }
+.control-table th { color:#9eb8c8; font-weight:500; }
