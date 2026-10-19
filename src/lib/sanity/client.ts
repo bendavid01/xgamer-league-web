@@ -1,9 +1,9 @@
-import { createClient } from "next-sanity";
+import { createClient } from "@sanity/client";
 
 // 1. Define the Client
 export const client = createClient({
-  projectId: "aqtsgm5o", // Your Project ID
-  dataset: "production",
+  projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || "aqtsgm5o",
+  dataset: process.env.NEXT_PUBLIC_SANITY_DATASET || "production",
   apiVersion: "2024-01-01",
   useCdn: false,
 });
@@ -31,7 +31,7 @@ export async function getLeagueData() {
   // 🛡️ Safety: Return empty arrays if data is null to prevent crashes
   return {
     teams: data?.teams || [],
-    matches: data?.matches || []
+    matches: data?.matches || [],
   };
 }
 

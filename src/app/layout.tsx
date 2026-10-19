@@ -1,37 +1,39 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
-import Navbar from "@/components/Navbar"; // ✅ The new Navbar
-
-const inter = Inter({ subsets: ["latin"] });
-
-// ✅ Keep your metadata
+import Navbar from "@/components/Navbar";
+import Link from "next/link";
 export const metadata: Metadata = {
-  title: "X-Gamer Pro League",
-  description: "Official eFootball Tournament Tracker",
+  metadataBase: new URL("https://xgamer-league-web.vercel.app"),
+  title: { default: "X-Gamer Pro League | 2.0", template: "%s | X-Gamer" },
+  description:
+    "The home of X-Gamer competitive eFootball. Competitions, fixtures, results and standings.",
 };
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-cyan-500/30 flex flex-col">
-          
-          {/* ✅ New Global Navigation */}
-          <Navbar /> 
-          
-          {/* Main Content */}
-          <main className="flex-grow">
+      <body>
+        <a className="skip-link" href="#content">
+          Skip to content
+        </a>
+        <div className="min-h-screen flex flex-col">
+          <Navbar />
+          <main id="content" className="flex-grow">
             {children}
           </main>
-
-          {/* Footer (Restored) */}
-          <footer className="border-t border-slate-800/50 bg-slate-950 py-6 mt-auto">
-            <div className="text-center text-slate-500 text-sm">
-              <p>&copy; 2026 X-Gamer League. Secure & Static PWA.</p>
+          <footer className="border-t border-slate-800 py-8">
+            <div className="page-shell flex flex-wrap justify-between gap-5 text-sm text-slate-500">
+              <p>© 2026 X-Gamer Pro League · Built for the game.</p>
+              <div className="flex gap-5">
+                <Link href="/rules">Rules</Link>
+                <Link href="/status">Feature status</Link>
+                <Link href="/admin">Organizers</Link>
+              </div>
             </div>
           </footer>
-
         </div>
       </body>
     </html>

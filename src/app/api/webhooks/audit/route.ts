@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "next-sanity";
+import { createClient } from "@sanity/client";
 import { isValidSignature, SIGNATURE_HEADER_NAME } from "@sanity/webhook";
+import { createHash } from "node:crypto";
 
 const auditClient = createClient({
-  projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID,
-  dataset: process.env.NEXT_PUBLIC_SANITY_DATASET,
+  projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || "aqtsgm5o",
+  dataset: process.env.NEXT_PUBLIC_SANITY_DATASET || "production",
   token: process.env.SANITY_API_WRITE_TOKEN,
   apiVersion: "2024-01-01",
   useCdn: false,
@@ -32,7 +33,8 @@ type AuditEvent = {
 
 const cleanId = (id?: string) => (id ? id.replace(/^drafts\./, "") : undefined);
 
-const buildRef = (id?: string) => (id ? { _type: "reference", _ref: id, _weak: true } : undefined);
+const buildRef = (id?: string) =>
+  id ? { _type: "reference", _ref: id, _weak: true } : undefined;
 
 /**
  * Deterministic single event resolver for MATCH documents.
@@ -42,7 +44,7 @@ const buildRef = (id?: string) => (id ? { _type: "reference", _ref: id, _weak: t
 function resolveMatchAuditEvent(
   previous: Record<string, unknown>,
   current: Record<string, unknown>,
-  operation: string
+  operation: string,
 ): AuditEvent | null {
   const prev = previous as {
     status?: string;
@@ -69,7 +71,12 @@ function resolveMatchAuditEvent(
 
   // 1) Hard delete operation (should not happen with soft delete, but handle for safety)
   if (operation === "delete") {
-    return { eventType: "MATCH_DELETED", title: "Match deleted", description: "Match removed", matchId };
+    return {
+      eventType: "MATCH_DELETED",
+      title: "Match deleted",
+      description: "Match removed",
+      matchId,
+    };
   }
 
   // 2) Create operation
@@ -84,7 +91,12 @@ function resolveMatchAuditEvent(
 
   // 3) Soft delete: deleted flipped from false/undefined to true
   if (curr?.deleted === true && prev?.deleted !== true) {
-    return { eventType: "MATCH_DELETED", title: "Match deleted", description: "Match soft-deleted", matchId };
+    return {
+      eventType: "MATCH_DELETED",
+      title: "Match deleted",
+      description: "Match soft-deleted",
+      matchId,
+    };
   }
 
   // 4) MATCH_COMPLETED absorbs score changes (checked before score change)
@@ -131,9 +143,14 @@ function resolveMatchAuditEvent(
 
   if (meaningfulFieldsChanged) {
     const changes: string[] = [];
-    if (prev?.status !== curr?.status) changes.push(`status: ${prev?.status ?? "n/a"} -> ${curr?.status ?? "n/a"}`);
-    if (prev?.group !== curr?.group) changes.push(`group: ${prev?.group ?? "n/a"} -> ${curr?.group ?? "n/a"}`);
-    if (prev?.stage !== curr?.stage) changes.push(`stage: ${prev?.stage ?? "n/a"} -> ${curr?.stage ?? "n/a"}`);
+    if (prev?.status !== curr?.status)
+      changes.push(
+        `status: ${prev?.status ?? "n/a"} -> ${curr?.status ?? "n/a"}`,
+      );
+    if (prev?.group !== curr?.group)
+      changes.push(`group: ${prev?.group ?? "n/a"} -> ${curr?.group ?? "n/a"}`);
+    if (prev?.stage !== curr?.stage)
+      changes.push(`stage: ${prev?.stage ?? "n/a"} -> ${curr?.stage ?? "n/a"}`);
     return {
       eventType: "MATCH_UPDATED",
       title: "Match updated",
@@ -152,7 +169,7 @@ function resolveMatchAuditEvent(
 function resolveTeamAuditEvent(
   previous: Record<string, unknown>,
   current: Record<string, unknown>,
-  operation: string
+  operation: string,
 ): AuditEvent | null {
   const prev = previous as { name?: string; group?: string; squad?: unknown[] };
   const curr = current as { name?: string; group?: string; squad?: unknown[] };
@@ -160,7 +177,12 @@ function resolveTeamAuditEvent(
   const teamId = cleanId((current?._id ?? previous?._id) as string);
 
   if (operation === "delete") {
-    return { eventType: "TEAM_DELETED", title: "Team deleted", description: "Team removed", teamId };
+    return {
+      eventType: "TEAM_DELETED",
+      title: "Team deleted",
+      description: "Team removed",
+      teamId,
+    };
   }
 
   if (operation === "create") {
@@ -173,11 +195,13 @@ function resolveTeamAuditEvent(
   }
 
   const changes: string[] = [];
-  if (prev?.name !== curr?.name) changes.push(`name: ${prev?.name ?? "n/a"} -> ${curr?.name ?? "n/a"}`);
-  if (prev?.group !== curr?.group) changes.push(`group: ${prev?.group ?? "n/a"} -> ${curr?.group ?? "n/a"}`);
+  if (prev?.name !== curr?.name)
+    changes.push(`name: ${prev?.name ?? "n/a"} -> ${curr?.name ?? "n/a"}`);
+  if (prev?.group !== curr?.group)
+    changes.push(`group: ${prev?.group ?? "n/a"} -> ${curr?.group ?? "n/a"}`);
   if (JSON.stringify(prev?.squad ?? []) !== JSON.stringify(curr?.squad ?? [])) {
     changes.push(
-      `squad updated (${(prev?.squad ?? []).length} -> ${(curr?.squad ?? []).length} players)`
+      `squad updated (${(prev?.squad ?? []).length} -> ${(curr?.squad ?? []).length} players)`,
     );
   }
 
@@ -202,13 +226,35 @@ function buildAuditId(eventType: string, entityId: string): string {
 
 export async function POST(req: NextRequest) {
   const signature = req.headers.get(SIGNATURE_HEADER_NAME) || "";
-  const bodyText = await req.text();
   const auth = req.headers.get("authorization");
 
   if (!SECRET || auth !== `Bearer ${SECRET}`) {
-    console.error("❌ Unauthorized webhook request (missing/invalid auth header)");
+    console.error(
+      "❌ Unauthorized webhook request (missing/invalid auth header)",
+    );
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
+
+  // Authenticate before reading untrusted input, and bound streamed bodies too.
+  if (!req.body)
+    return NextResponse.json({ message: "Invalid payload" }, { status: 400 });
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > 65536) {
+      await reader.cancel();
+      return NextResponse.json(
+        { message: "Payload too large" },
+        { status: 413 },
+      );
+    }
+    chunks.push(value);
+  }
+  const bodyText = Buffer.concat(chunks).toString("utf8");
 
   const isSignatureValid = await isValidSignature(bodyText, signature, SECRET);
   if (!isSignatureValid) {
@@ -216,14 +262,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = JSON.parse(bodyText);
-  const current = (payload.current ?? payload.after ?? payload) as Record<string, unknown>;
-  const previous = (payload.previous ?? payload.before ?? {}) as Record<string, unknown>;
+  let payload;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload))
+    return NextResponse.json({ message: "Invalid payload" }, { status: 400 });
+  const current = (payload.current ?? payload.after ?? payload) as Record<
+    string,
+    unknown
+  >;
+  const previous = (payload.previous ?? payload.before ?? {}) as Record<
+    string,
+    unknown
+  >;
 
   // Ignore draft documents / draft transitions — only process published docs
-  const docId = (current?._id ?? previous?._id ?? payload?._id ?? payload?.projectDocumentId) as
-    | string
-    | undefined;
+  const docId = (current?._id ??
+    previous?._id ??
+    payload?._id ??
+    payload?.projectDocumentId) as string | undefined;
   if (typeof docId === "string" && docId.startsWith("drafts.")) {
     return NextResponse.json({ message: "Ignored (draft)" }, { status: 200 });
   }
@@ -234,12 +294,15 @@ export async function POST(req: NextRequest) {
   }
 
   const operation =
-    payload.transition ?? payload.operation ?? (previous?._id && !current?._id ? "delete" : "update");
+    payload.transition ??
+    payload.operation ??
+    (previous?._id && !current?._id ? "delete" : "update");
 
   const isDelete =
     operation === "delete" ||
     payload._deleted === true ||
-    (current === null || (current as { _deleted?: boolean })?._deleted === true);
+    current === null ||
+    (current as { _deleted?: boolean })?._deleted === true;
 
   let event: AuditEvent | null = null;
 
@@ -247,13 +310,13 @@ export async function POST(req: NextRequest) {
     event = resolveMatchAuditEvent(
       isDelete ? (previous ?? {}) : previous,
       isDelete ? {} : current,
-      isDelete ? "delete" : operation
+      isDelete ? "delete" : operation,
     );
   } else if (type === "team") {
     event = resolveTeamAuditEvent(
       isDelete ? (previous ?? {}) : previous,
       isDelete ? {} : current,
-      isDelete ? "delete" : operation
+      isDelete ? "delete" : operation,
     );
   }
 
@@ -262,19 +325,41 @@ export async function POST(req: NextRequest) {
   }
 
   const entityId = event.matchId ?? event.teamId ?? "unknown";
-  const auditId = buildAuditId(event.eventType, entityId);
+  if (
+    entityId === "unknown" ||
+    typeof entityId !== "string" ||
+    !/^[a-zA-Z0-9_.-]{1,128}$/.test(entityId)
+  )
+    return NextResponse.json({ message: "Invalid entity" }, { status: 400 });
+  const auditId = `${buildAuditId(event.eventType, entityId)}.${createHash("sha256").update(bodyText).digest("hex").slice(0, 24)}`;
 
   // WHY: createOrReplace + deterministic ID = idempotent; retries don't create duplicates
-  await auditClient.createOrReplace({
-    _id: auditId,
-    _type: "auditLog",
-    eventType: event.eventType,
-    title: event.title,
-    description: event.description,
-    match: buildRef(event.matchId),
-    team: buildRef(event.teamId),
-    timestamp: new Date().toISOString(),
-  });
+  if (!process.env.SANITY_API_WRITE_TOKEN)
+    return NextResponse.json(
+      { message: "Audit storage unavailable" },
+      { status: 503 },
+    );
+  try {
+    await auditClient.createIfNotExists({
+      _id: auditId,
+      _type: "auditLog",
+      eventType: event.eventType,
+      title: event.title,
+      description: event.description,
+      match: buildRef(event.matchId),
+      team: buildRef(event.teamId),
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    console.error("Audit storage write failed");
+    return NextResponse.json(
+      { message: "Audit storage unavailable" },
+      { status: 503 },
+    );
+  }
 
-  return NextResponse.json({ success: true, logged: event.eventType }, { status: 200 });
+  return NextResponse.json(
+    { success: true, logged: event.eventType },
+    { status: 200 },
+  );
 }

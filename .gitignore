@@ -1,28 +1,19 @@
-# Dependencies
-/node_modules
-/.pnp
+node_modules/
+.next/
+.env*
+!.env.example
+.vercel/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+.pnp
 .pnp.js
-
-# Testing
-/coverage
-
-# Next.js
-/.next/
-/out/
-
-# Production
-/build
-
-# Misc
+coverage/
+out/
+build/
 .DS_Store
 *.pem
-
-# Debug
 npm-debug.log*
 yarn-debug.log*
 ts-debug.log*
-.vercel
-
-# Local Environment Variables (SECRETS)
-.env*.local
-.env

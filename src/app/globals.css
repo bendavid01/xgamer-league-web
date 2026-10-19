@@ -1,36 +1,173 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 2, 6, 23; 
-  --background-end-rgb: 2, 6, 23;
+  color-scheme: dark;
 }
-
 body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-start-rgb));
-  /* Cyberpunk texture */
-  background-image: radial-gradient(circle at 50% 50%, #1e293b 0%, transparent 50%);
-  background-size: 100vw 100vh;
-  background-attachment: fixed;
-  min-height: 100vh;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+  color: #e2e8f0;
+  background: #020617;
+  font-family: Arial, Helvetica, sans-serif;
   overflow-x: hidden;
 }
-
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
+@layer components {
+  .page-shell {
+    @apply max-w-7xl mx-auto px-5 sm:px-8;
+  }
+  .panel {
+    @apply rounded-2xl border border-slate-800 bg-slate-900/50;
+  }
+  .eyebrow {
+    @apply text-xs font-bold tracking-[.2em] text-cyan-300 mb-5;
+  }
+  .page-title {
+    @apply text-4xl md:text-6xl font-black tracking-tight text-white;
+  }
+  .button-primary {
+    @apply inline-flex items-center justify-center gap-3 rounded-lg bg-cyan-300 text-slate-950 font-bold px-5 py-3 transition-colors hover:bg-cyan-200;
+  }
+  .button-secondary {
+    @apply inline-flex items-center justify-center gap-3 rounded-lg border border-slate-700 font-semibold px-5 py-3 hover:border-cyan-300 transition-colors;
+  }
+  .notice {
+    @apply rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-slate-400 leading-relaxed;
+  }
 }
-::-webkit-scrollbar-track {
-  background: #020617; 
+.hero-title {
+  font-size: clamp(3.2rem, 7vw, 6.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.065em;
+  font-weight: 900;
+  color: white;
 }
-::-webkit-scrollbar-thumb {
-  background: #334155; 
-  border-radius: 4px;
+.arena-art {
+  position: relative;
+  min-height: 360px;
+  isolation: isolate;
+  border: 1px solid #164e63;
+  border-radius: 24px;
+  background: radial-gradient(ellipse at 50% 40%, #0e4c60 0%, #081525 60%);
+  overflow: hidden;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #a855f7; 
+.pitch {
+  position: absolute;
+  inset: 45px;
+  border: 1px solid #22d3ee55;
+  transform: perspective(500px) rotateX(30deg) rotateZ(-14deg);
+  border-radius: 5px;
+}
+.pitch:after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 1px solid #22d3ee55;
+}
+.pitch-center {
+  position: absolute;
+  inset: 30% 35%;
+  border: 1px solid #22d3ee55;
+  border-radius: 50%;
+}
+.pitch-goal {
+  position: absolute;
+  top: 25%;
+  bottom: 25%;
+  width: 15%;
+  border: 1px solid #22d3ee55;
+}
+.pitch-goal.left {
+  left: 0;
+}
+.pitch-goal.right {
+  right: 0;
+}
+.trophy-mark {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #67e8f9;
+  filter: drop-shadow(0 0 30px #22d3ee66);
+}
+.art-label {
+  position: absolute;
+  bottom: 24px;
+  left: 24px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: #67e8f9;
+}
+.art-number {
+  position: absolute;
+  right: 20px;
+  bottom: 4px;
+  font-size: 92px;
+  font-weight: 900;
+  color: #ffffff08;
+}
+.route-card {
+  display: block;
+  transition:
+    transform 0.2s,
+    border-color 0.2s;
+}
+.route-card:hover {
+  transform: translateY(-3px);
+  border-color: #22d3ee88;
+}
+a,
+button,
+input,
+textarea,
+select {
+  outline-offset: 5px;
+}
+:focus-visible {
+  outline: 2px solid #67e8f9;
+}
+input,
+textarea,
+select {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 12px;
+  width: 100%;
+  color: #e2e8f0;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: 16px;
+  background: #67e8f9;
+  color: #020617;
+  padding: 12px;
+  z-index: 100;
+}
+.skip-link:focus {
+  top: 10px;
+}
+@media (max-width: 640px) {
+  .arena-art {
+    min-height: 260px;
+  }
+  .pitch {
+    inset: 30px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
 }

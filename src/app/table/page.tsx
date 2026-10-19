@@ -1,16 +1,38 @@
-import { getLeagueData } from "@/lib/sanity/client";
+import { getLeague, validCompleted } from "@/lib/league";
+import { PageTitle, Unavailable } from "@/components/LeagueUI";
 import LeaderboardClient from "@/components/LeaderboardClient";
 import AutoRefresh from "@/components/AutoRefresh";
-
-export const revalidate = 10; 
-
-export default async function TablePage() {
-  const { teams, matches } = await getLeagueData();
-
+export const revalidate = 30;
+export default async function Table() {
+  const { teams, matches, available } = await getLeague();
+  const results = validCompleted(matches)
+    .filter((m) => m.stage === "Group Stage")
+    .map((m) => ({
+      home: m.home!._id,
+      away: m.away!._id,
+      homeScore: m.homeScore!,
+      awayScore: m.awayScore!,
+    }));
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="page-shell py-12">
+      <PageTitle
+        label="LEAGUE STANDINGS"
+        title="Earn your place."
+        description="The existing season’s group tables, calculated from confirmed group-stage results."
+      />
       <AutoRefresh />
-      <LeaderboardClient teams={teams} matches={matches} />
+      {available ? (
+        <LeaderboardClient
+          teams={teams.map((t) => ({
+            id: t._id,
+            name: t.name,
+            group: t.group,
+          }))}
+          matches={results}
+        />
+      ) : (
+        <Unavailable />
+      )}
     </div>
   );
 }
