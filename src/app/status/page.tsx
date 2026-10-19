@@ -37,7 +37,7 @@ const features = [
   ],
   [
     "Control Center and two equal administrators",
-    "Built · access closed",
+    "Built Â· access closed",
     "Registration review, assigned coordinator operations, score revisions and audit trails. Activation awaits private storage and verified identities.",
   ],
   [
