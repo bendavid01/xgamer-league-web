@@ -1,94 +1,119 @@
 "use client";
 import Link from "next/link";
-import {
-  motion,
-  useReducedMotion,
-  useMotionValue,
-  useSpring,
-} from "framer-motion";
-import { ArrowUpRight } from "lucide-react";
+import Image from "next/image";
+import { ArrowDown, ArrowUpRight } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { XMark } from "@/components/Brand";
+import arena from "../../public/images/arena.jpg";
 export default function HomeIntro() {
-  const reduced = useReducedMotion();
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-  const rotateX = useSpring(y, { stiffness: 140, damping: 24 });
-  const rotateY = useSpring(x, { stiffness: 140, damping: 24 });
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    let dispose = () => {};
+    let cancelled = false;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    async function start() {
+      if (media.matches || !window.matchMedia("(min-width: 768px)").matches)
+        return;
+      const [{ gsap }, { ScrollTrigger }] = await Promise.all([
+        import("gsap"),
+        import("gsap/ScrollTrigger"),
+      ]);
+      if (cancelled || media.matches) return;
+      gsap.registerPlugin(ScrollTrigger);
+      const context = gsap.context(() => {
+        const mm = gsap.matchMedia();
+        mm.add(
+          "(min-width: 768px) and (prefers-reduced-motion: no-preference)",
+          () => {
+            gsap.to(".hero-photo", {
+              yPercent: 12,
+              ease: "none",
+              scrollTrigger: {
+                trigger: root.current,
+                start: "top top",
+                end: "bottom top",
+                scrub: 0.7,
+              },
+            });
+            gsap.to(".hero-orbit", {
+              rotation: 65,
+              ease: "none",
+              scrollTrigger: {
+                trigger: root.current,
+                start: "top top",
+                end: "bottom top",
+                scrub: 0.8,
+              },
+            });
+          },
+        );
+        return () => mm.revert();
+      }, root);
+      dispose = () => context.revert();
+    }
+    void start();
+    const changed = () => {
+      dispose();
+      if (!media.matches) void start();
+    };
+    media.addEventListener("change", changed);
+    return () => {
+      cancelled = true;
+      dispose();
+      media.removeEventListener("change", changed);
+    };
+  }, []);
   return (
-    <section className="hero relative grid lg:grid-cols-[1.2fr_1fr] items-center gap-12 py-14 md:py-24">
-      <div className="hero-copy">
-        <p className="eyebrow">
-          X-GAMER PRO LEAGUE <span className="text-slate-500">/ 2.0</span>
-        </p>
-        <h1 className="hero-title">
-          YOUR GAME.
-          <br />
-          YOUR <span className="text-cyan-300">LEGACY.</span>
-        </h1>
-        <p className="text-slate-400 max-w-lg text-lg leading-relaxed mt-6">
-          One community. Every rivalry. The home of competitive eFootball, from
-          the first fixture to the final whistle.
-        </p>
-        <div className="flex flex-wrap gap-3 mt-8">
-          <Link className="button-primary" href="/competitions">
-            Explore competitions <ArrowUpRight size={18} />
-          </Link>
-          <Link className="button-secondary" href="/matches">
-            Match center
-          </Link>
-          <Link className="insight-link" href="/community">
-            Find your community →
-          </Link>
-        </div>
-        <p className="text-xs text-slate-500 mt-6">
-          Public scores and standings · No account needed
-        </p>
+    <section className="cinema-hero" ref={root}>
+      <Image
+        src={arena}
+        alt="Floodlit football stadium beneath an evening sky"
+        fill
+        preload
+        sizes="100vw"
+        className="hero-photo"
+        placeholder="blur"
+      />
+      <div className="hero-shade" />
+      <div className="hero-orbit" aria-hidden="true">
+        <span />
+        <XMark className="orbit-mark" />
       </div>
-      <motion.div
-        initial={false}
-        style={{ rotateX, rotateY, transformPerspective: 900 }}
-        onPointerMove={(e) => {
-          if (reduced || e.pointerType !== "mouse") return;
-          const rect = e.currentTarget.getBoundingClientRect();
-          x.set(((e.clientX - rect.left) / rect.width - 0.5) * 8);
-          y.set(-((e.clientY - rect.top) / rect.height - 0.5) * 8);
-        }}
-        onPointerLeave={() => {
-          x.set(0);
-          y.set(0);
-        }}
-        className="arena-art"
-        aria-hidden="true"
-      >
-        <div className="pitch">
-          <div className="pitch-center" />
-          {[
-            [18, 30],
-            [28, 65],
-            [43, 20],
-            [52, 55],
-            [72, 35],
-            [80, 70],
-          ].map(([left, top], i) => (
-            <span
-              className="pitch-player"
-              key={i}
-              style={{
-                left: `${left}%`,
-                top: `${top}%`,
-                animationDelay: `${i * 90}ms`,
-              }}
-            />
-          ))}
-          <div className="pitch-goal left" />
-          <div className="pitch-goal right" />
+      <div className="hero-topline">
+        <span>XGAMER PRO LEAGUE / 2.0</span>
+        <span>eFOOTBALL. REAL RIVALRIES.</span>
+      </div>
+      <div className="hero-copy">
+        <h1 className="cinema-title">
+          <span>Your game.</span>
+          <span>Your next</span>
+          <span>
+            <i>great</i> rivalry.
+          </span>
+        </h1>
+      </div>
+      <div className="hero-bottom">
+        <a className="scroll-cue" href="#the-league">
+          <ArrowDown size={19} />
+          <span>SCROLL TO THE ARENA</span>
+        </a>
+        <div className="hero-description">
+          <p>
+            For the ones who feel every goal.
+            <br />A competitive eFootball community.
+            <br />A place to leave your mark.
+          </p>
+          <Link className="button-primary" href="/competitions">
+            Find your competition <ArrowUpRight size={18} />
+          </Link>
+          <Link className="hero-sub-link" href="/matches">
+            Match center ↗
+          </Link>
         </div>
-        <div className="trophy-mark">
-          <XMark className="arena-emblem" />
-        </div>
-        <span className="art-label">THE NEXT CHAPTER</span>
-        <span className="art-number">02</span>
-      </motion.div>
+      </div>
+      <span className="hero-corner" aria-hidden="true">
+        +
+      </span>
     </section>
   );
 }
