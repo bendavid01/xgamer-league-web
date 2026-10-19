@@ -9,6 +9,7 @@ export default function RegistrationForm({ enabled }: { enabled: boolean }) {
       className="panel p-6 md:p-10 space-y-6"
       onSubmit={async (event) => {
         event.preventDefault();
+        if (!enabled || busy) return;
         setBusy(true);
         setMessage("");
         const form = event.currentTarget;
@@ -39,20 +40,13 @@ export default function RegistrationForm({ enabled }: { enabled: boolean }) {
         }
       }}
     >
-      <div className="flex justify-between border-b border-slate-700 pb-5">
-        <span className="eyebrow !mb-0">OCTOBER CUP / 2026</span>
-        <span className="text-cyan-200 text-sm">64 PLAYERS</span>
-      </div>
       {!enabled && (
         <p className="notice">
           Applications are awaiting secure setup. No details can be submitted
           yet.
         </p>
       )}
-      <fieldset
-        disabled={!enabled || busy}
-        className="space-y-5 disabled:opacity-60"
-      >
+      <fieldset disabled={busy} className="space-y-5 disabled:opacity-60">
         <label className="block">
           Gaming name
           <input
@@ -112,23 +106,25 @@ export default function RegistrationForm({ enabled }: { enabled: boolean }) {
           </label>
         </div>
         <label className="flex gap-3 text-sm leading-relaxed">
-          <input required name="consent" type="checkbox" className="mt-1" />I
-          consent to XGamer privately storing my game ID and contact details to
-          verify my entry and send tournament updates through my chosen channel.
-          My gaming name and results may appear publicly. I can ask an organizer
-          to withdraw my entry or remove my private data.
+          <input
+            required
+            name="consent"
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0"
+          />
+          I agree to private storage of my game ID and contact for entry
+          verification and updates. My gaming name and results may be public. I
+          can ask an organizer to remove my private data.
         </label>
-        <button className="button-primary w-full" disabled={busy}>
-          {busy ? "Submitting…" : "Apply for the October Cup ↗"}
+        <button className="button-primary w-full" disabled={!enabled || busy}>
+          {busy ? "Submitting…" : "Submit application ↗"}
         </button>
       </fieldset>
       <p role="status" className="text-cyan-200 break-words">
         {message}
       </p>
       <p className="text-xs text-slate-400">
-        Four unique opponents. One unified table. Top eight advance.
-        Applications beyond the first 64 enter the waitlist; submitting does not
-        confirm approval.
+        Submitting an application does not confirm approval.
       </p>
     </form>
   );

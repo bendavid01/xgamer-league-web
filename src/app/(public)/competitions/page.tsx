@@ -40,30 +40,6 @@ export default async function Competitions() {
           </div>
         </article>
       )}
-      <section className="mt-10 grid md:grid-cols-2 gap-5">
-        <div className="notice">
-          <h2 className="font-bold text-white mb-2">
-            Plan the next competition
-          </h2>
-          <p>
-            Try round robin, seeded knockout or a league phase with knockout
-            qualification. Plans stay in your browser and do not change the live
-            season.
-          </p>
-          <Link className="inline-block text-cyan-300 mt-4" href="/planner">
-            Open tournament planner →
-          </Link>
-        </div>
-        <div className="notice">
-          <h2 className="font-bold text-white mb-2">eFootball finals</h2>
-          <p>
-            Finals are played externally in eFootball. Organizers arrange the
-            room, review score evidence and publish confirmed results through
-            the existing studio. Automated game synchronization is not
-            available.
-          </p>
-        </div>
-      </section>
     </div>
   );
 }

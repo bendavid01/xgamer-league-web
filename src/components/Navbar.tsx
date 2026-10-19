@@ -6,12 +6,8 @@ import { usePathname } from "next/navigation";
 import { Menu, X, ArrowUpRight } from "lucide-react";
 import Brand from "@/components/Brand";
 const items = [
-  ["Competitions", "/competitions"],
-  ["Matches", "/matches"],
-  ["Standings", "/table"],
-  ["Players", "/players"],
+  ["Announcements", "/#announcements"],
   ["Community", "/community"],
-  ["Rules", "/rules"],
 ];
 export default function Navbar() {
   const toggle = useRef<HTMLButtonElement>(null);

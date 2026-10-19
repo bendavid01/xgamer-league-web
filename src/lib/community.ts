@@ -2,7 +2,7 @@
 export const communityLinks = [
   {
     name: "Discord",
-    href: "https://discord.gg/wdkvd2ByH",
+    href: "https://discord.gg/hYUaqdjaSc",
     category: "Connect",
     mark: "DC",
     description:
