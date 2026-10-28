@@ -1,55 +1,85 @@
 import Link from "next/link";
-import { getPublicAnnouncements } from "@/lib/announcements";
+import { ArrowUpRight } from "lucide-react";
+import TournamentHero from "@/components/TournamentHero";
+import {
+  AnnouncementList,
+  FormatBlock,
+  RuleCards,
+} from "@/components/TournamentContent";
+import { getAnnouncements, getFeaturedTournament } from "@/lib/content";
 import { communityLinks } from "@/lib/community";
-export const dynamic = "force-dynamic";
+
+export const revalidate = 30;
+
+const league = [
+  ["Fixtures & results", "/matches", "Every published match and score."],
+  ["Standings", "/table", "Points, goal difference and the race to qualify."],
+  ["Players", "/players", "League records and match history."],
+] as const;
+
 export default async function Home() {
-  const announcements = await getPublicAnnouncements();
+  const [{ tournament }, announcements] = await Promise.all([
+    getFeaturedTournament(),
+    getAnnouncements(5),
+  ]);
+  const [discord, whatsapp] = communityLinks;
   return (
-    <div className="page-shell py-12 space-y-12">
-      <section className="max-w-2xl">
-        <p className="eyebrow">XGAMER / 2.0</p>
-        <h1 className="text-5xl md:text-7xl font-bold">
-          Your next rivalry starts here.
-        </h1>
-        <p className="text-slate-300 my-6">
-          Join our eFootball community. Apply to play and follow the latest
-          league updates.
-        </p>
-        <div className="flex flex-wrap gap-4">
-          <Link href="/register" className="button-primary">
-            Register to play ↗
-          </Link>
-          <a
-            href={communityLinks[0].href}
-            className="button-secondary"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Join Discord ↗
-          </a>
-        </div>
-      </section>
-      <section aria-labelledby="announcements">
-        <h2 id="announcements" className="text-3xl mb-5">
-          Announcements
-        </h2>
-        {announcements === null ? (
-          <p>Updates are temporarily unavailable. Check back shortly.</p>
-        ) : announcements.length ? (
-          <div className="space-y-4">
-            {announcements.map((a) => (
-              <article key={a.id} className="panel p-6">
-                <h3 className="text-xl font-semibold">{a.title}</h3>
-                <p className="mt-3 whitespace-pre-wrap break-words">
-                  {a.message}
-                </p>
-              </article>
+    <>
+      <TournamentHero tournament={tournament} />
+      <div className="page-shell py-10 space-y-12">
+        {tournament && <FormatBlock tournament={tournament} />}
+        {tournament && <RuleCards cards={tournament.matchRules} />}
+        <AnnouncementList announcements={announcements} />
+
+        <section aria-labelledby="league-title">
+          <h2 id="league-title" className="text-2xl sm:text-3xl font-bold mb-4">
+            League
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {league.map(([title, href, text]) => (
+              <Link key={href} href={href} className="panel route-card p-5">
+                <span className="flex justify-between gap-3 font-bold text-lg">
+                  {title}
+                  <ArrowUpRight
+                    className="text-cyan-300 shrink-0"
+                    size={20}
+                    aria-hidden="true"
+                  />
+                </span>
+                <span className="block mt-2 text-sm text-slate-400">
+                  {text}
+                </span>
+              </Link>
             ))}
           </div>
-        ) : (
-          <p>League updates will appear here when published.</p>
-        )}
-      </section>
-    </div>
+        </section>
+
+        <section aria-labelledby="community-title" className="panel p-5 sm:p-7">
+          <h2 id="community-title" className="text-2xl font-bold">
+            Join the community
+          </h2>
+          <p className="text-slate-400 mt-2">
+            Match arrangements and organizer updates happen here.
+          </p>
+          <div className="mt-5 grid gap-3 sm:flex">
+            {[discord, whatsapp].map((c) => (
+              <a
+                key={c.name}
+                href={c.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="button-secondary"
+              >
+                {c.name} <ArrowUpRight size={16} aria-hidden="true" />
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            ))}
+            <Link href="/community" className="button-secondary">
+              All channels
+            </Link>
+          </div>
+        </section>
+      </div>
+    </>
   );
 }

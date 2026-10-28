@@ -6,6 +6,7 @@ type Application = {
   player_id: string;
   gaming_name: string;
   contact: string;
+  discordHandle?: string | null;
   efootballId: string;
   status: string;
   revision: number;
@@ -215,7 +216,14 @@ export default function ControlCenter() {
                               {a.efootballId}
                             </p>
                           </td>
-                          <td>{a.contact}</td>
+                          <td>
+                            {a.contact}
+                            {a.discordHandle && (
+                              <p className="text-xs text-slate-400">
+                                Discord: {a.discordHandle}
+                              </p>
+                            )}
+                          </td>
                           <td>{a.status}</td>
                           <td>
                             <div className="flex flex-wrap gap-2">

@@ -70,7 +70,7 @@ export async function snapshot(tournament: string) {
     sql = db();
   const [t] = await sql`select * from tournament where id=${tournament}`;
   const applications =
-    await sql`select a.*,p.gaming_name,p.preference,p.contact_cipher,p.efootball_cipher,p.id as player_id from application a join player p on p.id=a.player_id where a.tournament_id=${tournament} and a.deleted_at is null order by a.created_at`;
+    await sql`select a.*,p.gaming_name,p.preference,p.contact_cipher,p.efootball_cipher,p.discord_handle_cipher,p.id as player_id from application a join player p on p.id=a.player_id where a.tournament_id=${tournament} and a.deleted_at is null order by a.created_at`;
   const fixtures =
     await sql`select * from fixture where tournament_id=${tournament} order by stage,round,slot`;
   const entrants = applications
@@ -98,8 +98,12 @@ export async function snapshot(tournament: string) {
             ...a,
             contact: decrypt(a.contact_cipher),
             efootballId: decrypt(a.efootball_cipher),
+            discordHandle: a.discord_handle_cipher
+              ? decrypt(a.discord_handle_cipher)
+              : null,
             contact_cipher: undefined,
             efootball_cipher: undefined,
+            discord_handle_cipher: undefined,
           }
         : {
             id: a.id,

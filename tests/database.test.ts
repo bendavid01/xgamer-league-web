@@ -6,12 +6,16 @@ import { PGlite } from "@electric-sql/pglite";
 test("PostgreSQL migration: 70 applications, 64-slot cap, recovery and immutable audits", async () => {
   const pg = new PGlite();
   try {
-    await pg.exec(
-      await readFile(
-        new URL("../migrations/001_control_center.sql", import.meta.url),
-        "utf8",
-      ),
-    );
+    for (const file of [
+      "001_control_center.sql",
+      "002_registration_contacts.sql",
+    ])
+      await pg.exec(
+        await readFile(
+          new URL(`../migrations/${file}`, import.meta.url),
+          "utf8",
+        ),
+      );
     const ids: string[] = [];
     for (let i = 0; i < 70; i++) {
       const p = await pg.query<{ id: string }>(
@@ -71,6 +75,31 @@ test("PostgreSQL migration: 70 applications, 64-slot cap, recovery and immutable
           `insert into coordinator(discord_id,operations,tournaments) values('12345678901234567',array['delete'],array['xgamer-2026-10'])`,
         ),
       /check/,
+    );
+    // Optional Discord contact: unique when present, and hash/cipher must be paired.
+    await pg.query(
+      `update player set discord_handle_hash='d1',discord_handle_cipher='x' where gaming_name='Player 1'`,
+    );
+    await assert.rejects(
+      () =>
+        pg.query(
+          `update player set discord_handle_hash='d1',discord_handle_cipher='x' where gaming_name='Player 2'`,
+        ),
+      /unique/,
+    );
+    await assert.rejects(
+      () =>
+        pg.query(
+          `update player set discord_handle_hash='d3' where gaming_name='Player 3'`,
+        ),
+      /check|player_discord_handle_pair/,
+    );
+    // Re-running the migration is harmless.
+    await pg.exec(
+      await readFile(
+        new URL("../migrations/002_registration_contacts.sql", import.meta.url),
+        "utf8",
+      ),
     );
     // Restore the engine's binary backup into an independent database and inspect actual records.
     const backup = await pg.dumpDataDir();
