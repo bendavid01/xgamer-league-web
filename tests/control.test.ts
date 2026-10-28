@@ -118,12 +118,11 @@ test("contact ciphertext authenticates contents and uses random nonces", () => {
   assert.equal(fingerprint("abc"), fingerprint("abc"));
   assert.notEqual(fingerprint("abc"), fingerprint("def"));
 });
-test("registration requires explicit consent and validates normalized contact", () => {
+test("registration requires consent, WhatsApp, and normalizes optional Discord", () => {
   const input = {
     gamingName: "Player One",
     efootballId: "abcd1234",
-    preference: "whatsapp",
-    contact: "+919876543210",
+    whatsapp: "+919876543210",
     consent: true,
     website: "",
     tournament: "xgamer-2026-10",
@@ -132,9 +131,33 @@ test("registration requires explicit consent and validates normalized contact", 
   for (const invalid of [
     { consent: false },
     { website: "spam" },
-    { contact: "9876543210" },
+    { whatsapp: "" },
+    { whatsapp: "12345" },
+    { whatsapp: "+91 98765 4321x" },
+    { discord: "bad handle!" },
     { gamingName: "<script>" },
   ])
     assert(!registrationInput.safeParse({ ...input, ...invalid }).success);
-  assert.equal(registrationInput.parse(input).efootballId, "ABCD1234");
+  const parsed = registrationInput.parse(input);
+  assert.equal(parsed.efootballId, "ABCD1234");
+  assert.equal(parsed.discord, undefined);
+  for (const local of [
+    "9876543210",
+    "98765 43210",
+    "+91-98765-43210",
+    "919876543210",
+    "00919876543210",
+  ])
+    assert.equal(
+      registrationInput.parse({ ...input, whatsapp: local }).whatsapp,
+      "+919876543210",
+    );
+  assert.equal(
+    registrationInput.parse({ ...input, discord: "@Player.One" }).discord,
+    "player.one",
+  );
+  assert.equal(
+    registrationInput.parse({ ...input, discord: "" }).discord,
+    undefined,
+  );
 });

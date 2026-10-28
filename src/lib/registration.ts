@@ -2,39 +2,49 @@ import { z } from "zod";
 import { db } from "./db";
 import { encrypt, fingerprint } from "./private-data";
 import { HttpError } from "./api";
-export const registrationInput = z
-  .object({
-    gamingName: z
-      .string()
-      .trim()
-      .min(2)
-      .max(40)
-      .regex(/^[\p{L}\p{N} _.'-]+$/u),
-    efootballId: z
-      .string()
-      .trim()
-      .min(6)
-      .max(32)
-      .regex(/^[a-zA-Z0-9-]+$/)
-      .transform((x) => x.toUpperCase()),
-    preference: z.enum(["whatsapp", "discord"]),
-    contact: z.string().trim().max(80),
-    consent: z.literal(true),
-    website: z.string().max(0),
-    tournament: z.literal("xgamer-2026-10"),
-  })
-  .superRefine((v, ctx) => {
-    if (
-      !(
-        v.preference === "whatsapp" ? /^\+[1-9]\d{7,14}$/ : /^[a-z0-9_.]{2,32}$/
-      ).test(v.contact)
-    )
-      ctx.addIssue({
-        code: "custom",
-        path: ["contact"],
-        message: "Use an international phone number or a Discord username.",
-      });
-  });
+/** Accepts common Indian formats ("98765 43210", "+91-98765-43210") and returns E.164. */
+export function normalizeWhatsApp(value: string) {
+  const compact = value.replace(/[\s().-]/g, "");
+  if (/^[6-9]\d{9}$/.test(compact)) return `+91${compact}`;
+  if (/^91[6-9]\d{9}$/.test(compact)) return `+${compact}`;
+  if (/^00[1-9]\d{7,14}$/.test(compact)) return `+${compact.slice(2)}`;
+  return compact;
+}
+export const registrationInput = z.object({
+  gamingName: z
+    .string()
+    .trim()
+    .min(2)
+    .max(40)
+    .regex(/^[\p{L}\p{N} _.'-]+$/u),
+  efootballId: z
+    .string()
+    .trim()
+    .min(6)
+    .max(32)
+    .regex(/^[a-zA-Z0-9-]+$/)
+    .transform((x) => x.toUpperCase()),
+  whatsapp: z
+    .string()
+    .max(30)
+    .transform(normalizeWhatsApp)
+    .pipe(z.string().regex(/^\+[1-9]\d{7,14}$/)),
+  discord: z
+    .string()
+    .trim()
+    .max(40)
+    .optional()
+    .transform((x) => x?.replace(/^@/, "").toLowerCase() || undefined)
+    .pipe(
+      z
+        .string()
+        .regex(/^[a-z0-9_.]{2,32}$/)
+        .optional(),
+    ),
+  consent: z.literal(true),
+  website: z.string().max(0),
+  tournament: z.literal("xgamer-2026-10"),
+});
 export async function register(
   input: z.infer<typeof registrationInput>,
   ip: string,
@@ -52,17 +62,18 @@ export async function register(
     if (!t || t.status !== "open")
       throw new HttpError(409, "Applications are currently closed.");
     const ehash = fingerprint("ef:" + input.efootballId),
-      chash = fingerprint(input.preference + ":" + input.contact.toLowerCase());
+      chash = fingerprint("whatsapp:" + input.whatsapp),
+      dhash = input.discord ? fingerprint("discord:" + input.discord) : null;
     const [existing] =
-      await tx`select id from player where efootball_hash=${ehash} or contact_hash=${chash}`;
+      await tx`select id from player where efootball_hash=${ehash} or contact_hash=${chash} or (${dhash}::text is not null and discord_handle_hash=${dhash})`;
     if (existing)
       throw new HttpError(
         409,
         "Unable to create this application. Contact an organizer to recover an existing registration.",
       );
     const [p] =
-      await tx`insert into player(gaming_name,efootball_hash,efootball_cipher,contact_hash,contact_cipher,preference,consent_version)
-      values(${input.gamingName},${ehash},${encrypt(input.efootballId)},${chash},${encrypt(input.contact)},${input.preference},'2026-10-v1') returning id`;
+      await tx`insert into player(gaming_name,efootball_hash,efootball_cipher,contact_hash,contact_cipher,preference,discord_handle_hash,discord_handle_cipher,consent_version)
+      values(${input.gamingName},${ehash},${encrypt(input.efootballId)},${chash},${encrypt(input.whatsapp)},'whatsapp',${dhash},${input.discord ? encrypt(input.discord) : null},'2026-11-v2') returning id`;
     const [count] =
       await tx`select count(*)::int as n from application where tournament_id=${t.id} and status in ('pending','approved') and deleted_at is null`;
     const status = count.n < t.capacity ? "pending" : "waitlisted";

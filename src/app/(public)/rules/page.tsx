@@ -1,9 +1,11 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { PageTitle } from "@/components/LeagueUI";
+import { formatDate, getRulesContent } from "@/lib/content";
+export const revalidate = 30;
 export const metadata: Metadata = {
   title: "Rules & fair play",
-  description: "XGamer standings guide and draft rules pending admin approval.",
+  description: "XGamer competition rules, fair play, standings guide and FAQ.",
 };
 const proposals = [
   [
@@ -31,7 +33,12 @@ const proposals = [
     "Send the fixture details and evidence privately to the organizers. Disputed results remain pending review. Reporting deadlines, appeals and sanctions require admin approval.",
   ],
 ];
-export default function Rules() {
+export default async function Rules() {
+  const { page, faqs } = await getRulesContent();
+  const official = !!page;
+  const sections = page
+    ? page.sections.map((x) => [x.heading, x.points] as const)
+    : proposals.map(([t, d]) => [t, [d]] as const);
   return (
     <div className="page-shell py-12">
       <PageTitle
@@ -39,15 +46,27 @@ export default function Rules() {
         title="PLAY FAIR. LEAVE A LEGACY."
         description="Understand the table, prepare for kickoff and help shape a better arena."
       />
-      <div className="draft-banner mb-8">
-        <span className="draft-tag">DRAFT / PENDING ADMIN APPROVAL</span>
-        <p className="mt-3 leading-relaxed">
-          The proposed rules below are not an official published rulebook.
-          Organizers must approve match settings, deadlines, sanctions and
-          appeals before they apply. Confirm the rules for your competition
-          before playing.
+      {official ? (
+        <p className="notice mb-8">
+          {page.intro ??
+            "These are the official rules for XGamer competitions."}
+          {page.lastReviewed && (
+            <span className="block mt-2 text-xs uppercase tracking-widest text-cyan-300">
+              Rules last updated {formatDate(page.lastReviewed)}
+            </span>
+          )}
         </p>
-      </div>
+      ) : (
+        <div className="draft-banner mb-8">
+          <span className="draft-tag">DRAFT / PENDING ADMIN APPROVAL</span>
+          <p className="mt-3 leading-relaxed">
+            The proposed rules below are not an official published rulebook.
+            Organizers must approve match settings, deadlines, sanctions and
+            appeals before they apply. Confirm the rules for your competition
+            before playing.
+          </p>
+        </div>
+      )}
       <div className="grid lg:grid-cols-[.7fr_1.3fr] gap-8 items-start">
         <aside className="panel p-6 lg:sticky lg:top-28">
           <p className="eyebrow">HOW THE SITE WORKS TODAY</p>
@@ -67,8 +86,6 @@ export default function Rules() {
           <p className="text-slate-400 leading-relaxed">
             The public group table sorts by points, goal difference, then goals
             scored. Equal records require an organizer qualification decision.
-            This describes the existing calculation; it does not approve the
-            draft rules.
           </p>
           <Link className="insight-link mt-5" href="/table">
             View the standings →
@@ -81,32 +98,66 @@ export default function Rules() {
           </p>
         </aside>
         <section aria-label="Proposed rules">
-          <p className="eyebrow">PROPOSED RULES / EXPAND TO READ</p>
+          <p className="eyebrow">
+            {official ? "OFFICIAL RULES" : "PROPOSED RULES"} / EXPAND TO READ
+          </p>
           <div className="space-y-3">
-            {proposals.map(([title, description], index) => (
+            {sections.map(([title, points], index) => (
               <details
                 key={title}
                 className="rule-detail panel"
                 open={index === 0}
               >
                 <summary>
-                  <span className="rule-number">0{index + 1}</span>
+                  <span className="rule-number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
                   <span>{title}</span>
                   <span className="rule-plus" aria-hidden="true">
                     +
                   </span>
                 </summary>
                 <div className="rule-body">
-                  <span className="text-xs text-amber-200 uppercase tracking-widest">
-                    Draft · pending admin approval
-                  </span>
-                  <p className="mt-3 text-slate-300 leading-relaxed">
-                    {description}
-                  </p>
+                  {!official && (
+                    <span className="text-xs text-amber-200 uppercase tracking-widest">
+                      Draft · pending admin approval
+                    </span>
+                  )}
+                  <ul className="mt-3 space-y-2 text-slate-300 leading-relaxed">
+                    {points.map((point) => (
+                      <li key={point} className="whitespace-pre-wrap">
+                        {point}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </details>
             ))}
           </div>
+          {faqs.length > 0 && (
+            <section aria-labelledby="faq-title" className="mt-10">
+              <h2 id="faq-title" className="text-2xl font-bold mb-4">
+                Frequently asked questions
+              </h2>
+              <div className="space-y-3">
+                {faqs.map((f) => (
+                  <details key={f._id} className="rule-detail panel">
+                    <summary>
+                      <span>{f.question}</span>
+                      <span className="rule-plus" aria-hidden="true">
+                        +
+                      </span>
+                    </summary>
+                    <div className="rule-body">
+                      <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">
+                        {f.answer}
+                      </p>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
+          )}
           <div className="notice mt-6">
             <h2 className="text-white font-bold mb-2">
               Need a ruling before you play?
