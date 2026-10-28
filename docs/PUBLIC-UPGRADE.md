@@ -10,6 +10,8 @@ Review branch only. No production deploy, data change or migration has been appl
 - **Navigation:** Fixtures, Standings, Players and Rules restored (Phase 1 had removed them). The mobile menu is a fully opaque (#0b1118) full-screen panel at z-index 50, with a 44×44px close button, Escape to close, focus trap, scroll lock and grouped links (Tournament / League / Community). "Register" only appears while registration is open.
 - **Registration:** WhatsApp number required (Indian numbers accepted without +91) and Discord username optional. The form only accepts entries when OM is configured **and** the published tournament status is "Registration open". The success screen shows the player ID. Migration `002_registration_contacts.sql` adds an optional, separately encrypted Discord contact. `npm run db:migrate` now applies every numbered migration in order.
 
+- **Hero animation:** an animated format diagram (every slot → qualifiers → knockout bracket → champion), drawn from the published player count, format and Top 4/8, so it redraws when the tournament changes. A live countdown shows time until registration closes (or kick-off). One light sweep and a short button pulse run once on load. All motion is CSS, plays once, and is disabled for reduced-motion users (they see the finished diagram).
+
 ## Not included (by design)
 - No live slot counter. "13 / 64 confirmed" will come from OM once the database is live; it is never typed into Sanity.
 - No Room check-in or Submit results links until those features exist.

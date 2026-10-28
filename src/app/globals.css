@@ -1507,3 +1507,165 @@ nav[aria-label="Main navigation"] > .page-shell {
   font-size: 0.8rem;
   color: #94a3b8;
 }
+
+/* ── Hero motion: format funnel + countdown ───────────────────────────── */
+.hero-layout {
+  display: grid;
+  gap: 1.75rem;
+}
+@media (min-width: 1024px) {
+  .hero-layout {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    align-items: center;
+    gap: 3rem;
+  }
+}
+.hero-copy-col { min-width: 0; }
+.hero-visual-col {
+  min-width: 0;
+  display: grid;
+  gap: 1rem;
+}
+/* One slow light sweep across the pitch grid on load. */
+.hero-sweep {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.hero-sweep::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  left: -40%;
+  background: linear-gradient(90deg, transparent, rgba(103, 232, 249, 0.07), transparent);
+  animation: hero-sweep 2.4s 0.2s ease-out 1 both;
+}
+@keyframes hero-sweep { to { left: 110%; } }
+
+.funnel {
+  position: relative;
+  margin: 0;
+  padding: 0.75rem 0.75rem 2rem;
+  border: 1px solid #1e293b;
+  border-radius: 1rem;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.85), rgba(8, 13, 18, 0.9));
+}
+.funnel-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.pip {
+  fill: #334155;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pip-in 0.35s calc(var(--i) * 12ms) ease-out both;
+}
+.pip-picked {
+  animation:
+    pip-in 0.35s calc(var(--i) * 12ms) ease-out both,
+    pip-pick 0.4s 1s ease-out forwards;
+}
+@keyframes pip-in { from { opacity: 0; transform: scale(0.2); } }
+@keyframes pip-pick { to { fill: #67e8f9; } }
+.funnel-line,
+.bracket-line {
+  fill: none;
+  stroke-width: 1.4;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.funnel-line {
+  stroke: rgba(103, 232, 249, 0.55);
+  animation: draw 0.6s calc(1.15s + var(--i) * 40ms) ease-in-out forwards;
+}
+.bracket-line {
+  stroke: #a78bfa;
+  animation: draw 0.45s calc(1.7s + var(--r) * 0.35s) ease-in-out forwards;
+}
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.q-node {
+  fill: #080d12;
+  stroke: #67e8f9;
+  stroke-width: 1.5;
+  opacity: 0;
+  animation: fade-in 0.3s calc(1.5s + var(--i) * 40ms) forwards;
+}
+.champ-glow {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: champ 0.9s 3s ease-out forwards;
+}
+.champ-star {
+  fill: #ede9fe;
+  opacity: 0;
+  animation: fade-in 0.4s 3s forwards;
+}
+@keyframes fade-in { to { opacity: 1; } }
+@keyframes champ {
+  0% { opacity: 0; transform: scale(0.3); }
+  60% { opacity: 1; transform: scale(1.35); }
+  100% { opacity: 0.8; transform: scale(1); }
+}
+.funnel-labels {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.6rem;
+  height: 1rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+.funnel-labels span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.funnel-labels .funnel-champ {
+  transform: translateX(-85%);
+  color: #c4b5fd;
+  font-weight: 700;
+}
+
+.countdown {
+  border: 1px solid #164e63;
+  border-radius: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(8, 47, 73, 0.25);
+}
+.countdown-label { font-size: 0.85rem; color: #a5f3fc; }
+.countdown-digits {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+.countdown-cell { display: flex; flex-direction: column; }
+.countdown-cell strong {
+  font-family: var(--font-display), Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  font-size: clamp(2rem, 9vw, 2.75rem);
+  line-height: 1;
+  color: #fff;
+}
+.countdown-cell small { font-size: 0.72rem; color: #94a3b8; }
+
+.hero-cta {
+  box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.5);
+  animation: cta-ping 1.6s 3.4s ease-out 2;
+}
+@keyframes cta-ping { to { box-shadow: 0 0 0 14px rgba(103, 232, 249, 0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-sweep::after { display: none; }
+  .pip, .pip-picked, .funnel-line, .bracket-line, .q-node,
+  .champ-glow, .champ-star, .hero-cta {
+    animation: none !important;
+  }
+  .pip-picked { fill: #67e8f9; }
+  .funnel-line, .bracket-line { stroke-dashoffset: 0; }
+  .q-node, .champ-star { opacity: 1; }
+  .champ-glow { opacity: 0.8; }
+}
