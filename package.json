@@ -4,12 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "tsx scripts/build-migrate.mts && next build",
     "start": "next start",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts"
+    "db:migrate": "tsx --env-file=.env.local scripts/migrate.mts"
   },
   "dependencies": {
     "@sanity/client": "^7.0.0",

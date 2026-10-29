@@ -42,3 +42,6 @@ do $$ begin
     alter table qualification add constraint qualification_rank_range check (rank between 1 and 32);
   end if;
 end $$;
+
+-- Neutral default name; organizers rename the tournament in OM.
+update tournament set name = 'XGamer Pro League' where name = 'XGamer 2.0 • October Cup';
