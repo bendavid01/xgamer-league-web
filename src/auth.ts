@@ -3,6 +3,9 @@ import Discord from "next-auth/providers/discord";
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Discord({
+      // WHY: Discord now returns an RFC 9207 `iss` parameter on the OAuth callback.
+      // Auth.js rejects it unless the provider declares Discord's issuer.
+      issuer: "https://discord.com",
       authorization: { params: { scope: "identify" } },
       checks: ["pkce", "state"],
     }),
