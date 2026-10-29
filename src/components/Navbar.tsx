@@ -6,13 +6,16 @@ import { usePathname } from "next/navigation";
 import { Menu, X, ArrowUpRight } from "lucide-react";
 import Brand from "@/components/Brand";
 const items = [
-  ["Competitions", "/competitions"],
-  ["Matches", "/matches"],
-  ["Standings", "/table"],
-  ["Players", "/players"],
+  ["Tournaments", "/tournaments"],
+  ["Champions", "/#champions"],
   ["Community", "/community"],
   ["Rules", "/rules"],
 ];
+/** Player profiles live under Tournaments. */
+const isCurrent = (pathname: string, href: string) =>
+  href === "/tournaments"
+    ? pathname === href || pathname.startsWith("/players")
+    : pathname === href;
 export default function Navbar({
   liveUrl = null,
 }: {
@@ -44,9 +47,9 @@ export default function Navbar({
         <div className="hidden lg:flex gap-6">
           {items.map(([name, href]) => (
             <Link
-              aria-current={pathname === href ? "page" : undefined}
+              aria-current={isCurrent(pathname, href) ? "page" : undefined}
               className={
-                pathname === href
+                isCurrent(pathname, href)
                   ? "text-cyan-300 text-sm"
                   : "text-slate-400 text-sm hover:text-white"
               }
@@ -102,7 +105,9 @@ export default function Navbar({
                     key={href}
                     href={href}
                     onClick={() => setOpen(false)}
-                    aria-current={pathname === href ? "page" : undefined}
+                    aria-current={
+                      isCurrent(pathname, href) ? "page" : undefined
+                    }
                     className="p-3 rounded-lg hover:bg-slate-900"
                   >
                     {name}

@@ -27,6 +27,8 @@ let register: typeof import("../src/lib/registration").register;
 let openTournaments: typeof import("../src/lib/registration").openTournaments;
 let getTournament: typeof import("../src/lib/tournaments").getTournament;
 let listTournaments: typeof import("../src/lib/tournaments").listTournaments;
+let getChampions: typeof import("../src/lib/tournaments").getChampions;
+let getProfile: typeof import("../src/lib/profile").getProfile;
 const admin = {
   id: "759756138437804042",
   role: "admin" as const,
@@ -37,7 +39,9 @@ before(async () => {
   if (!url) return;
   ({ run } = await import("../src/lib/control"));
   ({ register, openTournaments } = await import("../src/lib/registration"));
-  ({ getTournament, listTournaments } = await import("../src/lib/tournaments"));
+  ({ getTournament, listTournaments, getChampions } =
+    await import("../src/lib/tournaments"));
+  ({ getProfile } = await import("../src/lib/profile"));
   sql = (await import("../src/lib/db")).db();
   await sql.unsafe("drop schema public cascade; create schema public;");
   const dir = new URL("../migrations/", import.meta.url);
@@ -72,9 +76,15 @@ async function configure(t: string, patch: Record<string, unknown>) {
     action: "configure",
     tournament: t,
     revision: row.revision,
-    name: row.name,
-    format: row.format,
-    knockout: row.knockout,
+    name: row.competition ?? row.name,
+    season: row.season,
+    published: row.published,
+    format:
+      row.format === "knockout"
+        ? "knockout"
+        : row.knockout
+          ? "league_knockout"
+          : "league",
     qualifiers: row.qualifiers,
     legs: row.legs,
     perPlayer: row.opponents,
@@ -95,18 +105,22 @@ test(
       action: "create",
       name: "November Cup",
       format: "league",
+      season: null,
+      published: false,
     })) as { id: string };
     const night = (await cmd({
       action: "create",
       name: "Knockout Night",
       format: "knockout",
+      season: null,
+      published: false,
     })) as { id: string };
     assert.match(cup.id, /^november-cup-[0-9a-f]{4}$/);
     assert.equal((await tour(cup.id)).status, "draft");
 
     await configure(cup.id, {
       legs: 2,
-      knockout: true,
+      format: "league_knockout",
       qualifiers: 4,
       entryFee: 0,
       prize: "₹5,000",
@@ -191,7 +205,7 @@ test(
     await configure(cup.id, {
       name: "XGamer November Cup",
       legs: 2,
-      knockout: true,
+      format: "league_knockout",
       qualifiers: 4,
     }); // rename is fine
     // eFootball IDs can be added after fixtures exist.
@@ -211,7 +225,7 @@ test(
       "no phone numbers or eFootball IDs in public data",
     );
     assert.deepEqual(
-      (await listTournaments())!.active.map((t) => t.name).sort(),
+      (await listTournaments())!.live.map((t) => t.name).sort(),
       ["Knockout Night", "XGamer November Cup"],
     );
 
@@ -315,6 +329,8 @@ test("matches-per-player and odd fields", { skip }, async () => {
     action: "create",
     name: "Odd League",
     format: "league",
+    season: null,
+    published: true,
   })) as { id: string };
   await configure(t.id, { perPlayer: 4 });
   await cmd({ action: "registration", tournament: t.id, open: true });
@@ -337,3 +353,180 @@ test("matches-per-player and odd fields", { skip }, async () => {
     for (const p of [m.home, m.away]) games.set(p, (games.get(p) ?? 0) + 1);
   assert([...games.values()].every((n) => n === 4));
 });
+
+test(
+  "seasons, publish, run again, final positions, delete & restore, career profile",
+  { skip },
+  async () => {
+    const s1 = (await cmd({
+      action: "create",
+      name: "Pro League",
+      format: "league",
+      season: 1,
+      published: false,
+    })) as { id: string };
+    await assert.rejects(
+      () =>
+        cmd({
+          action: "create",
+          name: "pro league",
+          format: "league",
+          season: 1,
+          published: false,
+        }),
+      /already has a Season 1/,
+    );
+    // Unpublished: not on the website, and nobody can register.
+    assert(
+      !JSON.stringify(await listTournaments()).includes(s1.id),
+      "unpublished tournaments stay private",
+    );
+    await configure(s1.id, { published: true });
+    assert.equal(
+      (await listTournaments())!.upcoming.find((t) => t.id === s1.id)!.label,
+      "Pro League · Season 1",
+    );
+    await cmd({ action: "registration", tournament: s1.id, open: true });
+    for (let i = 40; i < 44; i++) await join(s1.id, i, `10.4.${i}.1`);
+    const all = await apps(s1.id);
+    await cmd({
+      action: "review",
+      tournament: s1.id,
+      status: "approved",
+      verified: true,
+      items: all.map(({ id, revision }) => ({ id, revision })),
+    });
+    await cmd({ action: "registration", tournament: s1.id, open: false });
+    await cmd({ action: "generate", tournament: s1.id, shuffle: false });
+    const order = (await apps(s1.id)).map((a) => a.player_id); // P40..P43 by name
+    const f = await sql`select * from fixture where tournament_id=${s1.id}`;
+    for (const m of f)
+      await cmd({
+        action: "score",
+        tournament: s1.id,
+        id: m.id,
+        revision: m.revision,
+        homeScore: order.indexOf(m.home) < order.indexOf(m.away) ? 3 : 1,
+        awayScore: order.indexOf(m.home) < order.indexOf(m.away) ? 1 : 3,
+      });
+    await cmd({ action: "complete", tournament: s1.id });
+    // League only: the podium comes from the table automatically.
+    const podium =
+      await sql`select place,player_id from podium where tournament_id=${s1.id} order by place`;
+    assert.deepEqual(
+      podium.map((p) => p.player_id),
+      order.slice(0, 3),
+    );
+    const champs = await getChampions();
+    const c = champs.find((x) => x.id === s1.id)!;
+    assert.equal(c.places[0].name, "P40");
+    assert.equal(c.label, "Pro League · Season 1");
+
+    // Run again as Season 2: same settings, season number editable.
+    await assert.rejects(
+      () =>
+        cmd({
+          action: "rerun",
+          tournament: s1.id,
+          name: "Pro League",
+          season: 1,
+          published: false,
+        }),
+      /already has a Season 1/,
+    );
+    const s2 = (await cmd({
+      action: "rerun",
+      tournament: s1.id,
+      name: "Pro League",
+      season: 2,
+      published: true,
+    })) as { id: string };
+    const row = await tour(s2.id);
+    assert.equal(row.season, 2);
+    assert.equal(row.status, "draft");
+    assert.equal(row.legs, (await tour(s1.id)).legs);
+
+    // A one-off cup run again becomes Season 1, the new one Season 2.
+    const night = (
+      await sql`select id from tournament where name='Knockout Night'`
+    )[0].id;
+    const k2 = (await cmd({
+      action: "rerun",
+      tournament: night,
+      name: "Knockout Night",
+      season: 2,
+      published: false,
+    })) as { id: string };
+    assert.equal((await tour(night)).season, 1);
+    assert.equal((await tour(k2.id)).format, "knockout");
+
+    // Knockout: final positions entered by an admin.
+    const nightApps = await apps(night);
+    await cmd({
+      action: "podium",
+      tournament: night,
+      places: [nightApps[2].player_id, nightApps[0].player_id, null],
+    });
+    await assert.rejects(
+      () =>
+        cmd({
+          action: "podium",
+          tournament: night,
+          places: [nightApps[0].player_id, nightApps[0].player_id, null],
+        }),
+      /one place/,
+    );
+
+    // Career profile by permanent ID; no private data.
+    const winner = (
+      await sql`select public_no from player where gaming_name='P40'`
+    )[0].public_no;
+    const profile = (await getProfile(
+      `XG-${String(winner).padStart(4, "0")}`,
+    ))!;
+    assert.equal(profile.trophies.gold, 1);
+    assert.equal(profile.totals.matches, 3);
+    assert.equal(profile.totals.won, 3);
+    assert.equal(profile.totals.best, 1);
+    assert.equal(profile.career[0].podium, 1);
+    assert.equal(profile.form.join(""), "WWW");
+    assert(!JSON.stringify(profile).includes("+91"));
+
+    // Delete (type the name), hidden everywhere, then restore.
+    await assert.rejects(
+      () =>
+        cmd({
+          action: "delete_tournament",
+          tournament: s2.id,
+          confirm: "nope",
+        }),
+      /exactly/,
+    );
+    await assert.rejects(
+      () =>
+        run(
+          { id: "123456789012345678", role: "coordinator" },
+          {
+            action: "delete_tournament",
+            tournament: s2.id,
+            confirm: "Pro League · Season 2",
+          },
+        ),
+      /Only admins/,
+    );
+    await cmd({
+      action: "delete_tournament",
+      tournament: s2.id,
+      confirm: "pro league · season 2",
+    });
+    assert(!JSON.stringify(await listTournaments()).includes(s2.id));
+    await cmd({ action: "restore_tournament", tournament: s2.id });
+    assert.equal((await tour(s2.id)).deleted_at, null);
+    const log =
+      await sql`select summary from audit_event where tournament_id=${s2.id} order by id`;
+    assert.deepEqual(log.map((l) => l.summary).slice(-2), [
+      "Deleted tournament",
+      "Restored tournament",
+    ]);
+  },
+);

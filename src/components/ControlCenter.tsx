@@ -1,7 +1,14 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import {
+  FORMAT_CHOICES,
+  FORMAT_LABEL,
+  formatChoice,
+  tournamentLabel,
+  type FormatChoice,
+} from "@/lib/labels";
 
 /* ─────────────────────────── Types ─────────────────────────── */
 
@@ -14,6 +21,9 @@ type Status = "draft" | "open" | "locked" | "league" | "knockout" | "completed";
 type TournamentRow = {
   id: string;
   name: string;
+  competition: string | null;
+  season: number | null;
+  published: boolean;
   status: Status;
   format: "league" | "knockout";
   knockout: boolean;
@@ -23,6 +33,13 @@ type TournamentRow = {
 type Home = {
   user: User;
   tournaments: TournamentRow[];
+  deleted: {
+    id: string;
+    name: string;
+    competition: string | null;
+    season: number | null;
+    deleted_at: string;
+  }[];
   coordinators: { discord_id: string; operations: string[]; active: boolean }[];
   audit: AuditRow[];
 };
@@ -64,6 +81,9 @@ type Workspace = {
   tournament: {
     id: string;
     name: string;
+    competition: string | null;
+    season: number | null;
+    published: boolean;
     status: Status;
     revision: number;
     format: "league" | "knockout";
@@ -90,6 +110,8 @@ type Workspace = {
     lost: number;
   }[];
   qualified: string[];
+  podium: (string | null)[];
+  photo: number | null;
   announcements: { id: string; title: string; message: string }[];
 };
 type Act = (value: Record<string, unknown>, done?: string) => Promise<boolean>;
@@ -127,8 +149,24 @@ const formatLabel = (t: {
   qualifiers?: number;
 }) =>
   t.format === "knockout"
-    ? "Knockout only"
-    : `League${t.legs === 2 ? " (home & away)" : ""}${t.knockout ? ` + Top ${t.qualifiers ?? ""} knockout` : ""}`;
+    ? FORMAT_LABEL.knockout
+    : `${t.knockout ? `League (Top ${t.qualifiers ?? ""}) + Knockout (eFootball app)` : "League"}${t.legs === 2 ? " · home & away" : ""}`;
+
+/** Competitions that run in seasons, with the season numbers already used. */
+type Competitions = Map<string, { name: string; seasons: number[] }>;
+const competitionsOf = (rows: TournamentRow[]): Competitions => {
+  const out: Competitions = new Map();
+  for (const t of rows)
+    if (t.competition && t.season) {
+      const key = t.competition.toLowerCase();
+      const c = out.get(key) ?? { name: t.competition, seasons: [] };
+      c.seasons.push(t.season);
+      out.set(key, c);
+    }
+  return out;
+};
+const nextSeason = (c?: { seasons: number[] }) =>
+  c?.seasons.length ? Math.max(...c.seasons) + 1 : 1;
 const waLink = (phone: string) => `https://wa.me/${phone.replace(/\D/g, "")}`;
 
 /* ─────────────────────────── Root ─────────────────────────── */
@@ -209,7 +247,12 @@ export default function ControlCenter() {
       });
       const result = await r.json();
       if (!r.ok) throw new Error(result.error);
-      if (value.action === "create" && result.id) {
+      if (value.action === "delete_tournament") {
+        await navigate(null);
+      } else if (
+        (value.action === "create" || value.action === "rerun") &&
+        result.id
+      ) {
         await navigate(result.id);
       } else {
         await Promise.all([load(null), open ? load(open) : Promise.resolve()]);
@@ -270,6 +313,8 @@ export default function ControlCenter() {
               data={work}
               act={act}
               back={() => void navigate(null)}
+              competitions={competitionsOf(homeData?.tournaments ?? [])}
+              reload={() => load(open)}
             />
           ) : (
             !error && <p className="notice">Opening tournament…</p>
@@ -347,62 +392,11 @@ function HomeView({
             )}
           </div>
           {adding && (
-            <form
-              className="om-card mb-6"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const f = new FormData(e.currentTarget);
-                const ok = await act(
-                  {
-                    action: "create",
-                    name: f.get("name"),
-                    format: f.get("format"),
-                  },
-                  "Tournament created. Fill in the details in Set up.",
-                );
-                if (ok) setAdding(false);
-              }}
-            >
-              <h3 className="text-lg font-bold">New tournament</h3>
-              <label className="block mt-4">
-                Tournament name
-                <input
-                  name="name"
-                  required
-                  minLength={2}
-                  maxLength={80}
-                  className="control-input"
-                  placeholder="XGamer November Cup"
-                  autoFocus
-                />
-              </label>
-              <div className="mt-4">
-                <p className="mb-2">Format</p>
-                <div className="flex flex-wrap gap-3">
-                  <Choice
-                    name="format"
-                    value="league"
-                    label="League"
-                    defaultChecked
-                  />
-                  <Choice
-                    name="format"
-                    value="knockout"
-                    label="Knockout only (played in eFootball app)"
-                  />
-                </div>
-              </div>
-              <div className="om-footer">
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={() => setAdding(false)}
-                >
-                  Cancel
-                </button>
-                <button className="button-primary">Apply</button>
-              </div>
-            </form>
+            <NewTournament
+              competitions={competitionsOf(data.tournaments)}
+              act={act}
+              cancel={() => setAdding(false)}
+            />
           )}
           {data.tournaments.length ? (
             <ul className="om-tournaments">
@@ -413,13 +407,20 @@ function HomeView({
                     onClick={() => openTournament(t.id)}
                   >
                     <span className="min-w-0">
-                      <strong>{t.name}</strong>
+                      <strong>{tournamentLabel(t)}</strong>
                       <span className="block text-sm text-slate-400">
                         {formatLabel(t)}
                       </span>
                     </span>
-                    <span className={`status-pill status-${t.status}`}>
-                      {PHASE[t.status]}
+                    <span className="flex flex-wrap justify-end gap-2">
+                      {!t.published && (
+                        <span className="status-pill om-hidden">
+                          Not on website
+                        </span>
+                      )}
+                      <span className={`status-pill status-${t.status}`}>
+                        {PHASE[t.status]}
+                      </span>
                     </span>
                   </button>
                 </li>
@@ -430,6 +431,40 @@ function HomeView({
               No tournaments yet. Press Add to create the first one.
             </p>
           )}
+          {admin && data.deleted.length > 0 && (
+            <details className="om-card mt-6">
+              <summary className="cursor-pointer">
+                Deleted tournaments ({data.deleted.length})
+              </summary>
+              <ul className="mt-3 space-y-2">
+                {data.deleted.map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex flex-wrap items-center justify-between gap-3"
+                  >
+                    <span>
+                      {tournamentLabel(d)}{" "}
+                      <span className="text-xs text-slate-500">
+                        deleted{" "}
+                        {new Date(d.deleted_at).toLocaleDateString("en-IN")}
+                      </span>
+                    </span>
+                    <button
+                      className="button-secondary om-small"
+                      onClick={() =>
+                        void act(
+                          { action: "restore_tournament", tournament: d.id },
+                          `${tournamentLabel(d)} restored.`,
+                        )
+                      }
+                    >
+                      <RotateCcw size={14} aria-hidden="true" /> Restore
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </section>
       )}
       {tab === "coordinators" && admin && (
@@ -437,6 +472,254 @@ function HomeView({
       )}
       {tab === "log" && admin && <ActivityLog rows={data.audit} />}
     </>
+  );
+}
+
+/**
+ * New tournament, or "Run again as next season" (from = the finished tournament).
+ * One-off cups have just a name; seasons belong to a competition.
+ */
+function NewTournament({
+  competitions,
+  act,
+  cancel,
+  from,
+}: {
+  competitions: Competitions;
+  act: Act;
+  cancel: () => void;
+  from?: Workspace["tournament"];
+}) {
+  const fromKey = from?.competition?.toLowerCase();
+  const [type, setType] = useState<"oneoff" | "season">(
+    from ? "season" : "oneoff",
+  );
+  const [pick, setPick] = useState<string>(
+    fromKey ?? (competitions.size ? [...competitions.keys()][0] : "__new"),
+  );
+  const [newName, setNewName] = useState(from && !fromKey ? from.name : "");
+  const chosen = pick === "__new" ? undefined : competitions.get(pick);
+  // A one-off cup run again becomes Season 1, so the new one is Season 2.
+  const suggestion = from && !fromKey ? 2 : nextSeason(chosen);
+  const [season, setSeason] = useState(String(suggestion));
+  const [format, setFormat] = useState<FormatChoice>(
+    from ? formatChoice(from) : "league",
+  );
+  const [published, setPublished] = useState(false);
+  const competitionName = chosen?.name ?? newName.trim();
+  const n = Number(season);
+  const clash =
+    type === "season" &&
+    Number.isInteger(n) &&
+    (chosen?.seasons.includes(n) ||
+      [...competitions.values()].some(
+        (c) =>
+          c.name.toLowerCase() === newName.trim().toLowerCase() &&
+          c.seasons.includes(n),
+      ));
+  return (
+    <form
+      className="om-card mb-6 space-y-5"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        const ok = from
+          ? await act(
+              {
+                action: "rerun",
+                tournament: from.id,
+                name: competitionName,
+                season: n,
+                published,
+              },
+              `${competitionName} · Season ${n} created with the same settings. Open registration in Set up when ready.`,
+            )
+          : await act(
+              {
+                action: "create",
+                name: type === "season" ? competitionName : f.get("name"),
+                season: type === "season" ? n : null,
+                format,
+                published,
+              },
+              "Tournament created. Fill in the details in Set up.",
+            );
+        if (ok) cancel();
+      }}
+    >
+      <h3 className="text-lg font-bold">
+        {from ? "Run again as next season" : "New tournament"}
+      </h3>
+      {from && (
+        <p className="text-sm text-slate-400 -mt-3">
+          Copies format, matches, qualifiers, entry fee, prize and description
+          from {tournamentLabel(from)}. Players register again.
+          {!fromKey &&
+            ` ${from.name} becomes Season ${Math.max(1, n - 1) || 1}.`}
+        </p>
+      )}
+      {!from && (
+        <div>
+          <p className="mb-2">Type</p>
+          <div className="flex flex-wrap gap-3">
+            <Choice
+              name="type"
+              value="oneoff"
+              label="One-off cup"
+              checked={type === "oneoff"}
+              onChange={() => setType("oneoff")}
+            />
+            <Choice
+              name="type"
+              value="season"
+              label="New season of a competition"
+              checked={type === "season"}
+              onChange={() => setType("season")}
+            />
+          </div>
+        </div>
+      )}
+      {type === "oneoff" ? (
+        <label className="block">
+          Tournament name
+          <input
+            name="name"
+            required
+            minLength={2}
+            maxLength={80}
+            className="control-input"
+            placeholder="XGamer Diwali Cup"
+            autoFocus
+          />
+        </label>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2">
+          <label className="block">
+            Competition
+            <select
+              className="control-input"
+              value={pick}
+              onChange={(e) => {
+                setPick(e.target.value);
+                setSeason(String(nextSeason(competitions.get(e.target.value))));
+              }}
+            >
+              {[...competitions].map(([key, c]) => (
+                <option key={key} value={key}>
+                  {c.name}
+                </option>
+              ))}
+              <option value="__new">+ New competition</option>
+            </select>
+          </label>
+          {pick === "__new" && (
+            <label className="block">
+              New competition name
+              <input
+                required
+                minLength={2}
+                maxLength={80}
+                className="control-input"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="XGamer Pro League"
+              />
+            </label>
+          )}
+          <label className="block">
+            Season number
+            <input
+              required
+              type="number"
+              min={1}
+              max={999}
+              inputMode="numeric"
+              className="control-input"
+              value={season}
+              onChange={(e) => setSeason(e.target.value)}
+              aria-describedby="season-help"
+            />
+            <span id="season-help" className="block text-xs mt-1">
+              {clash ? (
+                <span className="text-amber-200">
+                  Season {n} already exists — pick another number.
+                </span>
+              ) : (
+                <span className="text-slate-500">
+                  Suggested: Season {suggestion}
+                </span>
+              )}
+            </span>
+          </label>
+        </div>
+      )}
+      {!from && (
+        <FormatChoices value={format} onChange={setFormat} name="newFormat" />
+      )}
+      <PublishSwitch value={published} onChange={setPublished} />
+      <div className="om-footer">
+        <button type="button" className="button-secondary" onClick={cancel}>
+          Cancel
+        </button>
+        <button className="button-primary" disabled={!!clash}>
+          Apply
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function FormatChoices({
+  value,
+  onChange,
+  name,
+}: {
+  value: FormatChoice;
+  onChange: (f: FormatChoice) => void;
+  name: string;
+}) {
+  return (
+    <div>
+      <p className="mb-2">Format</p>
+      <div className="flex flex-wrap gap-3">
+        {FORMAT_CHOICES.map((f) => (
+          <Choice
+            key={f}
+            name={name}
+            value={f}
+            label={FORMAT_LABEL[f]}
+            checked={value === f}
+            onChange={() => onChange(f)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PublishSwitch({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="om-switch">
+      <input
+        type="checkbox"
+        role="switch"
+        checked={value}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span aria-hidden="true" className="om-switch-track" />
+      <span>
+        Publish on website{" "}
+        <span className="text-slate-400 text-sm">
+          {value ? "— visible to everyone" : "— only organizers can see it"}
+        </span>
+      </span>
+    </label>
   );
 }
 
@@ -597,12 +880,17 @@ function TournamentWorkspace({
   data,
   act,
   back,
+  competitions,
+  reload,
 }: {
   data: Workspace;
   act: Act;
   back: () => void;
+  competitions: Competitions;
+  reload: () => Promise<void>;
 }) {
   const t = data.tournament;
+  const [rerun, setRerun] = useState(false);
   const can = (op: string) =>
     data.user.role === "admin" || data.user.operations.includes(op);
   const admin = data.user.role === "admin";
@@ -627,6 +915,9 @@ function TournamentWorkspace({
     ...(t.format === "league"
       ? [["standings", "Standings"] as [string, string]]
       : []),
+    ...(admin && ["knockout", "completed"].includes(t.status)
+      ? [["podium", "Final positions"] as [string, string]]
+      : []),
     ...(can("announcements")
       ? [["announcements", "Announcements"] as [string, string]]
       : []),
@@ -641,12 +932,33 @@ function TournamentWorkspace({
         <ArrowLeft size={16} aria-hidden="true" /> All tournaments
       </button>
       <div className="flex flex-wrap items-center gap-3 mt-3">
-        <h2 className="text-3xl font-bold">{t.name}</h2>
+        <h2 className="text-3xl font-bold">{tournamentLabel(t)}</h2>
         <span className={`status-pill status-${t.status}`}>
           {PHASE[t.status]}
         </span>
+        {!t.published && (
+          <span className="status-pill om-hidden">Not on website</span>
+        )}
       </div>
       <p className="text-slate-400 mt-1">{formatLabel(t)}</p>
+      {admin && t.status === "completed" && !rerun && (
+        <button
+          className="button-secondary mt-4"
+          onClick={() => setRerun(true)}
+        >
+          <RotateCcw size={16} aria-hidden="true" /> Run again as next season
+        </button>
+      )}
+      {rerun && (
+        <div className="mt-4">
+          <NewTournament
+            competitions={competitions}
+            act={act}
+            cancel={() => setRerun(false)}
+            from={t}
+          />
+        </div>
+      )}
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === "players" && <PlayersTab data={data} act={act} />}
       {tab === "setup" && admin && <SetupTab data={data} act={act} />}
@@ -654,6 +966,9 @@ function TournamentWorkspace({
         <FixturesTab data={data} act={act} names={names} />
       )}
       {tab === "standings" && <StandingsTab data={data} />}
+      {tab === "podium" && admin && (
+        <PodiumTab data={data} act={act} reload={reload} />
+      )}
       {tab === "announcements" && <AnnouncementsTab data={data} act={act} />}
     </>
   );
@@ -885,8 +1200,11 @@ function PlayersTab({ data, act }: { data: Workspace; act: Act }) {
 function SetupTab({ data, act }: { data: Workspace; act: Act }) {
   const t = data.tournament;
   const fieldOpen = ["draft", "open", "locked"].includes(t.status);
-  const [format, setFormat] = useState(t.format);
-  const [knockout, setKnockout] = useState(t.knockout);
+  const [format, setFormat] = useState<FormatChoice>(formatChoice(t));
+  const [seasonal, setSeasonal] = useState(!!t.season);
+  const [published, setPublished] = useState(t.published);
+  const [confirmName, setConfirmName] = useState("");
+  const label = tournamentLabel(t);
   const closesLocal = t.registration_closes
     ? new Date(new Date(t.registration_closes).getTime() + 5.5 * 3600e3)
         .toISOString()
@@ -907,11 +1225,12 @@ function SetupTab({ data, act }: { data: Workspace; act: Act }) {
               action: "configure",
               revision: t.revision,
               name: f.get("name"),
+              season: seasonal ? num("season") : null,
+              published,
               format,
-              knockout: format === "league" && knockout,
               qualifiers: Number(f.get("qualifiers") ?? t.qualifiers),
               legs: Number(f.get("legs") ?? t.legs),
-              perPlayer: format === "league" ? num("perPlayer") : null,
+              perPlayer: format !== "knockout" ? num("perPlayer") : null,
               startsOn: f.get("startsOn") || null,
               registrationCloses: closes ? `${closes}:00+05:30` : null,
               entryFee: num("entryFee"),
@@ -923,17 +1242,51 @@ function SetupTab({ data, act }: { data: Workspace; act: Act }) {
         }}
       >
         <h3 className="text-xl font-bold">Tournament settings</h3>
-        <label className="block">
-          Tournament name
-          <input
-            name="name"
-            defaultValue={t.name}
-            required
-            minLength={2}
-            maxLength={80}
-            className="control-input"
+        <div className="flex flex-wrap gap-3">
+          <Choice
+            name="setupType"
+            value="oneoff"
+            label="One-off cup"
+            checked={!seasonal}
+            onChange={() => setSeasonal(false)}
           />
-        </label>
+          <Choice
+            name="setupType"
+            value="season"
+            label="Season of a competition"
+            checked={seasonal}
+            onChange={() => setSeasonal(true)}
+          />
+        </div>
+        <div className="grid gap-5 md:grid-cols-[1fr_12rem]">
+          <label className="block">
+            {seasonal ? "Competition name" : "Tournament name"}
+            <input
+              name="name"
+              defaultValue={t.competition ?? t.name}
+              required
+              minLength={2}
+              maxLength={80}
+              className="control-input"
+            />
+          </label>
+          {seasonal && (
+            <label className="block">
+              Season number
+              <input
+                name="season"
+                type="number"
+                min={1}
+                max={999}
+                required
+                defaultValue={t.season ?? 1}
+                className="control-input"
+                inputMode="numeric"
+              />
+            </label>
+          )}
+        </div>
+        <PublishSwitch value={published} onChange={setPublished} />
         <fieldset
           disabled={!fieldOpen}
           className="space-y-5 disabled:opacity-60"
@@ -943,26 +1296,12 @@ function SetupTab({ data, act }: { data: Workspace; act: Act }) {
               Format settings are locked because fixtures exist.
             </p>
           )}
-          <div>
-            <p className="mb-2">Format</p>
-            <div className="flex flex-wrap gap-3">
-              <Choice
-                name="formatChoice"
-                value="league"
-                label="League"
-                checked={format === "league"}
-                onChange={() => setFormat("league")}
-              />
-              <Choice
-                name="formatChoice"
-                value="knockout"
-                label="Knockout only (eFootball app)"
-                checked={format === "knockout"}
-                onChange={() => setFormat("knockout")}
-              />
-            </div>
-          </div>
-          {format === "league" && (
+          <FormatChoices
+            value={format}
+            onChange={setFormat}
+            name="formatChoice"
+          />
+          {format !== "knockout" && (
             <>
               <div>
                 <p className="mb-2">League matches</p>
@@ -996,17 +1335,9 @@ function SetupTab({ data, act }: { data: Workspace; act: Act }) {
                   inputMode="numeric"
                 />
               </label>
-              <label className="om-check">
-                <input
-                  type="checkbox"
-                  checked={knockout}
-                  onChange={(e) => setKnockout(e.target.checked)}
-                />{" "}
-                Knockout after the league (played in the eFootball app)
-              </label>
-              {knockout && (
+              {format === "league_knockout" && (
                 <label className="block">
-                  Players who qualify
+                  Players who qualify for the knockout
                   <select
                     name="qualifiers"
                     defaultValue={t.qualifiers}
@@ -1023,9 +1354,7 @@ function SetupTab({ data, act }: { data: Workspace; act: Act }) {
             </>
           )}
         </fieldset>
-        <h3 className="text-xl font-bold pt-2">
-          Shown on the registration page
-        </h3>
+        <h3 className="text-xl font-bold pt-2">Shown on the website</h3>
         <p className="text-sm text-slate-400 -mt-3">
           Optional. Empty fields are hidden from the website.
         </p>
@@ -1088,7 +1417,12 @@ function SetupTab({ data, act }: { data: Workspace; act: Act }) {
 
       <section className="panel p-4 md:p-7">
         <h3 className="text-xl font-bold">Registration</h3>
-        <p className="text-slate-400 mt-1">{PHASE[t.status]}</p>
+        <p className="text-slate-400 mt-1">
+          {PHASE[t.status]}
+          {!t.published &&
+            t.status === "draft" &&
+            " · Opening registration also publishes it on the website."}
+        </p>
         <div className="flex flex-wrap gap-3 mt-4">
           <button
             className="button-primary"
@@ -1116,6 +1450,44 @@ function SetupTab({ data, act }: { data: Workspace; act: Act }) {
           </button>
         </div>
       </section>
+
+      {data.user.role === "admin" && (
+        <section className="panel p-4 md:p-7 om-danger-zone">
+          <h3 className="text-xl font-bold">Delete tournament</h3>
+          <p className="text-slate-400 mt-1">
+            Removes it from the website and the Organizer Manager. It stays in
+            the activity log and can be restored from the tournament list.
+          </p>
+          <label className="block mt-4">
+            Type <strong className="text-white">{label}</strong> to confirm
+            <input
+              className="control-input"
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              autoComplete="off"
+            />
+          </label>
+          <div className="om-footer">
+            <span />
+            <button
+              className="om-danger-button"
+              disabled={
+                ![t.name, label].some(
+                  (n) => n.toLowerCase() === confirmName.trim().toLowerCase(),
+                )
+              }
+              onClick={() =>
+                void act(
+                  { action: "delete_tournament", confirm: confirmName },
+                  `${label} deleted. Restore it from the tournament list if needed.`,
+                )
+              }
+            >
+              <Trash2 size={16} aria-hidden="true" /> Delete tournament
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -1413,6 +1785,182 @@ function FixturesTab({
           </section>
         ))
       )}
+    </div>
+  );
+}
+
+/** Shrinks a photo in the browser to a JPEG under ~700 KB before upload. */
+async function compress(file: File) {
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  for (const [edge, quality] of [
+    [1400, 0.85],
+    [1200, 0.8],
+    [1000, 0.75],
+    [800, 0.7],
+  ] as const) {
+    const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height));
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas
+      .getContext("2d")!
+      .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((r) =>
+      canvas.toBlob(r, "image/jpeg", quality),
+    );
+    if (blob && blob.size <= 700 * 1024) return blob;
+  }
+  throw new Error("This photo is too large. Try a smaller one.");
+}
+
+function PodiumTab({
+  data,
+  act,
+  reload,
+}: {
+  data: Workspace;
+  act: Act;
+  reload: () => Promise<void>;
+}) {
+  const t = data.tournament;
+  const approved = data.applications.filter((a) => a.status === "approved");
+  const auto = t.format === "league" && !t.knockout;
+  const [places, setPlaces] = useState<string[]>(
+    data.podium.map((p) => p ?? ""),
+  );
+  const [consent, setConsent] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [state, setState] = useState("");
+  const upload = async () => {
+    if (!file) return;
+    setState("Uploading…");
+    try {
+      const blob = await compress(file);
+      const r = await fetch(
+        `/api/admin/photo?t=${encodeURIComponent(t.id)}&consent=yes`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "image/jpeg" },
+          body: blob,
+        },
+      );
+      const v = await r.json();
+      if (!r.ok) throw new Error(v.error);
+      setFile(null);
+      setConsent(false);
+      await reload();
+      setState("Photo saved.");
+    } catch (e) {
+      setState((e as Error).message);
+    }
+  };
+  return (
+    <div className="space-y-6">
+      <form
+        className="panel p-4 md:p-7 space-y-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void act(
+            { action: "podium", places: places.map((p) => p || null) },
+            "Final positions saved. They show on the website and player profiles.",
+          );
+        }}
+      >
+        <h3 className="text-xl font-bold">Final positions</h3>
+        <p className="text-slate-400 -mt-3">
+          {auto
+            ? "Filled in automatically from the table when the league finished. Change them only if needed."
+            : "Enter who finished 1st, 2nd and 3rd in the knockout (eFootball app)."}
+        </p>
+        <div className="grid gap-5 md:grid-cols-3">
+          {["1st — Champion", "2nd — Runner-up", "3rd"].map((label, i) => (
+            <label className="block" key={label}>
+              {label}
+              <select
+                className="control-input"
+                value={places[i]}
+                onChange={(e) => {
+                  const next = [...places];
+                  next[i] = e.target.value;
+                  setPlaces(next);
+                }}
+              >
+                <option value="">— Not set —</option>
+                {approved.map((a) => (
+                  <option
+                    key={a.player_id}
+                    value={a.player_id}
+                    disabled={
+                      places.includes(a.player_id) && places[i] !== a.player_id
+                    }
+                  >
+                    {a.gaming_name} ({a.code})
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+        <div className="om-footer">
+          <span />
+          <button className="button-primary">Apply</button>
+        </div>
+      </form>
+      <section className="panel p-4 md:p-7 space-y-4">
+        <h3 className="text-xl font-bold">Champion photo</h3>
+        <p className="text-slate-400">
+          Shown on the Champions shelf. Upload only after the player agrees.
+          Photos are resized automatically.
+        </p>
+        {data.photo && (
+          <div className="flex flex-wrap items-end gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/api/admin/photo?t=${encodeURIComponent(t.id)}&v=${data.photo}`}
+              alt="Current champion photo"
+              className="om-photo"
+            />
+            <button
+              className="button-secondary"
+              onClick={() =>
+                confirm("Remove the champion photo?") &&
+                void act({ action: "remove_photo" }, "Photo removed.")
+              }
+            >
+              Remove photo
+            </button>
+          </div>
+        )}
+        <input
+          key={data.photo ?? 0}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className="control-input"
+          aria-label="Choose champion photo"
+        />
+        <label className="om-check">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+          />{" "}
+          The player agreed to this photo being shown on the website
+        </label>
+        <div className="om-footer">
+          <span role="status" className="text-sm text-slate-400">
+            {state}
+          </span>
+          <button
+            type="button"
+            className="button-primary"
+            disabled={!file || !consent}
+            onClick={() => void upload()}
+          >
+            Apply
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

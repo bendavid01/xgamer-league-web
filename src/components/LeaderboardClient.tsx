@@ -6,12 +6,13 @@ import { standings, type Entrant, type Result } from "@/lib/tournament";
 export default function LeaderboardClient({
   teams,
   matches,
-  linkPlayers = true,
+  links = {},
   cutoff = null,
 }: {
   teams: (Entrant & { group: string | null })[];
   matches: Result[];
-  linkPlayers?: boolean;
+  /** Player id → profile URL. */
+  links?: Record<string, string>;
   /** League + Knockout: rows above this rank qualify (shown with a line). */
   cutoff?: number | null;
 }) {
@@ -25,18 +26,20 @@ export default function LeaderboardClient({
   );
   return (
     <>
-      <div className="flex flex-wrap gap-2 mb-6" hidden={groups.length <= 1}>
-        {["All", ...groups].map((g) => (
-          <button
-            key={g}
-            aria-pressed={selected === g}
-            onClick={() => setSelected(g)}
-            className={selected === g ? "button-primary" : "button-secondary"}
-          >
-            {g === "All" ? "All groups" : `Group ${g}`}
-          </button>
-        ))}
-      </div>
+      {groups.length > 1 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {["All", ...groups].map((g) => (
+            <button
+              key={g}
+              aria-pressed={selected === g}
+              onClick={() => setSelected(g)}
+              className={selected === g ? "button-primary" : "button-secondary"}
+            >
+              {g === "All" ? "All groups" : `Group ${g}`}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="panel overflow-x-auto">
         <table className="w-full min-w-[540px] text-sm">
           <caption className="sr-only">
@@ -65,11 +68,8 @@ export default function LeaderboardClient({
               >
                 <td className="px-4 py-4 text-slate-500">{i + 1}</td>
                 <th scope="row" className="px-4 text-left">
-                  {linkPlayers ? (
-                    <Link
-                      className="hover:text-cyan-300"
-                      href={`/players/${encodeURIComponent(r.id)}`}
-                    >
+                  {links[r.id] ? (
+                    <Link className="hover:text-cyan-300" href={links[r.id]}>
                       {r.name}
                     </Link>
                   ) : (

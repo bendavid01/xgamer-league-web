@@ -134,21 +134,23 @@ export default function HomeIntro() {
         XGamer Pro League — competitive eFootball
       </h1>
       <div className="hero-bottom">
-        <a className="scroll-cue" href="#the-league">
+        <a className="scroll-cue" href="#whats-on">
           <ArrowDown size={19} />
-          <span>SCROLL TO THE ARENA</span>
+          <span>WHAT’S ON NOW</span>
         </a>
         <div className="hero-description">
           <p>
-            For the ones who feel every goal.
-            <br />A competitive eFootball community.
-            <br />A place to leave your mark.
+            Organised eFootball leagues and cups.
+            <br />
+            Register, get confirmed on WhatsApp,
+            <br />
+            then follow every fixture and table here.
           </p>
           <Link className="button-primary hero-join" href="/register">
             Join the arena <ArrowUpRight size={18} />
           </Link>
-          <Link className="hero-sub-link" href="/matches">
-            Match center ↗
+          <Link className="hero-sub-link" href="/tournaments">
+            Fixtures &amp; tables ↗
           </Link>
         </div>
       </div>

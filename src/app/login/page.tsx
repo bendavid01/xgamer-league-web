@@ -30,7 +30,7 @@ export default function Login() {
           <button className="button-primary mt-6">Continue with Discord</button>
         </form>
       )}
-      <Link className="button-primary mt-6" href="/competitions">
+      <Link className="button-primary mt-6" href="/tournaments">
         Explore the league
       </Link>
     </div>

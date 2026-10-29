@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageTitle } from "@/components/LeagueUI";
 import RegistrationForm from "@/components/RegistrationForm";
+import { tournamentLabel } from "@/lib/labels";
 import { openTournaments, type OpenTournament } from "@/lib/registration";
 import { communityLinks } from "@/lib/community";
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ export default async function Register({
     <div className="page-shell py-12">
       <PageTitle
         label="JOIN THE ARENA"
-        title={chosen ? chosen.name : "Earn your place."}
+        title={chosen ? tournamentLabel(chosen) : "Earn your place."}
         description={
           chosen?.description ??
           "Tell us who you are. An organizer contacts you on WhatsApp to confirm your entry."
@@ -85,7 +86,7 @@ export default async function Register({
                 <span className="status-pill status-open">
                   Registration open
                 </span>
-                <h3 className="text-xl font-bold mt-3">{t.name}</h3>
+                <h3 className="text-xl font-bold mt-3">{tournamentLabel(t)}</h3>
                 <dl className="register-facts mt-3">
                   {details(t).map(([k, v]) => (
                     <div key={k}>

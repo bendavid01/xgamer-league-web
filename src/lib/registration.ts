@@ -57,7 +57,7 @@ export async function register(
   return sql.begin(async (tx) => {
     const [t] =
       await tx`select * from tournament where id=${input.tournament} and deleted_at is null for update`;
-    if (!t || t.status !== "open")
+    if (!t || t.status !== "open" || !t.published)
       throw new HttpError(409, "Registration for this tournament is closed.");
     const phoneHash = fingerprint("whatsapp:" + input.phone);
     let [player] =
@@ -91,6 +91,8 @@ export async function register(
 }
 
 export type OpenTournament = {
+  competition: string | null;
+  season: number | null;
   id: string;
   name: string;
   format: string;
@@ -110,9 +112,9 @@ export async function openTournaments(): Promise<OpenTournament[]> {
   try {
     return await db()<
       OpenTournament[]
-    >`select id,name,format,knockout,qualifiers,legs,to_char(starts_on,'YYYY-MM-DD') as starts_on,
+    >`select id,name,competition,season,format,knockout,qualifiers,legs,to_char(starts_on,'YYYY-MM-DD') as starts_on,
         registration_closes::text as registration_closes,entry_fee,prize,description
-      from tournament where status='open' and deleted_at is null order by created_at desc`;
+      from tournament where status='open' and published and deleted_at is null order by created_at desc`;
   } catch {
     return [];
   }

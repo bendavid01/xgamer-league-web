@@ -1,230 +1,237 @@
+import Link from "next/link";
+import Image from "next/image";
+import {
+  ArrowUpRight,
+  CalendarDays,
+  ListOrdered,
+  Trophy,
+  UserPlus,
+} from "lucide-react";
 import HomeIntro from "@/components/HomeIntro";
 import EditorialReveal from "@/components/EditorialReveal";
 import { XMark } from "@/components/Brand";
-import { MatchCard, Unavailable } from "@/components/LeagueUI";
-import { getSeason } from "@/lib/season";
-import { listTournaments } from "@/lib/tournaments";
-import { getLiveStream } from "@/lib/youtube";
 import LiveNow from "@/components/LiveNow";
+import { MatchRow } from "@/components/hub/RoundList";
+import {
+  getChampions,
+  getTournament,
+  listTournaments,
+  STATUS_LABEL,
+  type PublicTournament,
+} from "@/lib/tournaments";
+import { getLiveStream } from "@/lib/youtube";
 import { communityLinks } from "@/lib/community";
-import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
+import { championTitle, FORMAT_LABEL, formatChoice } from "@/lib/labels";
+
 export const revalidate = 30;
+
 export default async function Home() {
-  const [season, live, list] = await Promise.all([
-    getSeason(),
+  const [live, list, champions] = await Promise.all([
     getLiveStream(),
     listTournaments(),
+    getChampions(),
   ]);
-  const { players, matches, available } = season;
-  const featured = [
-    ...matches.filter((m) => m.status === "live"),
-    ...matches.filter((m) => m.status === "scheduled"),
-    ...matches.filter((m) => m.status === "completed").reverse(),
-  ].slice(0, 3);
+  const running = list?.live ?? [];
+  const upcoming = list?.upcoming ?? [];
+  // The league being played now: its whole current round goes on the homepage.
+  const league = running.find((t) => t.status === "league");
+  const data = league ? await getTournament(league.id) : null;
+  const open = data?.fixtures.filter((f) => f.home_score === null) ?? [];
+  const round = open.length ? Math.min(...open.map((f) => f.round)) : null;
+  const roundMatches = data?.fixtures.filter((f) => f.round === round) ?? [];
+  const who = (id: string) => {
+    const p = data?.players.find((x) => x.id === id);
+    return { name: p?.name ?? "Player", code: p?.code ?? "" };
+  };
+  const register = running.find((t) => t.status === "open");
+
   return (
     <div className="editorial-home">
       <HomeIntro />
       {live && <LiveNow stream={live} />}
-      <div className="arena-strip">
-        <span>PLAY WITH PURPOSE.</span>
-        <XMark />
-        <span>COMPETE WITH RESPECT.</span>
-        <XMark />
-        <span>MAKE IT YOURS.</span>
-      </div>
-      {list && list.active.length > 0 && (
-        <section
-          className="page-shell home-tournaments"
-          aria-labelledby="tournaments-title"
+
+      <nav className="quick-nav page-shell" aria-label="Quick links">
+        <Link href="/tournaments?tab=fixtures" className="quick-link">
+          <CalendarDays aria-hidden="true" /> Fixtures
+        </Link>
+        <Link href="/tournaments?tab=standings" className="quick-link">
+          <ListOrdered aria-hidden="true" /> Standings
+        </Link>
+        <Link href="/tournaments?tab=results" className="quick-link">
+          <Trophy aria-hidden="true" /> Results
+        </Link>
+        <Link
+          href={register ? `/register?t=${register.id}` : "/register"}
+          className="quick-link quick-link-hot"
         >
-          <div className="flex items-end justify-between gap-4 mb-5">
-            <h2
-              id="tournaments-title"
-              className="text-2xl sm:text-3xl font-bold"
-            >
-              Tournaments
-            </h2>
-            {list.past.length > 0 && (
-              <Link href="/competitions" className="editorial-link">
-                Past tournaments <ArrowUpRight size={18} />
-              </Link>
-            )}
-          </div>
-          <div className="tournament-cards">
-            {list.active.slice(0, 3).map((t) => {
-              const cta =
-                t.status === "open"
-                  ? { label: "Register", href: `/register?t=${t.id}` }
-                  : t.status === "league"
-                    ? { label: "Fixtures", href: `/matches?t=${t.id}` }
-                    : t.status === "knockout"
-                      ? { label: "Standings", href: `/table?t=${t.id}` }
-                      : { label: "Players", href: `/players?t=${t.id}` };
-              const status = {
-                open: "Registration open",
-                locked: "Registration closed",
-                league: "League in progress",
-                knockout: "Knockout in eFootball app",
-                completed: "Completed",
-              }[t.status];
-              return (
-                <article key={t.id} className="panel tournament-card">
-                  <span className={`status-pill status-${t.status}`}>
-                    {status}
-                  </span>
-                  <h3>{t.name}</h3>
-                  <p>
-                    {t.format === "knockout"
-                      ? "Knockout"
-                      : `League${t.legs === 2 ? " · home & away" : ""}${t.knockout ? ` + Top ${t.qualifiers} knockout` : ""}`}
-                  </p>
-                  <Link
-                    href={cta.href}
-                    className={
-                      t.status === "open"
-                        ? "button-primary"
-                        : "button-secondary"
-                    }
-                  >
-                    {cta.label} <ArrowUpRight size={16} />
-                  </Link>
-                </article>
-              );
-            })}
+          <UserPlus aria-hidden="true" /> Register
+        </Link>
+      </nav>
+
+      <section
+        id="whats-on"
+        className="page-shell whats-on"
+        aria-labelledby="whats-on-title"
+      >
+        <div className="section-index">
+          <span>01 / WHAT’S ON</span>
+          <span>ACTIVE &amp; UPCOMING</span>
+        </div>
+        <h2 id="whats-on-title" className="sr-only">
+          Active and upcoming tournaments
+        </h2>
+        {running.length + upcoming.length ? (
+          <ul className="on-box">
+            {[...running, ...upcoming].slice(0, 6).map((t) => (
+              <OnRow key={t.id} t={t} />
+            ))}
+          </ul>
+        ) : (
+          <p className="notice">
+            No tournament is running right now. The next one is announced on our
+            Discord and here.
+          </p>
+        )}
+      </section>
+
+      {league && round !== null && (
+        <section className="arena-section">
+          <div className="page-shell">
+            <EditorialReveal>
+              <div className="section-index">
+                <span>02 / THIS ROUND</span>
+                <span>{league.label.toUpperCase()}</span>
+              </div>
+              <div className="section-heading">
+                <h2>
+                  Round {round}
+                  <br />
+                  <i>
+                    {roundMatches.filter((f) => f.home_score !== null).length}{" "}
+                    of {roundMatches.length} played.
+                  </i>
+                </h2>
+                <Link
+                  href={`/tournaments?t=${league.id}&tab=fixtures`}
+                  className="editorial-link"
+                >
+                  All fixtures <ArrowUpRight size={20} />
+                </Link>
+              </div>
+            </EditorialReveal>
+            <ul className="hub-round home-round">
+              {roundMatches.map((f) => (
+                <MatchRow
+                  key={f.id}
+                  m={{
+                    id: f.id,
+                    home: who(f.home),
+                    away: who(f.away),
+                    homeScore: f.home_score,
+                    awayScore: f.away_score,
+                  }}
+                />
+              ))}
+            </ul>
           </div>
         </section>
       )}
-      <section id="the-league" className="league-story page-shell">
-        <EditorialReveal>
-          <div className="section-index">
-            <span>01 / THE LEAGUE</span>
-            <span>ONE COMMUNITY. EVERY RIVALRY.</span>
-          </div>
-          <h2 className="statement">
-            More than
-            <br />a <span>final score.</span>
-          </h2>
-        </EditorialReveal>
-        <div className="story-bottom">
-          <div className="story-emblem" aria-hidden="true">
-            <XMark />
-            <span>BUILT FOR THE GAME</span>
-          </div>
-          <div>
-            <p className="story-copy">
-              The tension before kick-off. The comeback nobody saw coming. The
-              rival who makes you better. This is where your next chapter
-              begins.
-            </p>
-            <Link href="/players" className="editorial-link">
-              Meet the competitors <ArrowUpRight size={20} />
-            </Link>
-          </div>
-        </div>
-        {available && players.length > 0 && (
-          <div className="competitor-strip" aria-label="Competitors">
-            <p className="section-index">
-              <span>
-                {season.current
-                  ? `IN ${season.current.name.toUpperCase()}`
-                  : "THE COMPETITORS"}
-              </span>
-            </p>
-            <ul>
-              {players.slice(0, 24).map((p) => (
-                <li key={p._id}>
-                  <strong>{p.name}</strong>
-                  {p.team && <span>{p.team}</span>}
-                </li>
-              ))}
-            </ul>
-            {players.length > 24 && (
-              <Link href="/players" className="editorial-link">
-                See everyone <ArrowUpRight size={20} />
-              </Link>
-            )}
-          </div>
-        )}
-      </section>
-      <section className="arena-section">
-        <div className="page-shell">
+
+      {champions.length > 0 && (
+        <section
+          id="champions"
+          className="page-shell champions"
+          aria-labelledby="champions-title"
+        >
           <EditorialReveal>
             <div className="section-index">
-              <span>02 / MATCH CENTER</span>
-              <span>EVERY FIXTURE. EVERY FINISH.</span>
+              <span>03 / CHAMPIONS</span>
+              <span>THE ROLL OF HONOUR</span>
             </div>
-            <div className="section-heading">
-              <h2>
-                Inside
-                <br />
-                <i>the arena.</i>
-              </h2>
-              <Link href="/matches" className="editorial-link">
-                All matches <ArrowUpRight size={20} />
-              </Link>
-            </div>
+            <h2 id="champions-title" className="statement">
+              Champions.
+            </h2>
           </EditorialReveal>
-          {!available ? (
-            <Unavailable />
-          ) : featured.length ? (
-            <div className="grid md:grid-cols-3 gap-4">
-              {featured.map((m) => (
-                <MatchCard key={m._id} match={m} />
-              ))}
-            </div>
-          ) : (
-            <div className="fixture-empty">
-              <span className="fixture-symbol" aria-hidden="true">
-                ↗
-              </span>
-              <div>
-                <span className="section-index">THE NEXT KICK-OFF</span>
-                <h3>
-                  The stage is set.
-                  <br />
-                  The next rivalry is coming.
-                </h3>
-                <p>Fixtures appear here when the organizers publish them.</p>
-              </div>
-              <Link href="/competitions" className="button-secondary">
-                Explore competitions <ArrowUpRight size={18} />
-              </Link>
-            </div>
-          )}
-        </div>
-      </section>
+          <ul className="champion-shelf">
+            {champions.map((c) => {
+              const winner = c.places.find((p) => p.place === 1)!;
+              const runnerUp = c.places.find((p) => p.place === 2);
+              return (
+                <li key={c.id} className="champion-card">
+                  <div className="champion-photo">
+                    {c.photo ? (
+                      <Image
+                        src={`/api/photo/${c.id}?v=${c.photo}`}
+                        alt={`${winner.name}, ${championTitle(c)}`}
+                        fill
+                        sizes="(max-width: 640px) 90vw, 320px"
+                        unoptimized
+                      />
+                    ) : (
+                      <span className="champion-initials" aria-hidden="true">
+                        {winner.name.slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                    <Trophy className="champion-cup" aria-hidden="true" />
+                  </div>
+                  <div className="champion-body">
+                    <span className="champion-title">{championTitle(c)}</span>
+                    <Link
+                      href={`/players/${winner.code}`}
+                      className="champion-name"
+                    >
+                      {winner.name}
+                    </Link>
+                    {winner.team && (
+                      <span className="text-sm text-slate-400">
+                        {winner.team}
+                      </span>
+                    )}
+                    <Link
+                      href={`/tournaments?t=${c.id}&tab=standings`}
+                      className="champion-tournament"
+                    >
+                      {c.competition ?? c.name}
+                    </Link>
+                    {runnerUp && (
+                      <span className="text-xs text-slate-500">
+                        Runner-up: {runnerUp.name}
+                      </span>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       <section className="page-shell journey-section">
         <EditorialReveal>
           <div className="section-index">
-            <span>03 / YOUR NEXT MOVE</span>
-            <span>THERE’S A PLACE FOR YOU HERE.</span>
+            <span>04 / HOW IT WORKS</span>
+            <span>FROM SIGN-UP TO KICK-OFF</span>
           </div>
-          <h2 className="statement">
-            Raise
-            <br />
-            <i>your game.</i>
-          </h2>
         </EditorialReveal>
         <div className="journey-rows">
           {[
             [
               "01",
-              "Find your competition",
-              "From the first round to the final whistle.",
-              "/competitions",
+              "Register",
+              "Name, team and WhatsApp number. Registration opens per tournament.",
+              "/register",
             ],
             [
               "02",
-              "Follow the climb",
-              "Standings, points and the pursuit of the top.",
-              "/table",
+              "Get confirmed",
+              "Organizers verify you on WhatsApp, then you appear in the players list.",
+              "/rules",
             ],
             [
               "03",
-              "Step into the league",
-              "Explore entry and verification details.",
-              "/register",
+              "Play your fixtures",
+              "Rounds, results and the live table — updated as scores come in.",
+              "/tournaments",
             ],
           ].map(([n, title, copy, href]) => (
             <Link href={href} key={n} className="journey-row">
@@ -238,25 +245,24 @@ export default async function Home() {
           ))}
         </div>
       </section>
+
       <section className="community-finale page-shell">
         <div className="section-index">
-          <span>04 / BEYOND THE GAME</span>
-          <span>XGAMER / ALWAYS CONNECTED</span>
+          <span>05 / COMMUNITY</span>
+          <span>DISCORD · WHATSAPP · YOUTUBE</span>
         </div>
         <EditorialReveal>
           <h2>
-            Find your people.
+            Match-day chat,
             <br />
-            <i>Fuel your rivalry.</i>
+            <i>announcements, streams.</i>
           </h2>
         </EditorialReveal>
         <div className="finale-bottom">
           <p>
-            The final whistle is just the beginning.
+            Fixtures are arranged and announcements posted on our Discord.
             <br />
-            Meet the community. Arrange your next match.
-            <br />
-            Come back stronger.
+            Big matches stream live on YouTube.
           </p>
           <a
             href={communityLinks[0].href}
@@ -268,11 +274,44 @@ export default async function Home() {
             <span className="sr-only"> (opens in a new tab)</span>
           </a>
           <Link href="/community" className="editorial-link">
-            All eight channels <ArrowUpRight size={20} />
+            All channels <ArrowUpRight size={20} />
           </Link>
         </div>
         <XMark className="finale-mark" />
       </section>
     </div>
+  );
+}
+
+function OnRow({ t }: { t: PublicTournament }) {
+  const cta =
+    t.status === "open"
+      ? { label: "Register", href: `/register?t=${t.id}`, hot: true }
+      : t.status === "draft"
+        ? { label: "Details", href: `/tournaments?t=${t.id}`, hot: false }
+        : { label: "Follow", href: `/tournaments?t=${t.id}`, hot: false };
+  return (
+    <li className="on-row">
+      <span className={`status-pill status-${t.status}`}>
+        {STATUS_LABEL[t.status]}
+      </span>
+      <span className="min-w-0 flex-1">
+        <strong className="block truncate">{t.label}</strong>
+        <span className="text-sm text-slate-400">
+          {FORMAT_LABEL[formatChoice(t)]}
+          {t.starts_on
+            ? ` · ${new Date(t.starts_on).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+            : ""}
+        </span>
+      </span>
+      <Link
+        href={cta.href}
+        className={
+          cta.hot ? "button-primary om-small" : "button-secondary om-small"
+        }
+      >
+        {cta.label} <ArrowUpRight size={14} />
+      </Link>
+    </li>
   );
 }

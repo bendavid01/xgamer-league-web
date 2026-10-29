@@ -7,6 +7,7 @@ const MIGRATIONS = [
   "001_control_center.sql",
   "002_open_registration.sql",
   "003_multi_tournament.sql",
+  "004_seasons_podium.sql",
 ];
 async function migrated() {
   const pg = new PGlite();
@@ -206,6 +207,83 @@ test("migration 003 keeps existing live data: players get readable IDs, old form
       `insert into player(gaming_name,contact_hash,contact_cipher,consent_version) values('New','h3','c','v') returning public_no`,
     );
     assert.equal(next.rows[0].public_no, 3);
+  } finally {
+    await pg.close();
+  }
+});
+
+test("migration 004: seasons are unique per competition, live tournaments stay published, podium rules", async () => {
+  const pg = new PGlite();
+  try {
+    for (const file of MIGRATIONS.slice(0, 3))
+      await pg.exec(
+        await readFile(
+          new URL(`../migrations/${file}`, import.meta.url),
+          "utf8",
+        ),
+      );
+    await pg.exec(`update tournament set status='league'`);
+    await pg.exec(
+      `insert into tournament(id,name) values('draft-cup-1a2b','Draft Cup')`,
+    );
+    await pg.exec(
+      await readFile(
+        new URL(`../migrations/${MIGRATIONS[3]}`, import.meta.url),
+        "utf8",
+      ),
+    );
+    const rows = await pg.query<{ id: string; published: boolean }>(
+      `select id,published from tournament order by id`,
+    );
+    assert.deepEqual(
+      rows.rows.map((r) => [r.id, r.published]),
+      [
+        ["draft-cup-1a2b", false],
+        ["xgamer-2026-10", true],
+      ],
+    );
+    await pg.exec(
+      `update tournament set competition='XGamer Pro League',season=1 where id='xgamer-2026-10'`,
+    );
+    await assert.rejects(
+      () =>
+        pg.exec(
+          `insert into tournament(id,name,competition,season) values('s1-copy','x','xgamer pro league',1)`,
+        ),
+      /unique|duplicate/,
+    );
+    await assert.rejects(
+      () =>
+        pg.exec(`update tournament set season=null where id='xgamer-2026-10'`),
+      /check/,
+    );
+    await pg.exec(
+      `insert into tournament(id,name,competition,season) values('s2','XGamer Pro League','XGamer Pro League',2)`,
+    );
+    const p = await pg.query<{ id: string }>(
+      `insert into player(gaming_name,contact_hash,contact_cipher,consent_version) values('A','h1','c','v') returning id`,
+    );
+    const id = p.rows[0].id;
+    await pg.query(
+      `insert into podium(tournament_id,place,player_id) values('s2',1,$1)`,
+      [id],
+    );
+    await assert.rejects(
+      () =>
+        pg.query(
+          `insert into podium(tournament_id,place,player_id) values('s2',2,$1)`,
+          [id],
+        ),
+      /unique|duplicate/,
+    );
+    await assert.rejects(
+      () =>
+        pg.query(
+          `insert into podium(tournament_id,place,player_id) values('s2',4,$1)`,
+          [id],
+        ),
+      /check/,
+    );
   } finally {
     await pg.close();
   }

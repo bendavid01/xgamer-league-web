@@ -70,7 +70,7 @@ export default function Rules() {
             This describes the existing calculation; it does not approve the
             draft rules.
           </p>
-          <Link className="insight-link mt-5" href="/table">
+          <Link className="insight-link mt-5" href="/tournaments?tab=standings">
             View the standings →
           </Link>
           <hr className="border-slate-800 my-6" />

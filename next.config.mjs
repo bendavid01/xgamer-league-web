@@ -19,6 +19,28 @@ const nextConfig = {
     ];
   },
 
+  // Matches, Standings, Players and Competitions merged into the Tournaments hub.
+  // The query string (?t=<tournament>) is carried over automatically.
+  async redirects() {
+    return [
+      ["/matches", "fixtures"],
+      ["/table", "standings"],
+      ["/players", "players"],
+      ["/finals", "standings"],
+      ["/cup", "fixtures"],
+    ]
+      .map(([source, tab]) => ({
+        source,
+        destination: `/tournaments?tab=${tab}`,
+        permanent: true,
+      }))
+      .concat({
+        source: "/competitions",
+        destination: "/tournaments",
+        permanent: true,
+      });
+  },
+
   // Keep your Sanity image configuration
   images: {
     remotePatterns: [
