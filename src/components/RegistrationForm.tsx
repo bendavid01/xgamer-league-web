@@ -97,18 +97,35 @@ export default function RegistrationForm({ enabled }: { enabled: boolean }) {
         </label>
         <label className="block">
           WhatsApp number
-          <input
-            required
-            name="phone"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            maxLength={30}
-            className="control-input"
-            placeholder="98765 43210"
-          />
-          <span className="block mt-2 text-sm text-slate-400">
-            Indian numbers work without +91. Only organizers see your number.
+          <span className="phone-field">
+            <span className="phone-prefix" aria-hidden="true">
+              +91
+            </span>
+            <input
+              required
+              name="phone"
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel-national"
+              minLength={10}
+              maxLength={10}
+              pattern="[6-9][0-9]{9}"
+              title="10-digit Indian mobile number"
+              className="control-input"
+              placeholder="9876543210"
+              aria-describedby="phone-hint"
+              onInput={(e) => {
+                // Digits only; a pasted +91 / 0 prefix is dropped.
+                const el = e.currentTarget;
+                let d = el.value.replace(/\D/g, "");
+                if (d.length > 10 && d.startsWith("91")) d = d.slice(2);
+                if (d.length > 10 && d.startsWith("0")) d = d.slice(1);
+                el.value = d.slice(0, 10);
+              }}
+            />
+          </span>
+          <span id="phone-hint" className="block mt-2 text-sm text-slate-400">
+            10-digit Indian mobile number. Only organizers see it.
           </span>
         </label>
         <div hidden aria-hidden="true">

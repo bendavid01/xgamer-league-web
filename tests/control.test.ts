@@ -132,6 +132,9 @@ test("registration needs only player name, team name, phone and consent", () => 
     { website: "spam" },
     { phone: "" },
     { phone: "12345" },
+    { phone: "5876543210" },
+    { phone: "+14155550123" },
+    { phone: "98765abcde" },
     { teamName: "" },
     { playerName: "<script>" },
   ])
@@ -142,7 +145,6 @@ test("registration needs only player name, team name, phone and consent", () => 
     "+91-98765-43210",
     "919876543210",
     "09876543210",
-    "00919876543210",
   ])
     assert.equal(
       registrationInput.parse({ ...input, phone: local }).phone,

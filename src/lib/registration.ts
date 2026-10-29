@@ -4,14 +4,15 @@ import { encrypt, fingerprint } from "./private-data";
 import { HttpError } from "./api";
 import { TOURNAMENT_ID } from "./current";
 
-/** Accepts common Indian formats ("98765 43210", "+91-98765-43210") and returns E.164. */
+/**
+ * Indian mobile numbers only. The form sends 10 digits; pasted "+91…" or "0…" forms are
+ * tolerated. Stored as +91XXXXXXXXXX so WhatsApp links work.
+ */
 export function normalizePhone(value: string) {
-  const compact = value.replace(/[\s().-]/g, "");
-  if (/^[6-9]\d{9}$/.test(compact)) return `+91${compact}`;
-  if (/^0[6-9]\d{9}$/.test(compact)) return `+91${compact.slice(1)}`;
-  if (/^91[6-9]\d{9}$/.test(compact)) return `+${compact}`;
-  if (/^00[1-9]\d{7,14}$/.test(compact)) return `+${compact.slice(2)}`;
-  return compact;
+  let digits = value.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  return /^[6-9]\d{9}$/.test(digits) ? `+91${digits}` : "";
 }
 
 const name = (max: number) =>
@@ -29,7 +30,7 @@ export const registrationInput = z.object({
     .string()
     .max(30)
     .transform(normalizePhone)
-    .pipe(z.string().regex(/^\+[1-9]\d{7,14}$/)),
+    .pipe(z.string().regex(/^\+91[6-9]\d{9}$/)),
   consent: z.literal(true),
   website: z.string().max(0),
 });
