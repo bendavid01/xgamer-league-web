@@ -69,10 +69,8 @@ export default function RegistrationForm({ enabled }: { enabled: boolean }) {
           group to hear when it opens.
         </p>
       )}
-      <fieldset
-        disabled={busy || !enabled}
-        className="space-y-5 disabled:opacity-60"
-      >
+      {/* WHY: fields stay editable while closed; only submitting waits for registration to open. */}
+      <fieldset disabled={busy} className="space-y-5 disabled:opacity-60">
         <label className="block">
           Player name
           <input
@@ -129,8 +127,15 @@ export default function RegistrationForm({ enabled }: { enabled: boolean }) {
           I agree to XGamer storing my details privately to confirm my entry and
           send match updates. My player and team name may appear on the website.
         </label>
-        <button className="button-primary w-full">
-          {busy ? "Registering…" : "Register"}
+        <button
+          className="button-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!enabled}
+        >
+          {busy
+            ? "Registering…"
+            : enabled
+              ? "Register"
+              : "Registration opens soon"}
         </button>
       </fieldset>
       {result?.kind === "error" && (
