@@ -1,17 +1,14 @@
 import { body, endpoint, HttpError, response } from "@/lib/api";
-import { registrationInput, register } from "@/lib/registration";
+import {
+  registrationConfigured,
+  registrationInput,
+  register,
+} from "@/lib/registration";
 export async function POST(request: Request) {
   return endpoint(async () => {
-    if (
-      !process.env.DATABASE_URL ||
-      !process.env.PRIVATE_DATA_KEY ||
-      process.env.REGISTRATION_ENABLED !== "true"
-    )
+    if (!registrationConfigured())
       return response(
-        {
-          error:
-            "Applications are awaiting secure setup. Please check back shortly.",
-        },
+        { error: "Registration is not open yet. Please check back soon." },
         503,
       );
     if (!request) throw new HttpError(400, "Missing request.");
@@ -19,7 +16,7 @@ export async function POST(request: Request) {
     if (!parsed.success)
       throw new HttpError(
         400,
-        "Check your gaming name, eFootball ID, contact details and consent.",
+        "Check your player name, team name, phone number and the consent box.",
       );
     const ip = process.env.VERCEL
       ? request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()

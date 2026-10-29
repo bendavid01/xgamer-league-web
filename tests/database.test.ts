@@ -3,20 +3,25 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 
-test("PostgreSQL migration: 70 applications, 64-slot cap, recovery and immutable audits", async () => {
+const MIGRATIONS = ["001_control_center.sql", "002_open_registration.sql"];
+async function migrated() {
   const pg = new PGlite();
-  try {
+  for (const file of MIGRATIONS)
     await pg.exec(
-      await readFile(
-        new URL("../migrations/001_control_center.sql", import.meta.url),
-        "utf8",
-      ),
+      await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"),
     );
+  return pg;
+}
+
+test("PostgreSQL migrations: open registration, any field size, byes, recovery and immutable audits", async () => {
+  const pg = await migrated();
+  try {
+    // Registration needs no eFootball ID; organizers choose any number of players (no 64 cap).
     const ids: string[] = [];
     for (let i = 0; i < 70; i++) {
       const p = await pg.query<{ id: string }>(
-        `insert into player(gaming_name,efootball_hash,efootball_cipher,contact_hash,contact_cipher,preference,consent_version) values($1,$2,'encrypted',$3,'encrypted','discord','test') returning id`,
-        [`Player ${i}`, `game${i}`, `contact${i}`],
+        `insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_version) values($1,$2,$3,'encrypted','test') returning id`,
+        [`Player ${i}`, `Team ${i}`, `phone${i}`],
       );
       const a = await pg.query<{ id: string }>(
         `insert into application(tournament_id,player_id,status) values('xgamer-2026-10',$1,'pending') returning id`,
@@ -24,41 +29,82 @@ test("PostgreSQL migration: 70 applications, 64-slot cap, recovery and immutable
       );
       ids.push(a.rows[0].id);
     }
-    const counts = await pg.query<{ status: string; n: number }>(
-      `select status,count(*)::int as n from application group by status`,
+    const pending = await pg.query<{ n: number }>(
+      `select count(*)::int as n from application where status='pending'`,
     );
-    assert.equal(counts.rows.find((r) => r.status === "pending")?.n, 64);
-    assert.equal(counts.rows.find((r) => r.status === "waitlisted")?.n, 6);
-    await assert.rejects(
-      () =>
-        pg.query(`update application set status='approved' where id=$1`, [
-          ids[69],
-        ]),
-      /capacity/,
-    );
-    await pg.query(`update application set status='rejected' where id=$1`, [
-      ids[0],
-    ]);
+    assert.equal(pending.rows[0].n, 70);
     await pg.query(
-      `update application set status='approved',verified_at=now() where id=$1`,
-      [ids[64]],
+      `update application set status='approved' where id = any($1)`,
+      [ids],
     );
-    const [count] = (
-      await pg.query<{ n: number }>(
-        `select count(*)::int as n from application where status in ('pending','approved') and deleted_at is null`,
-      )
-    ).rows;
-    assert.equal(count.n, 64);
+
+    // Duplicate phone numbers are rejected.
     await assert.rejects(
       () =>
         pg.query(
-          `insert into player(gaming_name,efootball_hash,efootball_cipher,contact_hash,contact_cipher,preference,consent_version) values('Duplicate','game1','x','different','x','discord','test')`,
+          `insert into player(gaming_name,contact_hash,contact_cipher,consent_version) values('Dup','phone1','x','test')`,
         ),
       /unique/,
     );
+    // eFootball ID added later: unique, and hash/cipher must be set together.
+    await pg.query(
+      `update player set efootball_hash='ef1',efootball_cipher='x' where gaming_name='Player 1'`,
+    );
+    await assert.rejects(
+      () =>
+        pg.query(
+          `update player set efootball_hash='ef1',efootball_cipher='x' where gaming_name='Player 2'`,
+        ),
+      /unique/,
+    );
+    await assert.rejects(
+      () =>
+        pg.query(
+          `update player set efootball_hash='ef3' where gaming_name='Player 3'`,
+        ),
+      /player_efootball_pair|check/,
+    );
+
+    // Format settings.
+    await pg.exec(
+      `update tournament set format='knockout',qualifiers=4,opponents=null`,
+    );
+    await assert.rejects(
+      () => pg.exec(`update tournament set format='swiss'`),
+      /check/,
+    );
+    await assert.rejects(
+      () => pg.exec(`update tournament set qualifiers=6`),
+      /check/,
+    );
+
+    // A knockout bye: no away player, the home player is the winner.
+    const [a, b] = (
+      await pg.query<{ id: string }>(
+        `select id from player order by gaming_name limit 2`,
+      )
+    ).rows;
+    await pg.query(
+      `insert into fixture(tournament_id,stage,round,slot,home,away,winner) values('xgamer-2026-10','knockout',1,0,$1,null,$1)`,
+      [a.id],
+    );
+    await assert.rejects(
+      () =>
+        pg.query(
+          `insert into fixture(tournament_id,stage,round,slot,home,away,winner) values('xgamer-2026-10','knockout',1,1,$1,$1,null)`,
+          [b.id],
+        ),
+      /check/,
+    );
+    await pg.query(
+      `insert into qualification(tournament_id,player_id,rank) values('xgamer-2026-10',$1,16)`,
+      [a.id],
+    );
+
+    // Audit history cannot be edited or deleted.
     await pg.query(
       `insert into audit_event(actor,action,entity,before_value,after_value) values('admin','review',$1,'{"status":"pending"}','{"status":"approved"}')`,
-      [ids[64]],
+      [ids[0]],
     );
     await assert.rejects(() => pg.exec(`delete from audit_event`), /immutable/);
     await assert.rejects(
@@ -72,23 +118,35 @@ test("PostgreSQL migration: 70 applications, 64-slot cap, recovery and immutable
         ),
       /check/,
     );
-    // Restore the engine's binary backup into an independent database and inspect actual records.
-    const backup = await pg.dumpDataDir();
-    const restored = new PGlite({ loadDataDir: backup });
+
+    // Restore a backup into an independent database and inspect real records.
+    const restored = new PGlite({ loadDataDir: await pg.dumpDataDir() });
     try {
-      const restoredCount = await restored.query<{ n: number }>(
-        `select count(*)::int as n from application`,
+      const count = await restored.query<{ n: number }>(
+        `select count(*)::int as n from application where status='approved'`,
       );
-      assert.equal(restoredCount.rows[0].n, 70);
-      const audit = await restored.query<{
-        before_value: { status: string };
-        after_value: { status: string };
-      }>(`select before_value,after_value from audit_event`);
-      assert.equal(audit.rows[0].before_value.status, "pending");
+      assert.equal(count.rows[0].n, 70);
+      const audit = await restored.query<{ after_value: { status: string } }>(
+        `select after_value from audit_event`,
+      );
       assert.equal(audit.rows[0].after_value.status, "approved");
     } finally {
       await restored.close();
     }
+  } finally {
+    await pg.close();
+  }
+});
+
+test("migration 002 is safe to run twice", async () => {
+  const pg = await migrated();
+  try {
+    await pg.exec(
+      await readFile(
+        new URL(`../migrations/${MIGRATIONS[1]}`, import.meta.url),
+        "utf8",
+      ),
+    );
   } finally {
     await pg.close();
   }

@@ -6,9 +6,14 @@ import { standings, type Entrant, type Result } from "@/lib/tournament";
 export default function LeaderboardClient({
   teams,
   matches,
+  linkPlayers = true,
+  cutoff = null,
 }: {
   teams: (Entrant & { group: string | null })[];
   matches: Result[];
+  linkPlayers?: boolean;
+  /** League + Knockout: rows above this rank qualify (shown with a line). */
+  cutoff?: number | null;
 }) {
   const reduced = useReducedMotion();
   const groups = [...new Set(teams.map((t) => t.group || "Ungrouped"))].sort();
@@ -20,7 +25,7 @@ export default function LeaderboardClient({
   );
   return (
     <>
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap gap-2 mb-6" hidden={groups.length <= 1}>
         {["All", ...groups].map((g) => (
           <button
             key={g}
@@ -56,16 +61,20 @@ export default function LeaderboardClient({
                 animate={{ opacity: 1 }}
                 transition={{ duration: reduced ? 0 : 0.25 }}
                 key={r.id}
-                className="border-b border-slate-800/60 hover:bg-slate-800/30"
+                className={`border-b border-slate-800/60 hover:bg-slate-800/30 ${cutoff && i === cutoff - 1 ? "standings-cutoff" : ""}`}
               >
                 <td className="px-4 py-4 text-slate-500">{i + 1}</td>
                 <th scope="row" className="px-4 text-left">
-                  <Link
-                    className="hover:text-cyan-300"
-                    href={`/players/${encodeURIComponent(r.id)}`}
-                  >
-                    {r.name}
-                  </Link>
+                  {linkPlayers ? (
+                    <Link
+                      className="hover:text-cyan-300"
+                      href={`/players/${encodeURIComponent(r.id)}`}
+                    >
+                      {r.name}
+                    </Link>
+                  ) : (
+                    r.name
+                  )}
                 </th>
                 {[r.played, r.won, r.drawn, r.lost, r.gd].map((n, j) => (
                   <td key={j} className="px-4 font-mono text-slate-400">
@@ -84,8 +93,12 @@ export default function LeaderboardClient({
         )}
       </div>
       <p className="text-sm text-slate-500 mt-5">
-        Group-stage results only. Ranked by points, goal difference, then goals
-        scored. Equal records need an organizer decision for qualification.
+        {cutoff
+          ? `Top ${cutoff} qualify for the knockout (above the line). `
+          : groups.length > 1
+            ? "Group-stage results only. "
+            : ""}
+        Ranked by points, goal difference, then goals scored.
       </p>
     </>
   );

@@ -1,3 +1,4 @@
+import { TOURNAMENT_ID } from "@/lib/current";
 import { auth } from "@/auth";
 import { endpoint, response, HttpError } from "@/lib/api";
 import { db } from "@/lib/db";
@@ -8,7 +9,7 @@ export async function GET() {
     if (!id)
       throw new HttpError(401, "Sign in with your verified Discord identity.");
     const [row] =
-      await db()`select f.credential_cipher from finals_access f join qualification q on q.tournament_id=f.tournament_id join player p on p.id=q.player_id where p.discord_id=${id} and p.deleted_at is null and f.released=true and f.tournament_id='xgamer-2026-10'`;
+      await db()`select f.credential_cipher from finals_access f join qualification q on q.tournament_id=f.tournament_id join player p on p.id=q.player_id where p.discord_id=${id} and p.deleted_at is null and f.released=true and f.tournament_id=${TOURNAMENT_ID}`;
     if (!row)
       throw new HttpError(
         403,

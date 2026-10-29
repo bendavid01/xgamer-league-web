@@ -13,7 +13,11 @@ const items = [
   ["Community", "/community"],
   ["Rules", "/rules"],
 ];
-export default function Navbar() {
+export default function Navbar({
+  liveUrl = null,
+}: {
+  liveUrl?: string | null;
+}) {
   const toggle = useRef<HTMLButtonElement>(null);
   const reduced = useReducedMotion();
   const [open, setOpen] = useState(false);
@@ -27,7 +31,7 @@ export default function Navbar() {
         }
       }}
       aria-label="Main navigation"
-      className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/95"
+      className={`sticky top-0 z-50 border-b border-slate-800 ${open ? "bg-[#0b1118]" : "bg-slate-950/95"}`}
     >
       <div className="page-shell flex min-h-20 items-center justify-between gap-5">
         <Link
@@ -53,6 +57,17 @@ export default function Navbar() {
             </Link>
           ))}
         </div>
+        {liveUrl && (
+          <a
+            href={liveUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="nav-live ml-auto lg:ml-0"
+          >
+            <span className="live-dot" aria-hidden="true" /> LIVE
+            <span className="sr-only"> on YouTube (opens in a new tab)</span>
+          </a>
+        )}
         <Link
           href="/register"
           className="button-primary hidden lg:inline-flex text-sm"
@@ -65,7 +80,7 @@ export default function Navbar() {
           aria-expanded={open}
           aria-controls="mobile-nav"
           onClick={() => setOpen(!open)}
-          className="lg:hidden p-3"
+          className="lg:hidden p-3 min-h-11 min-w-11"
         >
           {open ? <X /> : <Menu />}
         </button>

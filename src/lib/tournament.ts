@@ -239,3 +239,64 @@ export function leagueKnockout(
     );
   return knockout(ranked.slice(0, qualifiers));
 }
+
+/**
+ * Top-N qualification from a completed league table (any field size).
+ * The caller guarantees every scheduled league fixture has a confirmed score.
+ * A tie exactly across the cutoff must be settled by organizer-recorded playoff winners.
+ */
+export function qualifyTopN(
+  entrants: Entrant[],
+  results: Result[],
+  qualifiers: number,
+  playoffWinners: string[] = [],
+) {
+  if (
+    !Number.isInteger(Math.log2(qualifiers)) ||
+    qualifiers < 2 ||
+    qualifiers >= entrants.length
+  )
+    throw new Error(
+      "Choose Top 2, 4, 8, 16 or 32, fewer than the number of players.",
+    );
+  const ranked = standings(entrants, results);
+  const a = ranked[qualifiers - 1],
+    b = ranked[qualifiers];
+  const same = (p: (typeof ranked)[number]) =>
+    p.pts === a.pts && p.gd === a.gd && p.gf === a.gf;
+  if (b && same(b)) {
+    const tied = ranked.filter(same);
+    const start = ranked.findIndex((p) => p.id === tied[0].id),
+      needed = qualifiers - start;
+    if (
+      playoffWinners.length !== needed ||
+      new Set(playoffWinners).size !== needed ||
+      playoffWinners.some((id) => !tied.some((p) => p.id === id))
+    )
+      throw new Error(
+        `Tie at the qualification cutoff: choose ${needed} playoff winner(s) from the tied players.`,
+      );
+    return [
+      ...ranked.slice(0, start),
+      ...playoffWinners.map((id) => tied.find((p) => p.id === id)!),
+    ];
+  }
+  if (playoffWinners.length)
+    throw new Error("Playoff winners are only needed for a tied cutoff.");
+  return ranked.slice(0, qualifiers);
+}
+
+/** Organizer-selected fixtures for the chosen format. Byes have away = null. */
+export function firstFixtures(
+  format: "league" | "knockout" | "league_knockout",
+  entrants: Entrant[],
+  opponents: number | null,
+) {
+  if (format === "knockout")
+    return { stage: "knockout" as const, fixtures: knockout(entrants) };
+  const fixtures =
+    opponents && opponents < entrants.length - 1
+      ? leaguePhase(entrants, opponents)
+      : roundRobin(entrants);
+  return { stage: "league" as const, fixtures };
+}

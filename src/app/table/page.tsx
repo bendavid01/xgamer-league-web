@@ -1,34 +1,33 @@
-import { getLeague, validCompleted } from "@/lib/league";
+import { getSeason, seasonResults } from "@/lib/season";
 import { PageTitle, Unavailable } from "@/components/LeagueUI";
 import LeaderboardClient from "@/components/LeaderboardClient";
 import AutoRefresh from "@/components/AutoRefresh";
 export const revalidate = 30;
 export default async function Table() {
-  const { teams, matches, available } = await getLeague();
-  const results = validCompleted(matches)
-    .filter((m) => m.stage === "Group Stage")
-    .map((m) => ({
-      home: m.home!._id,
-      away: m.away!._id,
-      homeScore: m.homeScore!,
-      awayScore: m.awayScore!,
-    }));
+  const season = await getSeason();
+  const om = season.source === "om";
   return (
     <div className="page-shell py-12">
       <PageTitle
         label="LEAGUE STANDINGS"
         title="Earn your place."
-        description="The existing season’s group tables, calculated from confirmed group-stage results."
+        description={
+          om
+            ? `${season.title ?? "Current tournament"} — calculated automatically from confirmed league results.`
+            : "The season’s group tables, calculated from confirmed group-stage results."
+        }
       />
       <AutoRefresh />
-      {available ? (
+      {season.available ? (
         <LeaderboardClient
-          teams={teams.map((t) => ({
+          teams={season.players.map((t) => ({
             id: t._id,
             name: t.name,
             group: t.group,
           }))}
-          matches={results}
+          matches={seasonResults(season)}
+          linkPlayers={!om}
+          cutoff={season.qualifiers}
         />
       ) : (
         <Unavailable />

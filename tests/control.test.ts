@@ -12,7 +12,7 @@ import {
   type Operation,
 } from "../src/lib/access";
 import { encrypt, decrypt, fingerprint } from "../src/lib/private-data";
-import { registrationInput } from "../src/lib/registration";
+import { efootballIdInput, registrationInput } from "../src/lib/registration";
 const entrants = Array.from({ length: 64 }, (_, i) => ({
   id: String(i),
   name: `Player ${i}`,
@@ -118,23 +118,36 @@ test("contact ciphertext authenticates contents and uses random nonces", () => {
   assert.equal(fingerprint("abc"), fingerprint("abc"));
   assert.notEqual(fingerprint("abc"), fingerprint("def"));
 });
-test("registration requires explicit consent and validates normalized contact", () => {
+test("registration needs only player name, team name, phone and consent", () => {
   const input = {
-    gamingName: "Player One",
-    efootballId: "abcd1234",
-    preference: "whatsapp",
-    contact: "+919876543210",
+    playerName: "Player One",
+    teamName: "Kochi Strikers",
+    phone: "+919876543210",
     consent: true,
     website: "",
-    tournament: "xgamer-2026-10",
   };
   assert(registrationInput.safeParse(input).success);
   for (const invalid of [
     { consent: false },
     { website: "spam" },
-    { contact: "9876543210" },
-    { gamingName: "<script>" },
+    { phone: "" },
+    { phone: "12345" },
+    { teamName: "" },
+    { playerName: "<script>" },
   ])
     assert(!registrationInput.safeParse({ ...input, ...invalid }).success);
-  assert.equal(registrationInput.parse(input).efootballId, "ABCD1234");
+  for (const local of [
+    "9876543210",
+    "98765 43210",
+    "+91-98765-43210",
+    "919876543210",
+    "09876543210",
+    "00919876543210",
+  ])
+    assert.equal(
+      registrationInput.parse({ ...input, phone: local }).phone,
+      "+919876543210",
+    );
+  assert.equal(efootballIdInput.parse("abcd-1234"), "ABCD-1234");
+  assert(!efootballIdInput.safeParse("x").success);
 });

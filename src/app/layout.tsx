@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Space_Grotesk, Barlow_Condensed } from "next/font/google";
 import Brand from "@/components/Brand";
 import { communityLinks } from "@/lib/community";
+import { getLiveStream } from "@/lib/youtube";
 const bodyFont = Space_Grotesk({
   subsets: ["latin"],
   variable: "--font-body",
@@ -22,12 +23,16 @@ export const metadata: Metadata = {
   title: { default: "X-Gamer Pro League | 2.0", template: "%s | X-Gamer" },
   description:
     "The home of X-Gamer competitive eFootball. Competitions, fixtures, results and standings.",
+  openGraph: {
+    images: [{ url: "/images/og-xgamer.jpg", width: 1200, height: 630 }],
+  },
 };
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const live = await getLiveStream();
   return (
     <html lang="en" className={`${bodyFont.variable} ${displayFont.variable}`}>
       <body>
@@ -35,7 +40,7 @@ export default function RootLayout({
           Skip to content
         </a>
         <div className="min-h-screen flex flex-col">
-          <Navbar />
+          <Navbar liveUrl={live?.url ?? null} />
           <main id="content" className="flex-grow">
             <RouteMotion>{children}</RouteMotion>
           </main>
@@ -66,7 +71,6 @@ export default function RootLayout({
               <p>© 2026 X-Gamer Pro League · Built for the game.</p>
               <div className="flex gap-5">
                 <Link href="/rules">Rules</Link>
-                <Link href="/status">Feature status</Link>
                 <Link href="/admin">Organizers</Link>
               </div>
             </div>

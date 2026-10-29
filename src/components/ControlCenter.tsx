@@ -1,25 +1,29 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+
 type Application = {
   id: string;
   player_id: string;
   gaming_name: string;
-  contact: string;
-  efootballId: string;
+  team_name: string | null;
   status: string;
   revision: number;
   verified_at: string | null;
+  phone?: string;
+  efootballId?: string | null;
 };
 type Match = {
   id: string;
   home: string;
-  away: string;
+  away: string | null;
   round: number;
+  slot: number;
   home_score: number | null;
   away_score: number | null;
+  winner: string | null;
   revision: number;
-  stage: string;
+  stage: "league" | "knockout";
 };
 type Snapshot = {
   user: { role: string; operations: string[] };
@@ -27,7 +31,9 @@ type Snapshot = {
     name: string;
     status: string;
     revision: number;
-    opponents: number;
+    format: "league" | "knockout" | "league_knockout";
+    qualifiers: number;
+    opponents: number | null;
   };
   applications: Application[];
   fixtures: Match[];
@@ -36,7 +42,11 @@ type Snapshot = {
     name: string;
     pts: number;
     gd: number;
+    gf: number;
     played: number;
+    won: number;
+    drawn: number;
+    lost: number;
   }[];
   audit: {
     id: number;
@@ -47,39 +57,59 @@ type Snapshot = {
     after_value: unknown;
   }[];
 };
+
+const FORMAT_LABEL = {
+  league: "League",
+  knockout: "Knockout",
+  league_knockout: "League + Knockout",
+} as const;
+const PHASE_LABEL: Record<string, string> = {
+  draft: "Setting up",
+  open: "Registration open",
+  locked: "Registration closed",
+  league: "League in progress",
+  knockout: "Knockout in progress",
+  completed: "Completed",
+};
+const FILTERS = [
+  ["pending", "Pending"],
+  ["approved", "Approved"],
+  ["rejected", "Rejected"],
+  ["all", "All"],
+] as const;
+
+function waLink(phone: string) {
+  return `https://wa.me/${phone.replace(/[^\d]/g, "")}`;
+}
+
 export default function ControlCenter() {
   const [data, setData] = useState<Snapshot | null>(null),
-    [tab, setTab] = useState("registrations"),
+    [tab, setTab] = useState("players"),
+    [filter, setFilter] = useState<(typeof FILTERS)[number][0]>("pending"),
+    [selected, setSelected] = useState<Set<string>>(new Set()),
     [error, setError] = useState(""),
+    [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
-  async function refresh() {
-    try {
-      const r = await fetch("/api/admin", { cache: "no-store" });
-      const value = await r.json();
-      if (!r.ok) throw new Error(value.error);
-      setData(value);
-    } catch (e) {
-      setError((e as Error).message);
-    }
+
+  async function load() {
+    const r = await fetch("/api/admin", { cache: "no-store" });
+    const value = await r.json();
+    if (!r.ok) throw new Error(value.error);
+    return value as Snapshot;
   }
   useEffect(() => {
     let active = true;
-    fetch("/api/admin", { cache: "no-store" })
-      .then(async (r) => {
-        const value = await r.json();
-        if (!r.ok) throw new Error(value.error);
-        if (active) setData(value);
-      })
-      .catch((e) => {
-        if (active) setError(e.message);
-      });
+    load()
+      .then((v) => active && setData(v))
+      .catch((e) => active && setError(e.message));
     return () => {
       active = false;
     };
   }, []);
-  async function act(value: unknown) {
+  async function act(value: unknown, done?: string) {
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       const r = await fetch("/api/admin", {
         method: "POST",
@@ -88,586 +118,371 @@ export default function ControlCenter() {
       });
       const result = await r.json();
       if (!r.ok) throw new Error(result.error);
-      await refresh();
+      setData(await load());
+      setSelected(new Set());
+      if (done) setNotice(done);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
+
+  const can = (op: string) =>
+    data?.user.role === "admin" || !!data?.user.operations.includes(op);
+  const names = useMemo(
+    () =>
+      new Map(
+        data?.applications.map((a) => [a.player_id, a.gaming_name]) ?? [],
+      ),
+    [data],
+  );
+  const visible =
+    data?.applications.filter((a) => filter === "all" || a.status === filter) ??
+    [];
+  const fieldOpen =
+    !!data && ["draft", "open", "locked"].includes(data.tournament.status);
+
+  const tabs = data
+    ? [
+        ...(can("registrations") ? [["players", "Players"]] : []),
+        ...(data.user.role === "admin" ? [["tournament", "Tournament"]] : []),
+        ...(can("results") ? [["fixtures", "Fixtures & scores"]] : []),
+        ["standings", "Standings"],
+        ...(can("announcements") ? [["announcements", "Announcements"]] : []),
+        ...(data.user.role === "admin"
+          ? [
+              ["access", "Coordinators"],
+              ["audit", "Activity log"],
+            ]
+          : []),
+      ]
+    : [];
+
   return (
-    <div className="page-shell py-12">
+    <div className="page-shell py-12 om">
       <p className="eyebrow">XGAMER / OPERATIONS</p>
       <div className="flex flex-wrap justify-between gap-5">
         <div>
           <h1 className="page-title">
-            Control Center<span className="text-cyan-300">.</span>
+            Organizer Manager<span className="text-cyan-300">.</span>
           </h1>
-          <p className="text-slate-400 mt-4">
-            {data?.tournament.name ?? "Organizer workspace"}
-          </p>
+          {data && (
+            <p className="text-slate-400 mt-3">
+              {data.tournament.name} —{" "}
+              {PHASE_LABEL[data.tournament.status] ?? data.tournament.status} ·{" "}
+              {FORMAT_LABEL[data.tournament.format]}
+            </p>
+          )}
         </div>
-        <Link className="button-secondary self-start" href="/login">
-          Discord sign-in ↗
-        </Link>
+        {!data && (
+          <Link className="button-secondary self-start" href="/login">
+            Sign in with Discord ↗
+          </Link>
+        )}
       </div>
       {error && (
         <p role="alert" className="notice mt-6 text-amber-200">
           {error}
         </p>
       )}
-      {!data ? (
-        <p className="notice mt-8">
-          Sign in with an authorized organizer identity. Access requires the
-          private database and two main administrator identities to be
-          configured.
+      {notice && (
+        <p role="status" className="notice mt-6 text-cyan-200">
+          {notice}
         </p>
+      )}
+      {!data ? (
+        !error && <p className="notice mt-8">Loading…</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 my-9">
-            {[
-              [
-                data.applications.filter((a) =>
-                  ["pending", "approved"].includes(a.status),
-                ).length + " / 64",
-                "RESERVED",
-              ],
-              [
-                data.applications.filter((a) => a.status === "approved").length,
-                "APPROVED",
-              ],
-              [
-                data.applications.filter((a) => a.status === "waitlisted")
-                  .length,
-                "WAITLIST",
-              ],
-              [data.tournament.status.toUpperCase(), "PHASE"],
-            ].map(([n, label]) => (
-              <div className="panel p-5" key={label}>
-                <div className="text-3xl font-bold text-white">{n}</div>
-                <p className="text-xs text-slate-400 tracking-widest mt-3">
-                  {label}
-                </p>
-              </div>
-            ))}
-          </div>
           <div
             role="tablist"
-            aria-label="Operations"
-            className="flex gap-3 overflow-x-auto pb-4"
+            aria-label="Sections"
+            className="flex gap-2 overflow-x-auto py-6"
           >
-            {[
-              ...(data.user.role === "admin" ||
-              data.user.operations.includes("registrations")
-                ? ["registrations"]
-                : []),
-              ...(data.user.role === "admin" ||
-              data.user.operations.includes("results")
-                ? ["fixtures"]
-                : []),
-              "standings",
-              ...(data.user.role === "admin"
-                ? ["tournament", "access", "finals", "audit"]
-                : []),
-              ...(data.user.role === "admin" ||
-              data.user.operations.includes("announcements")
-                ? ["announcements"]
-                : []),
-            ].map((t) => (
+            {tabs.map(([key, label]) => (
               <button
-                key={t}
+                key={key}
                 role="tab"
-                aria-selected={t === tab}
-                className={t === tab ? "button-primary" : "button-secondary"}
-                onClick={() => setTab(t)}
+                aria-selected={key === tab}
+                className={key === tab ? "button-primary" : "button-secondary"}
+                onClick={() => setTab(key)}
               >
-                {t}
+                {label}
               </button>
             ))}
           </div>
+
           <fieldset
             disabled={busy}
-            className="panel p-4 md:p-7 mt-4 disabled:opacity-60"
+            className="panel p-4 md:p-7 disabled:opacity-60"
           >
-            {tab === "registrations" &&
-              (data.user.role === "admin" ||
-                data.user.operations.includes("registrations")) && (
+            {tab === "players" && can("registrations") && (
+              <div className="space-y-5">
+                <div
+                  className="flex flex-wrap gap-2"
+                  role="group"
+                  aria-label="Show"
+                >
+                  {FILTERS.map(([key, label]) => (
+                    <button
+                      key={key}
+                      className={`om-chip ${filter === key ? "om-chip-on" : ""}`}
+                      aria-pressed={filter === key}
+                      onClick={() => {
+                        setFilter(key);
+                        setSelected(new Set());
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {!fieldOpen && (
+                  <p className="notice">
+                    Fixtures exist, so approvals are locked. Reset fixtures in
+                    Tournament to change players.
+                  </p>
+                )}
+                {fieldOpen && selected.size > 0 && (
+                  <div className="om-bulk">
+                    <button
+                      className="button-primary"
+                      onClick={() => {
+                        if (
+                          confirm(
+                            "Approve the selected players? Confirm you have verified them on WhatsApp.",
+                          )
+                        )
+                          void act(
+                            {
+                              action: "review",
+                              status: "approved",
+                              verified: true,
+                              items: data.applications
+                                .filter((a) => selected.has(a.id))
+                                .map(({ id, revision }) => ({ id, revision })),
+                            },
+                            "Selected players approved. They now appear on the website.",
+                          );
+                      }}
+                    >
+                      Approve selected
+                    </button>
+                    <button
+                      className="button-secondary"
+                      onClick={() =>
+                        void act(
+                          {
+                            action: "review",
+                            status: "rejected",
+                            verified: false,
+                            items: data.applications
+                              .filter((a) => selected.has(a.id))
+                              .map(({ id, revision }) => ({ id, revision })),
+                          },
+                          "Selected players rejected.",
+                        )
+                      }
+                    >
+                      Reject selected
+                    </button>
+                    <button
+                      className="button-secondary"
+                      onClick={() => setSelected(new Set())}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
                 <div className="overflow-x-auto">
-                  <table className="control-table">
-                    <caption className="text-left text-slate-400 pb-5">
-                      Private applications. Confirm contact ownership before
-                      approving a player.
-                    </caption>
+                  <table className="control-table om-table">
                     <thead>
                       <tr>
+                        <th>
+                          <input
+                            type="checkbox"
+                            aria-label="Select all shown"
+                            checked={
+                              visible.length > 0 &&
+                              visible.every((a) => selected.has(a.id))
+                            }
+                            onChange={(e) =>
+                              setSelected(
+                                e.target.checked
+                                  ? new Set(visible.map((a) => a.id))
+                                  : new Set(),
+                              )
+                            }
+                          />
+                        </th>
                         <th>Player</th>
-                        <th>Contact</th>
-                        <th>Entry</th>
-                        <th>Review</th>
+                        <th>WhatsApp</th>
+                        <th>Status</th>
+                        <th>eFootball ID</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {data.applications.map((a) => (
+                      {visible.map((a) => (
                         <tr key={a.id}>
                           <td>
-                            <strong>{a.gaming_name}</strong>
-                            <p className="text-xs text-slate-400">
-                              {a.efootballId}
-                            </p>
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${a.gaming_name}`}
+                              checked={selected.has(a.id)}
+                              onChange={(e) => {
+                                const next = new Set(selected);
+                                if (e.target.checked) next.add(a.id);
+                                else next.delete(a.id);
+                                setSelected(next);
+                              }}
+                            />
                           </td>
-                          <td>{a.contact}</td>
-                          <td>{a.status}</td>
                           <td>
-                            <div className="flex flex-wrap gap-2">
-                              {data.user.role === "admin" && (
-                                <button
-                                  className="button-secondary"
-                                  onClick={() => {
-                                    const id = prompt(
-                                      "Enter this player's numeric Discord ID only after verifying ownership:",
-                                    );
-                                    if (
-                                      id &&
-                                      confirm(
-                                        "Confirm you independently verified that this Discord account belongs to this player.",
-                                      )
-                                    )
-                                      void act({
-                                        action: "review",
-                                        id: a.id,
-                                        revision: a.revision,
-                                        status:
-                                          a.status === "approved"
-                                            ? "approved"
-                                            : "pending",
-                                        verified: true,
-                                        discordId: id.trim(),
-                                      });
-                                  }}
-                                >
-                                  Link verified Discord
-                                </button>
-                              )}
-                              <button
-                                className="button-secondary"
-                                onClick={() => {
-                                  if (
-                                    confirm(
-                                      `Have you verified ${a.gaming_name}'s contact and eFootball identity?`,
-                                    )
-                                  )
-                                    void act({
-                                      action: "review",
-                                      id: a.id,
-                                      revision: a.revision,
-                                      status: "approved",
-                                      verified: true,
-                                    });
+                            <strong>{a.gaming_name}</strong>
+                            <span className="block text-xs text-slate-400">
+                              {a.team_name ?? "—"}
+                            </span>
+                          </td>
+                          <td>
+                            {a.phone && (
+                              <a
+                                className="text-cyan-300 underline-offset-4 hover:underline"
+                                href={waLink(a.phone)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {a.phone}
+                              </a>
+                            )}
+                          </td>
+                          <td>
+                            <span className={`om-status om-${a.status}`}>
+                              {a.status}
+                            </span>
+                          </td>
+                          <td>
+                            {a.status !== "approved" ? (
+                              <span className="text-xs text-slate-500">
+                                After approval
+                              </span>
+                            ) : (
+                              <form
+                                className="flex gap-2"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const v = new FormData(e.currentTarget).get(
+                                    "efootballId",
+                                  );
+                                  void act(
+                                    {
+                                      action: "efootball",
+                                      playerId: a.player_id,
+                                      efootballId: v,
+                                    },
+                                    `eFootball ID saved for ${a.gaming_name}.`,
+                                  );
                                 }}
                               >
-                                Verify & approve
-                              </button>
-                              <button
-                                className="button-secondary"
-                                onClick={() =>
-                                  void act({
-                                    action: "review",
-                                    id: a.id,
-                                    revision: a.revision,
-                                    status: "rejected",
-                                    verified: false,
-                                  })
-                                }
-                              >
-                                Reject
-                              </button>
-                              {data.user.role === "admin" && (
-                                <button
-                                  className="button-secondary"
-                                  onClick={() => {
-                                    if (
-                                      confirm(
-                                        "Soft-delete this application? Its audit history will remain.",
-                                      )
-                                    )
-                                      void act({
-                                        action: "delete",
-                                        id: a.id,
-                                        revision: a.revision,
-                                      });
-                                  }}
-                                >
-                                  Soft-delete
+                                <input
+                                  name="efootballId"
+                                  defaultValue={a.efootballId ?? ""}
+                                  placeholder="Add ID"
+                                  required
+                                  minLength={6}
+                                  maxLength={32}
+                                  pattern="[A-Za-z0-9-]{6,32}"
+                                  className="control-input !mt-0 font-mono uppercase min-w-[9rem]"
+                                  aria-label={`eFootball ID for ${a.gaming_name}`}
+                                />
+                                <button className="button-secondary">
+                                  Save
                                 </button>
-                              )}
-                            </div>
+                              </form>
+                            )}
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  {!visible.length && (
+                    <p className="text-slate-400 py-6">Nobody here yet.</p>
+                  )}
                 </div>
-              )}
-            {tab === "fixtures" && (
-              <div className="space-y-4">
-                {data.fixtures.map((f) => (
-                  <form
-                    key={f.id}
-                    className="grid md:grid-cols-[1fr_100px_100px_auto] gap-3 items-end border-b border-slate-700 pb-4"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const fields = new FormData(e.currentTarget);
-                      void act({
-                        action: "score",
-                        id: f.id,
-                        revision: f.revision,
-                        homeScore: Number(fields.get("home")),
-                        awayScore: Number(fields.get("away")),
-                        ...(fields.get("winner")
-                          ? { winner: fields.get("winner") }
-                          : {}),
-                      });
-                    }}
-                  >
-                    <p>
-                      R{f.round} ·{" "}
-                      {
-                        data.applications.find((a) => a.player_id === f.home)
-                          ?.gaming_name
-                      }{" "}
-                      vs{" "}
-                      {
-                        data.applications.find((a) => a.player_id === f.away)
-                          ?.gaming_name
-                      }
-                      <span className="block text-xs text-slate-400">
-                        {f.stage}
-                      </span>
-                    </p>
-                    <label>
-                      Home
-                      <input
-                        name="home"
-                        required
-                        type="number"
-                        min={0}
-                        max={99}
-                        defaultValue={f.home_score ?? ""}
-                        className="control-input"
-                      />
-                    </label>
-                    <label>
-                      Away
-                      <input
-                        name="away"
-                        required
-                        type="number"
-                        min={0}
-                        max={99}
-                        defaultValue={f.away_score ?? ""}
-                        className="control-input"
-                      />
-                    </label>
-                    <div>
-                      {f.stage === "knockout" && (
-                        <label>
-                          Draw tiebreak winner
-                          <select name="winner" className="control-input">
-                            <option value="">Choose if drawn</option>
-                            <option value={f.home}>Home player</option>
-                            <option value={f.away}>Away player</option>
-                          </select>
-                        </label>
-                      )}
-                      <button className="button-secondary">Save score</button>
-                    </div>
-                  </form>
-                ))}
-                {!data.fixtures.length && (
-                  <p>
-                    Fixtures appear after the main admins lock the approved
-                    field.
+              </div>
+            )}
+
+            {tab === "tournament" && data.user.role === "admin" && (
+              <TournamentSetup data={data} fieldOpen={fieldOpen} act={act} />
+            )}
+
+            {tab === "fixtures" && can("results") && (
+              <Fixtures data={data} names={names} act={act} />
+            )}
+
+            {tab === "standings" && (
+              <div className="overflow-x-auto">
+                <table className="control-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Player</th>
+                      <th>P</th>
+                      <th>W</th>
+                      <th>D</th>
+                      <th>L</th>
+                      <th>GD</th>
+                      <th>Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.standings.map((p, i) => (
+                      <tr
+                        key={p.id}
+                        className={
+                          data.tournament.format === "league_knockout" &&
+                          i === data.tournament.qualifiers - 1
+                            ? "om-cutoff"
+                            : ""
+                        }
+                      >
+                        <td>{i + 1}</td>
+                        <td>{p.name}</td>
+                        <td>{p.played}</td>
+                        <td>{p.won}</td>
+                        <td>{p.drawn}</td>
+                        <td>{p.lost}</td>
+                        <td>{p.gd}</td>
+                        <td>
+                          <strong>{p.pts}</strong>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {!data.standings.length && (
+                  <p className="text-slate-400 py-6">
+                    Approve players to start the table.
                   </p>
                 )}
               </div>
             )}
-            {tab === "standings" && (
-              <table className="control-table">
-                <caption>Unified league standings</caption>
-                <thead>
-                  <tr>
-                    <th>Rank</th>
-                    <th>Player</th>
-                    <th>P</th>
-                    <th>GD</th>
-                    <th>Points</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.standings.map((p, i) => (
-                    <tr key={p.id}>
-                      <td className={i < 8 ? "text-cyan-200" : ""}>{i + 1}</td>
-                      <td>{p.name}</td>
-                      <td>{p.played}</td>
-                      <td>{p.gd}</td>
-                      <td>{p.pts}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {tab === "tournament" && (
-              <div className="space-y-6">
-                <h2 className="text-2xl">Tournament controls</h2>
-                <p className="text-slate-400">
-                  Lock applications after verifying 64 entrants. Generating
-                  fixtures freezes the field. Qualification requires every
-                  league result and a resolved cutoff.
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  {["open", "locked"].map((status) => (
-                    <button
-                      className="button-secondary"
-                      key={status}
-                      onClick={() =>
-                        void act({
-                          action: "configure",
-                          status,
-                          opponents: 4,
-                          revision: data.tournament.revision,
-                        })
-                      }
-                    >
-                      {status === "open"
-                        ? "Open applications"
-                        : "Lock applications"}
-                    </button>
-                  ))}
-                  <button
-                    className="button-primary"
-                    onClick={() => {
-                      if (
-                        confirm(
-                          "Freeze 64 approved players and generate 128 fixtures?",
-                        )
-                      )
-                        void act({ action: "generate" });
-                    }}
-                  >
-                    Generate league
-                  </button>
-                  <button
-                    className="button-secondary"
-                    onClick={() => void act({ action: "qualify" })}
-                  >
-                    Qualify top eight
-                  </button>
-                  <button
-                    className="button-secondary"
-                    onClick={() => void act({ action: "advance" })}
-                  >
-                    Advance knockout round
-                  </button>
-                </div>
-                <form
-                  className="space-y-4 border-t border-slate-700 pt-6"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.currentTarget);
-                    void act({
-                      action: "configure",
-                      status: data.tournament.status,
-                      revision: data.tournament.revision,
-                      opponents: Number(f.get("opponents")),
-                    });
-                  }}
-                >
-                  <label className="block">
-                    Unique league opponents per player
-                    <input
-                      className="control-input"
-                      type="number"
-                      min={1}
-                      max={63}
-                      name="opponents"
-                      defaultValue={data.tournament.opponents}
-                      required
-                    />
-                  </label>
-                  <button className="button-secondary">
-                    Save league format
-                  </button>
-                </form>
-                <form
-                  className="space-y-4 border-t border-slate-700 pt-6"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const f = new FormData(e.currentTarget);
-                    void act({
-                      action: "qualify",
-                      playoffWinners: f.getAll("winners"),
-                      evidence: f.get("evidence"),
-                    });
-                  }}
-                >
-                  <h3 className="text-xl">
-                    Resolve a tied qualification cutoff
-                  </h3>
-                  <p className="text-slate-400 text-sm">
-                    Use only after external playoff matches. Select the players
-                    who earned the remaining top-eight places. The server
-                    accepts only players tied at the cutoff and records your
-                    evidence.
-                  </p>
-                  <div className="max-h-48 overflow-auto grid sm:grid-cols-2 gap-3">
-                    {data.standings.map((p) => (
-                      <label className="flex gap-3" key={p.id}>
-                        <input name="winners" value={p.id} type="checkbox" />
-                        {p.name}
-                      </label>
-                    ))}
-                  </div>
-                  <label className="block">
-                    Playoff evidence / organizer decision
-                    <textarea
-                      className="control-input"
-                      name="evidence"
-                      minLength={10}
-                      maxLength={2000}
-                      required
-                    />
-                  </label>
-                  <button className="button-secondary">
-                    Confirm playoff qualification
-                  </button>
-                </form>
-              </div>
-            )}
-            {tab === "access" && data.user.role === "admin" && (
+
+            {tab === "announcements" && can("announcements") && (
               <form
                 className="space-y-5"
                 onSubmit={(e) => {
                   e.preventDefault();
                   const f = new FormData(e.currentTarget);
-                  void act({
-                    action: "coordinator",
-                    discordId: f.get("discordId"),
-                    operations: f.getAll("operations"),
-                    active: f.get("active") === "on",
-                  });
-                }}
-              >
-                <h2 className="text-2xl">Coordinator permissions</h2>
-                <p className="text-slate-400">
-                  Assign only the operations this person needs for the October
-                  Cup. Delete and role management are always prohibited.
-                </p>
-                <label className="block">
-                  Numeric Discord user ID
-                  <input
-                    className="control-input"
-                    name="discordId"
-                    pattern="[0-9]{17,20}"
-                    required
-                  />
-                </label>
-                {["registrations", "results", "announcements"].map((op) => (
-                  <label className="flex gap-3" key={op}>
-                    <input type="checkbox" name="operations" value={op} />
-                    {op}
-                  </label>
-                ))}
-                <label className="flex gap-3">
-                  <input type="checkbox" name="active" defaultChecked />
-                  Access enabled (uncheck to revoke)
-                </label>
-                <button className="button-primary">
-                  Save coordinator access
-                </button>
-              </form>
-            )}
-            {tab === "finals" && data.user.role === "admin" && (
-              <form
-                className="space-y-5"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  void act({
-                    action: "finals",
-                    credentials: f.get("credentials"),
-                    released: f.get("released") === "on",
-                  });
-                }}
-              >
-                <h2 className="text-2xl">External finals access</h2>
-                <p className="text-slate-400">
-                  Link each finalist&apos;s verified Discord account during
-                  registration review first. Room details are encrypted and only
-                  the qualified eight can retrieve them after release.
-                </p>
-                <label className="block">
-                  Private eFootball room details
-                  <textarea
-                    name="credentials"
-                    required
-                    maxLength={2000}
-                    rows={5}
-                    className="control-input"
-                    autoComplete="off"
-                  />
-                </label>
-                <label className="flex gap-3">
-                  <input type="checkbox" name="released" />
-                  Release to qualified players
-                </label>
-                <button className="button-primary">Save finals access</button>
-              </form>
-            )}
-            {tab === "audit" && (
-              <table className="control-table">
-                <caption>Latest 100 immutable events</caption>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Actor</th>
-                    <th>Action</th>
-                    <th>Change</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.audit.map((a) => (
-                    <tr key={a.id}>
-                      <td>{new Date(a.created_at).toLocaleString()}</td>
-                      <td>{a.actor}</td>
-                      <td>{a.action}</td>
-                      <td>
-                        <details>
-                          <summary>Before / after</summary>
-                          <pre className="text-xs whitespace-pre-wrap break-all max-w-md">
-                            {JSON.stringify(
-                              { before: a.before_value, after: a.after_value },
-                              null,
-                              2,
-                            )}
-                          </pre>
-                        </details>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            {tab === "announcements" && (
-              <form
-                className="space-y-5"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  void act({
-                    action: "announce",
-                    title: f.get("title"),
-                    message: f.get("message"),
-                  });
+                  void act(
+                    {
+                      action: "announce",
+                      title: f.get("title"),
+                      message: f.get("message"),
+                    },
+                    "Announcement published.",
+                  );
+                  e.currentTarget.reset();
                 }}
               >
                 <label className="block">
@@ -680,7 +495,7 @@ export default function ControlCenter() {
                   />
                 </label>
                 <label className="block">
-                  Announcement
+                  Message
                   <textarea
                     required
                     name="message"
@@ -692,15 +507,489 @@ export default function ControlCenter() {
                 <button className="button-primary">Publish announcement</button>
               </form>
             )}
+
+            {tab === "access" && data.user.role === "admin" && (
+              <form
+                className="space-y-5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget);
+                  void act(
+                    {
+                      action: "coordinator",
+                      discordId: f.get("discordId"),
+                      operations: f.getAll("operations"),
+                      active: f.get("active") === "on",
+                    },
+                    "Coordinator access saved.",
+                  );
+                }}
+              >
+                <h2 className="text-2xl">Coordinators</h2>
+                <p className="text-slate-400">
+                  Give helpers only what they need. Coordinators can never
+                  delete records or change roles.
+                </p>
+                <label className="block">
+                  Discord user ID (numbers)
+                  <input
+                    className="control-input"
+                    name="discordId"
+                    pattern="[0-9]{17,20}"
+                    required
+                  />
+                </label>
+                {[
+                  ["registrations", "Review players"],
+                  ["results", "Enter scores"],
+                  ["announcements", "Post announcements"],
+                ].map(([op, label]) => (
+                  <label className="flex gap-3" key={op}>
+                    <input type="checkbox" name="operations" value={op} />{" "}
+                    {label}
+                  </label>
+                ))}
+                <label className="flex gap-3">
+                  <input type="checkbox" name="active" defaultChecked /> Access
+                  enabled (untick to remove)
+                </label>
+                <button className="button-primary">Save coordinator</button>
+              </form>
+            )}
+
+            {tab === "audit" && data.user.role === "admin" && (
+              <div className="overflow-x-auto">
+                <table className="control-table">
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Who</th>
+                      <th>Action</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.audit.map((a) => (
+                      <tr key={a.id}>
+                        <td>
+                          {new Date(a.created_at).toLocaleString("en-IN")}
+                        </td>
+                        <td>{a.actor}</td>
+                        <td>{a.action}</td>
+                        <td>
+                          <details>
+                            <summary>Before / after</summary>
+                            <pre className="text-xs whitespace-pre-wrap break-all max-w-md">
+                              {JSON.stringify(
+                                {
+                                  before: a.before_value,
+                                  after: a.after_value,
+                                },
+                                null,
+                                2,
+                              )}
+                            </pre>
+                          </details>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </fieldset>
           <button
             className="button-secondary mt-5"
-            onClick={() => void refresh()}
+            onClick={() =>
+              load()
+                .then(setData)
+                .catch((e) => setError(e.message))
+            }
           >
-            Refresh workspace
+            Refresh
           </button>
         </>
       )}
+    </div>
+  );
+}
+
+function TournamentSetup({
+  data,
+  fieldOpen,
+  act,
+}: {
+  data: Snapshot;
+  fieldOpen: boolean;
+  act: (value: unknown, done?: string) => Promise<void>;
+}) {
+  const t = data.tournament;
+  const [format, setFormat] = useState(t.format);
+  const missingIds = data.applications
+    .filter((a) => a.status === "approved" && !a.efootballId)
+    .map((a) => a.gaming_name);
+  const save = (form: HTMLFormElement, status: string, done: string) => {
+    const f = new FormData(form);
+    const opponents = Number(f.get("opponents"));
+    void act(
+      {
+        action: "configure",
+        revision: t.revision,
+        name: f.get("name"),
+        status,
+        format: f.get("format"),
+        qualifiers: Number(f.get("qualifiers") ?? t.qualifiers),
+        opponents: opponents > 0 ? opponents : null,
+      },
+      done,
+    );
+  };
+  return (
+    <div className="space-y-8">
+      <form
+        id="setup"
+        className="space-y-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save(e.currentTarget, t.status, "Tournament saved.");
+        }}
+      >
+        <h2 className="text-2xl">1. Set up</h2>
+        <fieldset
+          disabled={!fieldOpen}
+          className="space-y-5 disabled:opacity-60"
+        >
+          <label className="block">
+            Tournament name
+            <input
+              name="name"
+              defaultValue={t.name}
+              required
+              minLength={2}
+              maxLength={80}
+              className="control-input"
+            />
+          </label>
+          <div>
+            <p className="mb-2">Format</p>
+            <div className="flex flex-wrap gap-3">
+              {(Object.keys(FORMAT_LABEL) as (keyof typeof FORMAT_LABEL)[]).map(
+                (key) => (
+                  <label
+                    key={key}
+                    className={`om-choice ${format === key ? "om-choice-on" : ""}`}
+                  >
+                    <input
+                      type="radio"
+                      name="format"
+                      value={key}
+                      checked={format === key}
+                      onChange={() => setFormat(key)}
+                    />
+                    {FORMAT_LABEL[key]}
+                  </label>
+                ),
+              )}
+            </div>
+          </div>
+          {format === "league_knockout" && (
+            <label className="block">
+              Qualify for knockout
+              <select
+                name="qualifiers"
+                defaultValue={t.qualifiers}
+                className="control-input"
+              >
+                {[2, 4, 8, 16, 32].map((q) => (
+                  <option key={q} value={q}>
+                    Top {q}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {format !== "knockout" && (
+            <label className="block">
+              League matches per player{" "}
+              <span className="text-slate-500">
+                (optional — leave empty for everyone plays everyone)
+              </span>
+              <input
+                name="opponents"
+                type="number"
+                min={1}
+                max={63}
+                defaultValue={t.opponents ?? ""}
+                className="control-input"
+              />
+            </label>
+          )}
+          <button className="button-secondary">Save</button>
+        </fieldset>
+      </form>
+
+      <section className="space-y-4 border-t border-slate-700 pt-6">
+        <h2 className="text-2xl">2. Registration</h2>
+        <p className="text-slate-400">{PHASE_LABEL[t.status]}</p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            className="button-secondary"
+            disabled={!fieldOpen || t.status === "open"}
+            onClick={() =>
+              save(
+                document.getElementById("setup") as HTMLFormElement,
+                "open",
+                "Registration is open on the website.",
+              )
+            }
+          >
+            Open registration
+          </button>
+          <button
+            className="button-secondary"
+            disabled={!fieldOpen || t.status === "locked"}
+            onClick={() =>
+              save(
+                document.getElementById("setup") as HTMLFormElement,
+                "locked",
+                "Registration closed.",
+              )
+            }
+          >
+            Close registration
+          </button>
+        </div>
+      </section>
+
+      <section className="space-y-4 border-t border-slate-700 pt-6">
+        <h2 className="text-2xl">3. Fixtures</h2>
+        {missingIds.length > 0 && (
+          <p className="notice text-amber-200">
+            Add eFootball IDs first for: {missingIds.join(", ")}.
+          </p>
+        )}
+        {fieldOpen ? (
+          <form
+            className="flex flex-wrap items-center gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const shuffle =
+                new FormData(e.currentTarget).get("shuffle") === "on";
+              if (
+                confirm(
+                  `Generate ${FORMAT_LABEL[t.format]} fixtures for all approved players? Approvals lock until you reset.`,
+                )
+              )
+                void act(
+                  { action: "generate", shuffle },
+                  "Fixtures generated. They're live on the website.",
+                );
+            }}
+          >
+            <label className="flex gap-2 items-center">
+              <input type="checkbox" name="shuffle" defaultChecked /> Random
+              draw
+            </label>
+            <button className="button-primary" disabled={t.status !== "locked"}>
+              Generate fixtures
+            </button>
+            {t.status !== "locked" && (
+              <span className="text-sm text-slate-400">
+                Close registration first.
+              </span>
+            )}
+          </form>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            <button
+              className="button-secondary"
+              onClick={() =>
+                confirm(
+                  "Remove all fixtures? Only possible before any score is entered.",
+                ) && void act({ action: "reset" }, "Fixtures removed.")
+              }
+            >
+              Reset fixtures
+            </button>
+            {t.format === "league_knockout" && t.status === "league" && (
+              <button
+                className="button-primary"
+                onClick={() =>
+                  void act(
+                    { action: "qualify" },
+                    `Top ${t.qualifiers} moved to the knockout.`,
+                  )
+                }
+              >
+                Send Top {t.qualifiers} to knockout
+              </button>
+            )}
+            {t.status === "knockout" && (
+              <button
+                className="button-primary"
+                onClick={() =>
+                  void act({ action: "advance" }, "Next round created.")
+                }
+              >
+                Advance to next round
+              </button>
+            )}
+            {t.format === "league" && t.status === "league" && (
+              <button
+                className="button-primary"
+                onClick={() =>
+                  void act({ action: "complete" }, "League finished.")
+                }
+              >
+                Finish league
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+
+      {t.format === "league_knockout" && t.status === "league" && (
+        <form
+          className="space-y-4 border-t border-slate-700 pt-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            void act(
+              {
+                action: "qualify",
+                playoffWinners: f.getAll("winners"),
+                evidence: f.get("evidence"),
+              },
+              "Playoff winners qualified.",
+            );
+          }}
+        >
+          <h3 className="text-xl">Tie at the cutoff?</h3>
+          <p className="text-slate-400 text-sm">
+            Only if players are level on points, goal difference and goals. Tick
+            who won the playoff.
+          </p>
+          <div className="max-h-48 overflow-auto grid sm:grid-cols-2 gap-2">
+            {data.standings.map((p) => (
+              <label className="flex gap-3" key={p.id}>
+                <input name="winners" value={p.id} type="checkbox" /> {p.name}
+              </label>
+            ))}
+          </div>
+          <label className="block">
+            How the playoff was decided
+            <textarea
+              className="control-input"
+              name="evidence"
+              minLength={10}
+              maxLength={2000}
+              required
+            />
+          </label>
+          <button className="button-secondary">Confirm playoff winners</button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function Fixtures({
+  data,
+  names,
+  act,
+}: {
+  data: Snapshot;
+  names: Map<string, string>;
+  act: (value: unknown, done?: string) => Promise<void>;
+}) {
+  if (!data.fixtures.length)
+    return (
+      <p className="text-slate-400">
+        Fixtures appear here after you generate them in Tournament.
+      </p>
+    );
+  const groups = new Map<string, Match[]>();
+  for (const f of data.fixtures) {
+    const key = `${f.stage === "league" ? "League" : "Knockout"} · Round ${f.round}`;
+    groups.set(key, [...(groups.get(key) ?? []), f]);
+  }
+  return (
+    <div className="space-y-8">
+      {[...groups].map(([title, list]) => (
+        <section key={title}>
+          <h3 className="text-lg font-semibold mb-3">{title}</h3>
+          <div className="space-y-3">
+            {list.map((f) =>
+              !f.away ? (
+                <p key={f.id} className="text-slate-400">
+                  {names.get(f.home)} — bye, advances automatically
+                </p>
+              ) : (
+                <form
+                  key={f.id}
+                  className="om-score"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const v = new FormData(e.currentTarget);
+                    void act(
+                      {
+                        action: "score",
+                        id: f.id,
+                        revision: f.revision,
+                        homeScore: Number(v.get("home")),
+                        awayScore: Number(v.get("away")),
+                        ...(v.get("winner") ? { winner: v.get("winner") } : {}),
+                      },
+                      "Score saved.",
+                    );
+                  }}
+                >
+                  <span className="om-score-name">{names.get(f.home)}</span>
+                  <input
+                    name="home"
+                    required
+                    type="number"
+                    min={0}
+                    max={99}
+                    defaultValue={f.home_score ?? ""}
+                    className="control-input !mt-0"
+                    aria-label={`${names.get(f.home)} goals`}
+                  />
+                  <span className="text-slate-500">–</span>
+                  <input
+                    name="away"
+                    required
+                    type="number"
+                    min={0}
+                    max={99}
+                    defaultValue={f.away_score ?? ""}
+                    className="control-input !mt-0"
+                    aria-label={`${names.get(f.away)} goals`}
+                  />
+                  <span className="om-score-name text-right">
+                    {names.get(f.away)}
+                  </span>
+                  {f.stage === "knockout" && (
+                    <select
+                      name="winner"
+                      defaultValue={f.winner ?? ""}
+                      className="control-input !mt-0"
+                      aria-label="Winner if drawn"
+                    >
+                      <option value="">If drawn: winner</option>
+                      <option value={f.home}>{names.get(f.home)}</option>
+                      <option value={f.away}>{names.get(f.away)}</option>
+                    </select>
+                  )}
+                  <button className="button-secondary">
+                    {f.home_score === null ? "Save" : "Update"}
+                  </button>
+                </form>
+              ),
+            )}
+          </div>
+        </section>
+      ))}
     </div>
   );
 }

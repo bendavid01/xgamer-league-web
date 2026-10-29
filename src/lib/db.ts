@@ -6,7 +6,8 @@ export function db() {
   return (connection ??= postgres(process.env.DATABASE_URL, {
     max: 3,
     prepare: false,
-    ssl: "require",
+    // Local integration tests only: DATABASE_SSL=disable. Production always requires TLS.
+    ssl: process.env.DATABASE_SSL === "disable" ? false : "require",
     idle_timeout: 20,
   }));
 }

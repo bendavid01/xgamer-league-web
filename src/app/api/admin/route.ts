@@ -1,6 +1,7 @@
+import { TOURNAMENT_ID } from "@/lib/current";
 import { body, endpoint, response, HttpError } from "@/lib/api";
 import { snapshot, execute } from "@/lib/control";
-const tournament = "xgamer-2026-10";
+const tournament = TOURNAMENT_ID;
 export async function GET() {
   return endpoint(async () => response(await snapshot(tournament)));
 }

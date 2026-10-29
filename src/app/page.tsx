@@ -2,13 +2,16 @@ import HomeIntro from "@/components/HomeIntro";
 import EditorialReveal from "@/components/EditorialReveal";
 import { XMark } from "@/components/Brand";
 import { MatchCard, Unavailable } from "@/components/LeagueUI";
-import { getLeague } from "@/lib/league";
+import { getSeason } from "@/lib/season";
+import { getLiveStream } from "@/lib/youtube";
+import LiveNow from "@/components/LiveNow";
 import { communityLinks } from "@/lib/community";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 export const revalidate = 30;
 export default async function Home() {
-  const { teams, matches, available } = await getLeague();
+  const [season, live] = await Promise.all([getSeason(), getLiveStream()]);
+  const { players, matches, available } = season;
   const featured = [
     ...matches.filter((m) => m.status === "live"),
     ...matches.filter((m) => m.status === "scheduled"),
@@ -17,17 +20,7 @@ export default async function Home() {
   return (
     <div className="editorial-home">
       <HomeIntro />
-      <div className="panel flex flex-wrap items-center justify-between gap-5 p-6 my-5">
-        <div>
-          <p className="eyebrow !mb-2">OCTOBER 24 / THE NEXT CHAPTER</p>
-          <h2 className="text-2xl md:text-3xl font-semibold">
-            64 players. Eight finalists. One champion.
-          </h2>
-        </div>
-        <Link href="/cup" className="button-primary">
-          Explore the October Cup <ArrowUpRight size={18} />
-        </Link>
-      </div>
+      {live && <LiveNow stream={live} />}
       <div className="arena-strip">
         <span>PLAY WITH PURPOSE.</span>
         <XMark />
@@ -62,21 +55,30 @@ export default async function Home() {
             </Link>
           </div>
         </div>
-        <div className="editorial-stats">
-          {[
-            [teams.length, "PARTICIPANTS"],
-            [matches.length, "FIXTURES"],
-            [matches.filter((m) => m.status === "completed").length, "RESULTS"],
-          ].map(([n, label]) => (
-            <div key={label}>
-              <strong>
-                {available ? n : "—"}
-                <small>/</small>
-              </strong>
-              <span>{label}</span>
-            </div>
-          ))}
-        </div>
+        {available && players.length > 0 && (
+          <div className="competitor-strip" aria-label="Competitors">
+            <p className="section-index">
+              <span>
+                {season.title
+                  ? `IN ${season.title.toUpperCase()}`
+                  : "THE COMPETITORS"}
+              </span>
+            </p>
+            <ul>
+              {players.slice(0, 24).map((p) => (
+                <li key={p._id}>
+                  <strong>{p.name}</strong>
+                  {p.team && <span>{p.team}</span>}
+                </li>
+              ))}
+            </ul>
+            {players.length > 24 && (
+              <Link href="/players" className="editorial-link">
+                See everyone <ArrowUpRight size={20} />
+              </Link>
+            )}
+          </div>
+        )}
       </section>
       <section className="arena-section">
         <div className="page-shell">
