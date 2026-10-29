@@ -6,16 +6,15 @@ Next.js App Router, TypeScript, Tailwind, Motion, Lucide and the existing Sanity
 
 ## What's on the site
 - **Homepage:** XGamer crest hero (animated glow, light sweep, particles; respects reduced motion), a **LIVE NOW** banner and menu badge while the YouTube channel is streaming, confirmed competitor names, latest fixtures and the community section.
-- **Join the arena → `/register`:** player name, team name and WhatsApp number only. One entry per phone number. Accepts entries only when the database is configured **and** registration is opened in OM.
-- **Players, Match center and Standings** show the OM tournament once players are approved, otherwise the existing Sanity season. Standings are calculated automatically; League + Knockout shows the qualification line.
+- **Join the arena → `/register`:** player name, team name and a 10-digit Indian WhatsApp number. Shows the tournament's details; players choose when several are open. One entry per phone per tournament; returning players keep their player ID (XG-0001…).
+- **Homepage Tournaments section** (live ones, max 3) and a **Tournaments** page with past ones. **Players, Match center and Standings** have one tab per live tournament; the existing Sanity season shows when none is running. Standings are automatic, with the qualification line and Qualified badges.
 
 ## Organizer Manager (OM) — `/admin`
 Discord sign-in for the two main admins (and optional coordinators). No player counts are shown.
-1. **Tournament:** name, format (League / Knockout / League + Knockout), Top 2–32 qualifiers, optional matches per player. Open or close registration.
-2. **Players:** tick players and approve/reject them (after verifying on WhatsApp). Approved players appear on the website immediately. Add each approved player's eFootball ID.
-3. **Generate fixtures** (optional random draw). Knockout handles any number of players with automatic byes. Reset is possible until the first score.
-4. **Fixtures & scores:** standings update automatically; knockout draws need a tiebreak winner. Send Top N to the knockout, advance rounds, or finish a league.
-Every action is recorded in the immutable activity log.
+- **Home:** list of tournaments with their stage, **Add** (name + format → Apply), shared **Coordinators** and **Activity log** (who did what, by name, and which players were affected).
+- **Inside a tournament:** Players (tick → approve/reject, remove, optional eFootball ID), Set up (format, single or home & away, matches per player, knockout yes/no + Top N, registration-page details, open/close registration), Fixtures & scores (generate with random draw, reset before first score, scores, confirm Top N, finish), Standings, Announcements.
+- **Formats:** League (optionally followed by a knockout) or Knockout only. Knockouts are played in the eFootball app; the site records who qualified.
+- Every change has an **Apply** button at the bottom-right of its section; Refresh is at the bottom-left.
 
 ## Going live (one-time setup)
 Set these in Vercel → Settings → Environment Variables (never in Git), then run `npm run db:migrate` once against the database:

@@ -1,14 +1,5 @@
-import { PageTitle } from "@/components/LeagueUI";
-import TournamentPlanner from "@/components/TournamentPlanner";
+import { permanentRedirect } from "next/navigation";
+/** Fixtures are now built inside each tournament in the Organizer Manager. */
 export default function Planner() {
-  return (
-    <div className="page-shell py-12">
-      <PageTitle
-        label="TOURNAMENT LAB / PREVIEW"
-        title="Build your next rivalry."
-        description="Generate schedules, enter draft scores and preview knockout progression. Tournament publication remains with the organizers."
-      />
-      <TournamentPlanner />
-    </div>
-  );
+  permanentRedirect("/admin");
 }

@@ -118,7 +118,10 @@ test("registration does not accept or persist PII before setup", async () => {
 });
 test("admin endpoints expose no controls without configured authorization", async () => {
   const { GET, POST } = await import("../src/app/api/admin/route");
-  assert.equal((await GET()).status, 403);
+  assert.equal(
+    (await GET(new Request("https://example.test/api/admin"))).status,
+    403,
+  );
   assert.equal(
     (
       await POST(

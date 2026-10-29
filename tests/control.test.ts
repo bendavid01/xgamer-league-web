@@ -125,8 +125,12 @@ test("registration needs only player name, team name, phone and consent", () => 
     phone: "+919876543210",
     consent: true,
     website: "",
+    tournament: "xgamer-november-cup-1a2b",
   };
   assert(registrationInput.safeParse(input).success);
+  assert(
+    !registrationInput.safeParse({ ...input, tournament: "../etc" }).success,
+  );
   for (const invalid of [
     { consent: false },
     { website: "spam" },

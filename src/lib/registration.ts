@@ -2,7 +2,6 @@ import { z } from "zod";
 import { db } from "./db";
 import { encrypt, fingerprint } from "./private-data";
 import { HttpError } from "./api";
-import { TOURNAMENT_ID } from "./current";
 
 /**
  * Indian mobile numbers only. The form sends 10 digits; pasted "+91…" or "0…" forms are
@@ -33,6 +32,7 @@ export const registrationInput = z.object({
     .pipe(z.string().regex(/^\+91[6-9]\d{9}$/)),
   consent: z.literal(true),
   website: z.string().max(0),
+  tournament: z.string().regex(/^[a-z0-9-]{3,80}$/),
 });
 
 export const efootballIdInput = z
@@ -56,12 +56,12 @@ export async function register(
     throw new HttpError(429, "Too many attempts. Try again in an hour.");
   return sql.begin(async (tx) => {
     const [t] =
-      await tx`select * from tournament where id=${TOURNAMENT_ID} and deleted_at is null for update`;
+      await tx`select * from tournament where id=${input.tournament} and deleted_at is null for update`;
     if (!t || t.status !== "open")
-      throw new HttpError(409, "Registration is closed right now.");
+      throw new HttpError(409, "Registration for this tournament is closed.");
     const phoneHash = fingerprint("whatsapp:" + input.phone);
     let [player] =
-      await tx`select id from player where contact_hash=${phoneHash} and deleted_at is null for update`;
+      await tx`select id,public_no from player where contact_hash=${phoneHash} and deleted_at is null for update`;
     if (player) {
       const [existing] =
         await tx`select id from application where tournament_id=${t.id} and player_id=${player.id} and deleted_at is null`;
@@ -75,27 +75,46 @@ export async function register(
     } else {
       [player] =
         await tx`insert into player(gaming_name,team_name,contact_hash,contact_cipher,preference,consent_version)
-        values(${input.playerName},${input.teamName},${phoneHash},${encrypt(input.phone)},'whatsapp','2026-10-v3') returning id`;
+        values(${input.playerName},${input.teamName},${phoneHash},${encrypt(input.phone)},'whatsapp','2026-10-v3') returning id,public_no`;
     }
     const [application] =
       await tx`insert into application(tournament_id,player_id,status) values(${t.id},${player.id},'pending') returning id,status`;
-    await tx`insert into audit_event(actor,action,entity,after_value) values('guest','application.create',${application.id},${tx.json({ playerId: player.id, status: application.status })})`;
+    const code = `XG-${String(player.public_no).padStart(4, "0")}`;
+    await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,after_value)
+      values(${"player:" + player.id},${input.playerName},'player','application.create',${application.id},${t.id},'Registered',${code},${tx.json({ playerId: player.id, team: input.teamName, status: application.status })})`;
     return {
       playerId: player.id as string,
+      code,
       status: application.status as string,
     };
   });
 }
 
-/** Registration accepts entries only when private storage is configured AND OM has opened it. */
-export async function registrationOpen() {
-  if (!registrationConfigured()) return false;
+export type OpenTournament = {
+  id: string;
+  name: string;
+  format: string;
+  knockout: boolean;
+  qualifiers: number;
+  legs: number;
+  starts_on: string | null;
+  registration_closes: string | null;
+  entry_fee: number | null;
+  prize: string | null;
+  description: string | null;
+};
+
+/** Tournaments accepting registrations right now (only when private storage is configured). */
+export async function openTournaments(): Promise<OpenTournament[]> {
+  if (!registrationConfigured()) return [];
   try {
-    const [t] =
-      await db()`select status from tournament where id=${TOURNAMENT_ID} and deleted_at is null`;
-    return t?.status === "open";
+    return await db()<
+      OpenTournament[]
+    >`select id,name,format,knockout,qualifiers,legs,to_char(starts_on,'YYYY-MM-DD') as starts_on,
+        registration_closes::text as registration_closes,entry_fee,prize,description
+      from tournament where status='open' and deleted_at is null order by created_at desc`;
   } catch {
-    return false;
+    return [];
   }
 }
 

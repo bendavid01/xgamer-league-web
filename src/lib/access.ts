@@ -10,6 +10,7 @@ export type Operation =
   | "finals";
 export type Actor = {
   id: string;
+  name?: string;
   role: "admin" | "coordinator";
   operations: string[];
   tournaments: string[];
@@ -32,7 +33,8 @@ export function allowed(
 ) {
   return (
     actor.role === "admin" ||
-    (actor.tournaments.includes(tournament) &&
+    ((actor.tournaments.includes("*") ||
+      actor.tournaments.includes(tournament)) &&
       (operation === "workspace"
         ? actor.operations.length > 0
         : !["delete", "roles", "audit", "finals", "tournaments"].includes(

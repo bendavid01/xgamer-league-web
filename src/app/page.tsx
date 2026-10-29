@@ -3,6 +3,7 @@ import EditorialReveal from "@/components/EditorialReveal";
 import { XMark } from "@/components/Brand";
 import { MatchCard, Unavailable } from "@/components/LeagueUI";
 import { getSeason } from "@/lib/season";
+import { listTournaments } from "@/lib/tournaments";
 import { getLiveStream } from "@/lib/youtube";
 import LiveNow from "@/components/LiveNow";
 import { communityLinks } from "@/lib/community";
@@ -10,7 +11,11 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 export const revalidate = 30;
 export default async function Home() {
-  const [season, live] = await Promise.all([getSeason(), getLiveStream()]);
+  const [season, live, list] = await Promise.all([
+    getSeason(),
+    getLiveStream(),
+    listTournaments(),
+  ]);
   const { players, matches, available } = season;
   const featured = [
     ...matches.filter((m) => m.status === "live"),
@@ -28,6 +33,68 @@ export default async function Home() {
         <XMark />
         <span>MAKE IT YOURS.</span>
       </div>
+      {list && list.active.length > 0 && (
+        <section
+          className="page-shell home-tournaments"
+          aria-labelledby="tournaments-title"
+        >
+          <div className="flex items-end justify-between gap-4 mb-5">
+            <h2
+              id="tournaments-title"
+              className="text-2xl sm:text-3xl font-bold"
+            >
+              Tournaments
+            </h2>
+            {list.past.length > 0 && (
+              <Link href="/competitions" className="editorial-link">
+                Past tournaments <ArrowUpRight size={18} />
+              </Link>
+            )}
+          </div>
+          <div className="tournament-cards">
+            {list.active.slice(0, 3).map((t) => {
+              const cta =
+                t.status === "open"
+                  ? { label: "Register", href: `/register?t=${t.id}` }
+                  : t.status === "league"
+                    ? { label: "Fixtures", href: `/matches?t=${t.id}` }
+                    : t.status === "knockout"
+                      ? { label: "Standings", href: `/table?t=${t.id}` }
+                      : { label: "Players", href: `/players?t=${t.id}` };
+              const status = {
+                open: "Registration open",
+                locked: "Registration closed",
+                league: "League in progress",
+                knockout: "Knockout in eFootball app",
+                completed: "Completed",
+              }[t.status];
+              return (
+                <article key={t.id} className="panel tournament-card">
+                  <span className={`status-pill status-${t.status}`}>
+                    {status}
+                  </span>
+                  <h3>{t.name}</h3>
+                  <p>
+                    {t.format === "knockout"
+                      ? "Knockout"
+                      : `League${t.legs === 2 ? " · home & away" : ""}${t.knockout ? ` + Top ${t.qualifiers} knockout` : ""}`}
+                  </p>
+                  <Link
+                    href={cta.href}
+                    className={
+                      t.status === "open"
+                        ? "button-primary"
+                        : "button-secondary"
+                    }
+                  >
+                    {cta.label} <ArrowUpRight size={16} />
+                  </Link>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
       <section id="the-league" className="league-story page-shell">
         <EditorialReveal>
           <div className="section-index">
@@ -59,8 +126,8 @@ export default async function Home() {
           <div className="competitor-strip" aria-label="Competitors">
             <p className="section-index">
               <span>
-                {season.title
-                  ? `IN ${season.title.toUpperCase()}`
+                {season.current
+                  ? `IN ${season.current.name.toUpperCase()}`
                   : "THE COMPETITORS"}
               </span>
             </p>

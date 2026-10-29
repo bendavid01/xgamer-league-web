@@ -12,13 +12,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   session: { strategy: "jwt", maxAge: 60 * 60 * 4 },
   callbacks: {
-    jwt({ token, account }) {
-      if (account?.provider === "discord")
+    jwt({ token, account, profile }) {
+      if (account?.provider === "discord") {
         token.discordId = account.providerAccountId;
+        // Display name for the activity log (Discord global name, else username).
+        const p = profile as
+          { global_name?: string; username?: string } | undefined;
+        token.name = p?.global_name || p?.username || token.name;
+      }
       return token;
     },
     session({ session, token }) {
       session.user.id = String(token.discordId ?? "");
+      session.user.name = typeof token.name === "string" ? token.name : null;
       return session;
     },
   },

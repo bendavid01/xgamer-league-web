@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 
-const MIGRATIONS = ["001_control_center.sql", "002_open_registration.sql"];
+const MIGRATIONS = [
+  "001_control_center.sql",
+  "002_open_registration.sql",
+  "003_multi_tournament.sql",
+];
 async function migrated() {
   const pg = new PGlite();
   for (const file of MIGRATIONS)
@@ -138,15 +142,70 @@ test("PostgreSQL migrations: open registration, any field size, byes, recovery a
   }
 });
 
-test("migration 002 is safe to run twice", async () => {
+test("the latest migration is safe to run twice", async () => {
   const pg = await migrated();
   try {
     await pg.exec(
       await readFile(
-        new URL(`../migrations/${MIGRATIONS[1]}`, import.meta.url),
+        new URL(
+          `../migrations/${MIGRATIONS[MIGRATIONS.length - 1]}`,
+          import.meta.url,
+        ),
         "utf8",
       ),
     );
+  } finally {
+    await pg.close();
+  }
+});
+
+test("migration 003 keeps existing live data: players get readable IDs, old format converts", async () => {
+  const pg = new PGlite();
+  try {
+    for (const file of MIGRATIONS.slice(0, 2))
+      await pg.exec(
+        await readFile(
+          new URL(`../migrations/${file}`, import.meta.url),
+          "utf8",
+        ),
+      );
+    await pg.exec(
+      `insert into player(gaming_name,contact_hash,contact_cipher,consent_version) values('Anil','h1','c','v'),('Rahul','h2','c','v')`,
+    );
+    await pg.exec(`update tournament set status='open'`);
+    await pg.exec(
+      await readFile(
+        new URL(`../migrations/${MIGRATIONS[2]}`, import.meta.url),
+        "utf8",
+      ),
+    );
+    const players = await pg.query<{ public_no: number }>(
+      `select public_no from player order by public_no`,
+    );
+    assert.deepEqual(
+      players.rows.map((r) => r.public_no),
+      [1, 2],
+    );
+    const t = await pg.query<{
+      format: string;
+      knockout: boolean;
+      status: string;
+      legs: number;
+    }>(`select format,knockout,status,legs from tournament`);
+    assert.deepEqual(t.rows[0], {
+      format: "league",
+      knockout: true,
+      status: "open",
+      legs: 1,
+    });
+    // New tournaments and players keep numbering.
+    await pg.exec(
+      `insert into tournament(id,name) values('weekend-cup-1a2b','Weekend Cup')`,
+    );
+    const next = await pg.query<{ public_no: number }>(
+      `insert into player(gaming_name,contact_hash,contact_cipher,consent_version) values('New','h3','c','v') returning public_no`,
+    );
+    assert.equal(next.rows[0].public_no, 3);
   } finally {
     await pg.close();
   }

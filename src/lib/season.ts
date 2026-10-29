@@ -1,68 +1,84 @@
 import { cache } from "react";
-import { getCup } from "./cup";
+import {
+  getTournament,
+  listTournaments,
+  type PublicTournament,
+} from "./tournaments";
 import { getLeague, type LeagueMatch, type LeagueTeam } from "./league";
 
 /**
- * What the public pages show: the OM tournament once organizers have approved players,
- * otherwise the existing Sanity season. Both are returned in the same shape so the
- * current page designs stay unchanged.
+ * What the public Players / Fixtures / Standings pages show:
+ * live OM tournaments (one tab each) once organizers have approved players,
+ * otherwise the existing Sanity season. Same shape either way, so page designs stay unchanged.
  */
-export type SeasonPlayer = LeagueTeam & { team: string | null };
+export type SeasonPlayer = LeagueTeam & {
+  team: string | null;
+  qualified?: boolean;
+};
 export type Season = {
   source: "om" | "sanity";
   available: boolean;
-  title: string | null;
+  tabs: { id: string; name: string }[];
+  current: PublicTournament | null;
   players: SeasonPlayer[];
   matches: LeagueMatch[];
   qualifiers: number | null;
 };
 
-const STAGE = { league: "League", knockout: "Knockout" } as const;
-
-export const getSeason = cache(async (): Promise<Season> => {
-  const cup = await getCup();
-  if (cup && cup.players.length) {
-    const byId = new Map(
-      cup.players.map((p) => [p.id, { _id: p.id, name: p.name, group: null }]),
-    );
-    return {
-      source: "om",
-      available: true,
-      title: cup.tournament.name,
-      players: cup.players.map((p) => ({
-        _id: p.id,
-        name: p.name,
-        group: null,
-        team: p.team,
-      })),
-      // Byes are not matches, so they are not listed publicly.
-      matches: cup.fixtures
-        .filter((f) => f.away)
-        .map((f) => ({
+export const getSeason = cache(
+  async (requested?: string | null): Promise<Season> => {
+    const list = await listTournaments();
+    const live = list?.active ?? [];
+    const pool = requested && list ? [...live, ...list.past] : live;
+    const chosen = pool.find((t) => t.id === requested) ?? live[0];
+    const data = chosen ? await getTournament(chosen.id) : null;
+    if (data && (data.players.length || requested)) {
+      const byId = new Map(
+        data.players.map((p) => [
+          p.id,
+          { _id: p.id, name: p.name, group: null },
+        ]),
+      );
+      const qualified = new Set(data.qualified);
+      return {
+        source: "om",
+        available: true,
+        tabs: live.map(({ id, name }) => ({ id, name })),
+        current: data.tournament,
+        players: data.players.map((p) => ({
+          _id: p.id,
+          name: p.name,
+          group: null,
+          team: p.team,
+          qualified: qualified.has(p.id),
+        })),
+        matches: data.fixtures.map((f) => ({
           _id: f.id,
           status: f.home_score === null ? "scheduled" : "completed",
-          stage: `${STAGE[f.stage]} · Round ${f.round}`,
+          stage: `${data.tournament.name} · Round ${f.round}`,
           homeScore: f.home_score,
           awayScore: f.away_score,
           home: byId.get(f.home) ?? null,
-          away: byId.get(f.away!) ?? null,
+          away: byId.get(f.away) ?? null,
         })),
-      qualifiers:
-        cup.tournament.format === "league_knockout"
-          ? cup.tournament.qualifiers
-          : null,
+        qualifiers:
+          data.tournament.format === "league" && data.tournament.knockout
+            ? data.tournament.qualifiers
+            : null,
+      };
+    }
+    const league = await getLeague();
+    return {
+      source: "sanity",
+      available: league.available,
+      tabs: [],
+      current: null,
+      players: league.teams.map((t) => ({ ...t, team: null })),
+      matches: league.matches,
+      qualifiers: null,
     };
-  }
-  const league = await getLeague();
-  return {
-    source: "sanity",
-    available: league.available,
-    title: null,
-    players: league.teams.map((t) => ({ ...t, team: null })),
-    matches: league.matches,
-    qualifiers: null,
-  };
-});
+  },
+);
 
 /** League results for the standings table (both sources). */
 export function seasonResults(season: Season) {
@@ -74,9 +90,7 @@ export function seasonResults(season: Season) {
         m.away &&
         Number.isInteger(m.homeScore) &&
         Number.isInteger(m.awayScore) &&
-        (season.source === "om"
-          ? m.stage?.startsWith("League")
-          : m.stage === "Group Stage"),
+        (season.source === "om" || m.stage === "Group Stage"),
     )
     .map((m) => ({
       home: m.home!._id,

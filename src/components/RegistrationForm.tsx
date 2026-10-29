@@ -3,7 +3,13 @@ import { useState } from "react";
 
 type Result = { kind: "success" } | { kind: "error"; message: string } | null;
 
-export default function RegistrationForm({ enabled }: { enabled: boolean }) {
+export default function RegistrationForm({
+  tournament,
+}: {
+  /** Tournament the entry goes to; null while no tournament is open. */
+  tournament: string | null;
+}) {
+  const enabled = !!tournament;
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result>(null);
 
@@ -39,6 +45,7 @@ export default function RegistrationForm({ enabled }: { enabled: boolean }) {
               phone: data.get("phone"),
               website: data.get("website") ?? "",
               consent: data.get("consent") === "on",
+              tournament,
             }),
           });
           const body = await res.json().catch(() => ({}));

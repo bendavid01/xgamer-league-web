@@ -65,15 +65,17 @@ export async function actor(
   const session = await auth();
   const id = session?.user?.id;
   if (!id) throw new HttpError(401, "Sign in with Discord.");
+  const name = session?.user?.name ?? undefined;
   let user: Actor;
   if (adminIds().includes(id))
-    user = { id, role: "admin", operations: [], tournaments: [] };
+    user = { id, name, role: "admin", operations: [], tournaments: [] };
   else {
     const [row] =
       await db()`select operations, tournaments from coordinator where discord_id=${id} and active=true`;
     if (!row) throw new HttpError(403, "Access denied.");
     user = {
       id,
+      name,
       role: "coordinator",
       operations: row.operations,
       tournaments: row.tournaments,

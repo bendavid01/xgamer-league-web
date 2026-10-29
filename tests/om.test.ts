@@ -1,53 +1,100 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  advanceKnockout,
-  firstFixtures,
-  qualifyTopN,
-  roundRobin,
-} from "../src/lib/tournament";
+import { buildLeague, qualifyTopN, roundRobin } from "../src/lib/tournament";
 import { shuffled } from "../src/lib/control";
 import { pickLive, uploadsPlaylist } from "../src/lib/youtube";
 
 const field = (n: number) =>
   Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Player ${i}` }));
 
-test("any field size works for every format", () => {
-  for (const n of [2, 3, 5, 7, 12, 16, 23]) {
-    const league = firstFixtures("league", field(n), null);
-    assert.equal(league.stage, "league");
-    assert.equal(league.fixtures.length, (n * (n - 1)) / 2);
-    const ko = firstFixtures("knockout", field(n), null);
-    assert.equal(ko.stage, "knockout");
-    const size = 2 ** Math.ceil(Math.log2(n));
-    assert.equal(ko.fixtures.length, size / 2);
-    const byes = ko.fixtures.filter((f) => !f.home || !f.away).length;
-    assert.equal(byes, size - n);
-    // Every player appears exactly once in round one.
-    const seen = ko.fixtures.flatMap((f) => [f.home, f.away]).filter(Boolean);
-    assert.equal(new Set(seen).size, n);
-  }
-});
-
-test("league matches per player limits the schedule when the field is even", () => {
-  const plan = firstFixtures("league_knockout", field(10), 4);
-  assert.equal(plan.fixtures.length, 20);
-  assert.throws(() => firstFixtures("league", field(9), 4));
-});
-
-test("byes advance automatically and the bracket finishes with one champion", () => {
-  let round = firstFixtures("knockout", field(5), null).fixtures;
-  let rounds = 0;
-  while (round.length) {
-    const winners = Object.fromEntries(
-      round.filter((f) => f.home && f.away).map((f) => [f.id, f.home!]),
+function check(n: number, legs: 1 | 2, perPlayer: number | null) {
+  const players = field(n);
+  const fixtures = buildLeague(players, legs, perPlayer);
+  const per = perPlayer ?? n - 1;
+  const label = `n=${n} legs=${legs} per=${perPlayer}`;
+  assert.equal(fixtures.length, (n * per * legs) / 2, `${label}: match count`);
+  const rounds = new Map<number, string[]>();
+  const pairs = new Map<string, number>();
+  const ordered = new Set<string>();
+  const games = new Map<string, number>(),
+    homes = new Map<string, number>();
+  for (const f of fixtures) {
+    assert(f.home && f.away && f.home !== f.away, `${label}: valid match`);
+    const busy = rounds.get(f.round) ?? [];
+    assert(
+      !busy.includes(f.home) && !busy.includes(f.away),
+      `${label}: double booking in round ${f.round}`,
     );
-    const next = advanceKnockout(round, winners);
-    rounds++;
-    if (!next.length) break;
-    round = next;
+    rounds.set(f.round, [...busy, f.home, f.away]);
+    const key = [f.home, f.away].sort().join("|");
+    pairs.set(key, (pairs.get(key) ?? 0) + 1);
+    assert(
+      !ordered.has(`${f.home}>${f.away}`),
+      `${label}: same home/away twice`,
+    );
+    ordered.add(`${f.home}>${f.away}`);
+    for (const p of [f.home, f.away]) games.set(p, (games.get(p) ?? 0) + 1);
+    homes.set(f.home, (homes.get(f.home) ?? 0) + 1);
   }
-  assert.equal(rounds, 3);
+  for (const count of pairs.values())
+    assert.equal(count, legs, `${label}: each pair meets ${legs}x`);
+  for (const p of players) {
+    assert.equal(games.get(p.id), per * legs, `${label}: games for ${p.id}`);
+    const h = homes.get(p.id) ?? 0,
+      a = per * legs - h;
+    if (legs === 2) assert.equal(h, a, `${label}: home & away must be equal`);
+    else assert(Math.abs(h - a) <= 1, `${label}: home/away balance ${h}/${a}`);
+  }
+  // The same pair never meets in consecutive rounds (unavoidable only when a leg is a single round).
+  if (legs === 2 && rounds.size > 2) {
+    const sorted = [...rounds.keys()].sort((x, y) => x - y);
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = fixtures
+        .filter((f) => f.round === sorted[i - 1])
+        .map((f) => [f.home, f.away].sort().join("|"));
+      const cur = fixtures
+        .filter((f) => f.round === sorted[i])
+        .map((f) => [f.home, f.away].sort().join("|"));
+      assert(
+        !cur.some((k) => prev.includes(k)),
+        `${label}: back-to-back rematch`,
+      );
+    }
+  }
+  return fixtures;
+}
+
+test("league builder: every field size 2–64, single and home & away", () => {
+  for (let n = 2; n <= 64; n++)
+    for (const legs of [1, 2] as const) check(n, legs, null);
+});
+
+test("league builder: matches-per-player limits give equal games and no repeats", () => {
+  for (let n = 3; n <= 40; n++)
+    for (let k = 1; k < n; k++) {
+      if ((n * k) % 2) {
+        assert.throws(() => buildLeague(field(n), 1, k), /even/);
+        continue;
+      }
+      for (const legs of [1, 2] as const) check(n, legs, k);
+    }
+  assert.throws(() => buildLeague(field(6), 1, 6), /fewer/);
+});
+
+test("odd fields: everyone rests exactly once per round-robin leg", () => {
+  for (const n of [3, 5, 9, 15, 31]) {
+    const fixtures = buildLeague(field(n));
+    const rounds = Math.max(...fixtures.map((f) => f.round));
+    assert.equal(rounds, n);
+    for (const p of field(n)) {
+      const played = new Set(
+        fixtures
+          .filter((f) => f.home === p.id || f.away === p.id)
+          .map((f) => f.round),
+      );
+      assert.equal(rounds - played.size, 1, `n=${n}: ${p.id} rests once`);
+    }
+  }
 });
 
 test("Top N qualification works for 4, 8 or 16 and blocks unresolved ties", () => {
