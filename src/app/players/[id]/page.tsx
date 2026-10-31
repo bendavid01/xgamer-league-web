@@ -28,7 +28,7 @@ const STATUS: Record<string, string> = {
   league: "In progress",
   knockout: "Knockout in eFootball app",
   completed: "Finished",
-  draft: "Coming soon",
+  draft: "To be announced",
 };
 
 export default async function PlayerProfile({

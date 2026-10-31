@@ -460,6 +460,25 @@ test(
     assert.equal((await tour(night)).season, 1);
     assert.equal((await tour(k2.id)).format, "knockout");
 
+    // Updates appear on the website, newest first.
+    await cmd({
+      action: "announce",
+      tournament: night,
+      title: "Draw is out",
+      message: "Check the app.",
+    });
+    await cmd({
+      action: "announce",
+      tournament: night,
+      title: "Final tonight",
+      message: "9 pm IST.",
+    });
+    const pubNight = await getTournament(night);
+    assert.deepEqual(
+      pubNight!.updates.map((u) => u.title),
+      ["Final tonight", "Draw is out"],
+    );
+
     // Knockout: final positions entered by an admin.
     const nightApps = await apps(night);
     await cmd({

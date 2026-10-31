@@ -75,7 +75,7 @@ export default function Navbar({
           href="/register"
           className="button-primary hidden lg:inline-flex text-sm"
         >
-          Join the arena <ArrowUpRight size={16} />
+          Register now <ArrowUpRight size={16} />
         </Link>
         <button
           ref={toggle}
@@ -99,7 +99,7 @@ export default function Navbar({
             className="lg:hidden overflow-hidden"
           >
             <div className="page-shell pb-5 flex flex-col gap-1">
-              {[...items, ["Join the arena", "/register"]].map(
+              {[...items, ["Register now", "/register"]].map(
                 ([name, href]) => (
                   <Link
                     key={href}

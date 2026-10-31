@@ -147,7 +147,7 @@ export default function HomeIntro() {
             then follow every fixture and table here.
           </p>
           <Link className="button-primary hero-join" href="/register">
-            Join the arena <ArrowUpRight size={18} />
+            Register now <ArrowUpRight size={18} />
           </Link>
           <Link className="hero-sub-link" href="/tournaments">
             Fixtures &amp; tables ↗

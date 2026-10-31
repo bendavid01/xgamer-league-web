@@ -274,7 +274,7 @@ export async function snapshot(tournament: string) {
     ),
     photo: photo ? Number(photo.v) : null,
     announcements:
-      await sql`select id,title,message from announcement where tournament_id=${tournament} and deleted_at is null order by id desc`,
+      await sql`select id,title,message,created_at from announcement where tournament_id=${tournament} and deleted_at is null order by created_at desc`,
   };
 }
 

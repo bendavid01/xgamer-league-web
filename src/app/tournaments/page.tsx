@@ -31,15 +31,19 @@ const TABS = [
   ["results", "Results"],
   ["standings", "Standings"],
   ["players", "Players"],
+  ["updates", "Updates"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
 const defaultTab = (t: PublicTournament): Tab =>
-  t.status === "league"
-    ? "fixtures"
-    : t.status === "completed" || t.status === "knockout"
-      ? "standings"
-      : "players";
+  // Knockout-only tournaments are played in the eFootball app: news first.
+  t.format === "knockout"
+    ? "updates"
+    : t.status === "league"
+      ? "fixtures"
+      : t.status === "completed" || t.status === "knockout"
+        ? "standings"
+        : "players";
 
 export default async function Tournaments({
   searchParams,
@@ -249,6 +253,29 @@ export default async function Tournaments({
             />
           )}
         </div>
+      ) : tab === "updates" ? (
+        data.updates.length ? (
+          <ol className="updates-list">
+            {data.updates.map((u) => (
+              <li key={u.id} className="panel update-card">
+                <time dateTime={u.created_at}>
+                  {new Date(u.created_at).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    timeZone: "Asia/Kolkata",
+                  })}
+                </time>
+                <h3>{u.title}</h3>
+                <p>{u.message}</p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="notice">
+            No updates yet. Announcements from the organizers appear here.
+          </p>
+        )
       ) : players.length ? (
         <ul className="hub-players">
           {players.map((p) => (

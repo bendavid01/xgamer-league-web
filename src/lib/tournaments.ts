@@ -26,7 +26,7 @@ export type PublicTournament = {
 };
 
 export const STATUS_LABEL: Record<PublicTournament["status"], string> = {
-  draft: "Coming soon",
+  draft: "To be announced",
   open: "Registration open",
   locked: "Registration closed",
   league: "League in progress",
@@ -118,8 +118,13 @@ export const getTournament = cache(async (id: string) => {
     const podium = [1, 2, 3].map(
       (n) => podiumRows.find((r) => r.place === n)?.player_id ?? null,
     );
+    const updates = await sql<
+      { id: string; title: string; message: string; created_at: string }[]
+    >`select id,title,message,created_at::text as created_at from announcement
+      where tournament_id=${id} and published and deleted_at is null order by created_at desc limit 50`;
     return {
       tournament,
+      updates,
       players,
       fixtures,
       qualified,

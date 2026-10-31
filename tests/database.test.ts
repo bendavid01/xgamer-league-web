@@ -8,6 +8,7 @@ const MIGRATIONS = [
   "002_open_registration.sql",
   "003_multi_tournament.sql",
   "004_seasons_podium.sql",
+  "005_announcement_dates.sql",
 ];
 async function migrated() {
   const pg = new PGlite();

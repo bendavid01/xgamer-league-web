@@ -112,7 +112,12 @@ type Workspace = {
   qualified: string[];
   podium: (string | null)[];
   photo: number | null;
-  announcements: { id: string; title: string; message: string }[];
+  announcements: {
+    id: string;
+    title: string;
+    message: string;
+    created_at: string;
+  }[];
 };
 type Act = (value: Record<string, unknown>, done?: string) => Promise<boolean>;
 
@@ -919,7 +924,7 @@ function TournamentWorkspace({
       ? [["podium", "Final positions"] as [string, string]]
       : []),
     ...(can("announcements")
-      ? [["announcements", "Announcements"] as [string, string]]
+      ? [["announcements", "Updates"] as [string, string]]
       : []),
   ];
   const names = useMemo(
@@ -2035,13 +2040,17 @@ function AnnouncementsTab({ data, act }: { data: Workspace; act: Act }) {
                 title: f.get("title"),
                 message: f.get("message"),
               },
-              "Announcement published.",
+              "Update posted on the website.",
             )
           )
             form.reset();
         }}
       >
-        <h3 className="text-xl font-bold">New announcement</h3>
+        <h3 className="text-xl font-bold">Post an update</h3>
+        <p className="text-sm text-slate-400 -mt-3">
+          Shows in the tournament&apos;s Updates tab on the website, newest
+          first.
+        </p>
         <label className="block">
           Title
           <input
@@ -2068,6 +2077,14 @@ function AnnouncementsTab({ data, act }: { data: Workspace; act: Act }) {
       </form>
       {data.announcements.map((a) => (
         <article key={a.id} className="panel p-5">
+          <p className="text-xs text-slate-500">
+            {new Date(a.created_at).toLocaleString("en-IN", {
+              day: "numeric",
+              month: "short",
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </p>
           <h4 className="font-semibold">{a.title}</h4>
           <p className="text-slate-300 mt-2 whitespace-pre-wrap">{a.message}</p>
         </article>

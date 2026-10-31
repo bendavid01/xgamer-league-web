@@ -7,7 +7,7 @@ import { openTournaments, type OpenTournament } from "@/lib/registration";
 import { communityLinks } from "@/lib/community";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "Join the arena",
+  title: "Register",
   description: "Register for an XGamer eFootball tournament.",
 };
 
