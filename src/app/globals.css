@@ -2524,3 +2524,24 @@ a.hub-name:hover {
     animation: none;
   }
 }
+
+/* XG-003 — Desktop only (≥1024px): show the whole crest, never cropped.
+   The artwork is fitted inside the hero; its own blurred copy fills the sides.
+   Phones and tablets keep the rules above unchanged. */
+@media (min-width: 1024px) {
+  .crest-hero .hero-media::before {
+    content: "";
+    position: absolute;
+    inset: -60px;
+    background: url("/images/xgamer-crest-wide.webp") center / cover no-repeat;
+    filter: blur(48px) brightness(0.45) saturate(1.2);
+    z-index: -4; /* behind the crest (.hero-photo sits at -3) */
+  }
+  .crest-hero .hero-photo {
+    object-fit: contain;
+    object-position: 50% 50%;
+    -webkit-mask-image: linear-gradient(90deg, transparent 2%, #000 22%, #000 78%, transparent 98%);
+    mask-image: linear-gradient(90deg, transparent 2%, #000 22%, #000 78%, transparent 98%);
+  }
+  .crest-glow { top: 50%; width: min(40vw, 560px); }
+}
