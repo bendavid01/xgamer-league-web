@@ -1744,33 +1744,6 @@ nav[aria-label="Main navigation"] > .page-shell {
 .status-knockout { background: rgba(245, 158, 11, 0.14); color: #fde68a; }
 .status-completed { background: #1e293b; color: #94a3b8; }
 
-/* ── Homepage tournaments (max 3 live) ────────────────────────────────── */
-.home-tournaments { padding-top: 56px; }
-.tournament-cards {
-  display: grid;
-  gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-}
-@media (max-width: 640px) {
-  .tournament-cards {
-    grid-auto-flow: column;
-    grid-template-columns: none;
-    grid-auto-columns: 82%;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    padding-bottom: 6px;
-  }
-  .tournament-card { scroll-snap-align: start; }
-}
-.tournament-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 20px;
-}
-.tournament-card h3 { font-size: 20px; font-weight: 800; color: #f8fafc; line-height: 1.2; }
-.tournament-card p { color: #94a3b8; font-size: 14px; flex: 1; }
 
 /* ── OM layout (multi-tournament) ─────────────────────────────────────── */
 input[type="checkbox"],
@@ -2134,40 +2107,6 @@ a.hub-name:hover {
 .whats-on {
   padding-top: 48px;
 }
-.on-cards {
-  display: grid;
-  gap: 12px;
-  margin-top: 18px;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-}
-.on-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px 18px;
-  border-radius: 18px;
-  border: 1px solid #1e293b;
-  background: #0b1118;
-  transition: border-color 0.15s;
-}
-.on-card:hover {
-  border-color: #334155;
-}
-.on-card-title {
-  margin-top: 10px;
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.25;
-}
-.on-card-links {
-  display: flex;
-  gap: 8px;
-}
-.on-card-links a {
-  flex: 1;
-  justify-content: center;
-}
 .champions {
   padding-top: 80px;
 }
@@ -2498,31 +2437,8 @@ a.hub-name:hover {
 .update-card h3 { font-size: 18px; font-weight: 800; margin-top: 4px; }
 .update-card p { margin-top: 8px; color: #cbd5e1; white-space: pre-wrap; line-height: 1.6; }
 
-/* XG-002 — tournament selection cards */
-.t-group-title { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #94a3b8; margin-bottom: 14px; }
-.t-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.t-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  height: 100%;
-  padding: 18px 20px 20px;
-  border-radius: 18px;
-  border: 1px solid #1e293b;
-  background: #0b1118;
-  transition: border-color 0.15s, transform 0.15s;
-}
-.t-card:hover, .t-card:focus-visible { border-color: var(--xg-cyan); transform: translateY(-2px); }
-.t-card-name { margin-top: 8px; font-size: 20px; font-weight: 800; line-height: 1.2; padding-right: 28px; }
-.t-card-season { font-weight: 700; color: #a5f3fc; }
-.t-card-format { font-size: 14px; color: #94a3b8; }
-.t-card-arrow { position: absolute; top: 18px; right: 18px; width: 20px; height: 20px; color: #64748b; }
-.t-card:hover .t-card-arrow { color: var(--xg-cyan); }
 .hub-back { display: inline-flex; align-items: center; gap: 8px; color: #a5f3fc; font-weight: 600; min-height: 44px; }
 .hub-back:hover { color: #fff; }
-@media (prefers-reduced-motion: reduce) { .t-card { transition: none; } .t-card:hover { transform: none; } }
 
 /* XG-001 — Champions page */
 .records-totals { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 8px; }
@@ -2532,7 +2448,7 @@ a.hub-name:hover {
 @media (max-width: 640px) { .records-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .records-section { margin-top: 56px; }
 .records-h2 { font-size: 26px; font-weight: 900; margin-bottom: 16px; }
-.hall-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.hall-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
 @media (max-width: 400px) { .hall-list { grid-template-columns: 1fr; } }
 .hall-card {
   display: flex;
@@ -2576,9 +2492,10 @@ a.hub-name:hover {
 .rank-1 td:first-child { color: #facc15; font-weight: 900; }
 .rank-2 td:first-child { color: #cbd5e1; font-weight: 900; }
 .rank-3 td:first-child { color: #d97706; font-weight: 900; }
-.boards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.boards-2 { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.boards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.boards-2 { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
 @media (max-width: 400px) { .boards, .boards-2 { grid-template-columns: 1fr; } }
+.boards > * { min-width: 0; }
 .board { padding: 16px; border-radius: 16px; border: 1px solid #1e293b; background: #0b1118; }
 .board h3 { font-weight: 800; margin-bottom: 10px; }
 .board h3 span { display: block; font-size: 12px; font-weight: 500; color: #64748b; }
@@ -2594,3 +2511,127 @@ a.hub-name:hover {
 .board-form .form-chip { width: 22px; height: 22px; font-size: 11px; }
 .board-empty { font-size: 14px; color: #64748b; }
 @media (prefers-reduced-motion: reduce) { .hall-card { animation: none; } }
+
+/* XG-004 / XG-007 — shared tournament tiles (homepage + Tournaments page) */
+.xg-tiles {
+  display: grid;
+  gap: 16px;
+  max-width: 816px; /* at most two tiles of ~400px per row */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+}
+.xg-tiles > li { min-width: 0; }
+.xg-tile {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  border: 1px solid #1f2a3a;
+  background: linear-gradient(160deg, #111a27 0%, #0b1119 55%, #0d0f1d 100%);
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.xg-tile:hover {
+  border-color: rgba(34, 211, 238, 0.45);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px -18px rgba(34, 211, 238, 0.45);
+}
+.xg-tile-main {
+  position: relative;
+  isolation: isolate;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px 18px 14px;
+}
+.xg-tile-main:focus-visible { outline: 2px solid var(--xg-cyan); outline-offset: -2px; border-radius: 18px; }
+/* Subtle decorative crest, faded into the card on the right. */
+.xg-tile-crest {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 46%;
+  background: url("/images/xgamer-crest-mobile.webp") 62% 50% / auto 128% no-repeat;
+  opacity: 0.16;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 55%);
+  mask-image: linear-gradient(90deg, transparent, #000 55%);
+  transition: opacity 0.2s;
+}
+.xg-tile:hover .xg-tile-crest { opacity: 0.26; }
+.xg-tile-main::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--xg-cyan), rgba(167, 139, 250, 0.9) 60%, transparent);
+  opacity: 0.55;
+}
+.xg-tile-main .status-pill { margin-bottom: 8px; }
+.xg-tile-name {
+  max-width: 78%;
+  font-size: 19px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #f8fafc;
+  overflow-wrap: anywhere;
+}
+.xg-tile-season { font-size: 14px; font-weight: 700; color: #a5f3fc; }
+.xg-tile-format { font-size: 14px; color: #94a3b8; }
+.xg-tile-explore {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #67e8f9;
+}
+.xg-tile-explore svg { transition: transform 0.2s; }
+.xg-tile:hover .xg-tile-explore svg { transform: translateX(3px); }
+.xg-tile-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px 16px; }
+.xg-tile-actions a {
+  flex: 1 1 120px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid #263244;
+  background: rgba(15, 23, 42, 0.6);
+  font-size: 14px;
+  font-weight: 700;
+  color: #e2e8f0;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.xg-tile-actions a svg { color: var(--xg-cyan); }
+.xg-tile-actions a:hover,
+.xg-tile-actions a:focus-visible { border-color: rgba(34, 211, 238, 0.6); background: rgba(34, 211, 238, 0.06); color: #fff; }
+@media (max-width: 380px) {
+  .xg-tile-main { padding: 14px 14px 12px; }
+  .xg-tile-actions { padding: 0 14px 14px; }
+  .xg-tile-name { max-width: 100%; font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xg-tile, .xg-tile-crest, .xg-tile-explore svg, .xg-tile-actions a { transition: none; }
+  .xg-tile:hover, .xg-tile:hover .xg-tile-explore svg { transform: none; }
+}
+
+/* XG-007 — shared, calmer heading scale (Tournaments, Champions, Rules, Community) */
+.page-head { margin-bottom: 28px; }
+.page-head .eyebrow { margin-bottom: 10px; }
+.page-heading { font-size: clamp(2.1rem, 4.4vw, 3.5rem); line-height: 1.04; letter-spacing: -0.025em; }
+.page-head-text { max-width: 42rem; margin-top: 10px; color: #94a3b8; line-height: 1.6; }
+.hub-hero .hero-title.page-heading { font-size: clamp(2.1rem, 4.4vw, 3.5rem); line-height: 1.04; }
+.hub-hero:has(.page-heading) { padding-bottom: clamp(32px, 5vw, 56px); }
+.t-group-title { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #94a3b8; margin-bottom: 14px; }
+.whats-on .xg-tiles { margin-top: 18px; }

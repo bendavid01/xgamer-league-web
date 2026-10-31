@@ -31,6 +31,7 @@ export default async function Champions() {
     return (
       <div className="page-shell py-12">
         <PageTitle
+          compact
           label="HALL OF FAME"
           title="Champions."
           description="Winners, rankings and records."
@@ -146,6 +147,7 @@ export default async function Champions() {
   return (
     <div className="page-shell py-12 records">
       <PageTitle
+        compact
         label="HALL OF FAME"
         title="Champions."
         description="Winners, all-time rankings and records — calculated from every published XGamer tournament."

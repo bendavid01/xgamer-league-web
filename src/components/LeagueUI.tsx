@@ -6,16 +6,27 @@ export function PageTitle({
   label,
   title,
   description,
+  compact = false,
 }: {
   label: string;
   title: string;
   description: string;
+  /** Shared, calmer heading scale for the public section pages. */
+  compact?: boolean;
 }) {
   return (
-    <header className="mb-10">
+    <header className={compact ? "page-head" : "mb-10"}>
       <p className="eyebrow">{label}</p>
-      <h1 className="page-title">{title}</h1>
-      <p className="max-w-2xl text-slate-400 mt-4 leading-relaxed">
+      <h1 className={compact ? "page-title page-heading" : "page-title"}>
+        {title}
+      </h1>
+      <p
+        className={
+          compact
+            ? "page-head-text"
+            : "max-w-2xl text-slate-400 mt-4 leading-relaxed"
+        }
+      >
         {description}
       </p>
     </header>

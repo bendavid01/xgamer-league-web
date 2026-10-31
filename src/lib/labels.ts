@@ -8,6 +8,13 @@ export const FORMAT_LABEL: Record<FormatChoice, string> = {
   league_knockout: "League + Knockout (eFootball app)",
 };
 
+/** Short form for compact cards. */
+export const FORMAT_SHORT: Record<FormatChoice, string> = {
+  league: "League",
+  knockout: "Knockout",
+  league_knockout: "League + Knockout",
+};
+
 export const FORMAT_CHOICES = Object.keys(FORMAT_LABEL) as FormatChoice[];
 
 export const formatChoice = (t: {

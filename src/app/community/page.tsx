@@ -14,7 +14,7 @@ export default function Community() {
       <section className="hub-hero">
         <div className="relative z-10 max-w-2xl">
           <p className="eyebrow">THE COMMUNITY / YOUR HOME GROUND</p>
-          <h1 className="hero-title">
+          <h1 className="hero-title page-heading">
             RIVALS IN GAME.
             <br />
             <span className="text-cyan-300">FAMILY OUTSIDE.</span>

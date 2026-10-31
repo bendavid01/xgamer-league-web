@@ -35,6 +35,7 @@ export default function Rules() {
   return (
     <div className="page-shell py-12">
       <PageTitle
+        compact
         label="THE COMPETITION GUIDE"
         title="PLAY FAIR. LEAVE A LEGACY."
         description="Understand the table, prepare for kickoff and help shape a better arena."

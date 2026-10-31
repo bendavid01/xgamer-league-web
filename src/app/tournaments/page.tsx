@@ -5,6 +5,7 @@ import { PageTitle, Unavailable } from "@/components/LeagueUI";
 import LeaderboardClient from "@/components/LeaderboardClient";
 import AutoRefresh from "@/components/AutoRefresh";
 import LiveNow from "@/components/LiveNow";
+import TournamentTile from "@/components/TournamentTile";
 import RoundList, { type HubRound } from "@/components/hub/RoundList";
 import {
   getTournament,
@@ -55,6 +56,7 @@ export default async function Tournaments({
     return (
       <div className="page-shell py-12">
         <PageTitle
+          compact
           label="COMPETE / EFOOTBALL"
           title="Tournaments."
           description="Fixtures, results, standings and players."
@@ -350,11 +352,12 @@ function TournamentCards({
   const groups = [
     { id: "live", title: "Live", items: list.live },
     { id: "upcoming", title: "Upcoming", items: list.upcoming },
-    { id: "past", title: "Past", items: past },
+    { id: "past", title: "Completed", items: past },
   ].filter((g) => g.items.length);
   return (
     <div className="page-shell py-12">
       <PageTitle
+        compact
         label="COMPETE / EFOOTBALL"
         title="Tournaments."
         description="Choose a tournament to see its fixtures, results, standings, players and updates."
@@ -371,30 +374,13 @@ function TournamentCards({
               <h2 id={`group-${g.id}`} className="t-group-title">
                 {g.title}
               </h2>
-              <ul className="t-cards">
+              <ul className="xg-tiles">
                 {g.items.map((t) => (
                   <li key={t.id}>
-                    <Link
+                    <TournamentTile
+                      t={t}
                       href={`/tournaments?t=${encodeURIComponent(t.id)}${tab ? `&tab=${tab}` : ""}`}
-                      className="t-card"
-                    >
-                      <span className={`status-pill status-${t.status}`}>
-                        {STATUS_LABEL[t.status]}
-                      </span>
-                      <span className="t-card-name">
-                        {t.competition ?? t.name}
-                      </span>
-                      {t.season && (
-                        <span className="t-card-season">Season {t.season}</span>
-                      )}
-                      <span className="t-card-format">
-                        {FORMAT_LABEL[formatChoice(t)]}
-                      </span>
-                      <ArrowUpRight
-                        className="t-card-arrow"
-                        aria-hidden="true"
-                      />
-                    </Link>
+                    />
                   </li>
                 ))}
               </ul>
@@ -409,7 +395,7 @@ function TournamentCards({
                 >
                   {showAllPast
                     ? "Show fewer"
-                    : `Show all ${list.past.length} past tournaments`}
+                    : `Show all ${list.past.length} completed tournaments`}
                 </Link>
               )}
             </section>

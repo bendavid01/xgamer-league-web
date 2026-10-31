@@ -5,15 +5,11 @@ import HomeIntro from "@/components/HomeIntro";
 import EditorialReveal from "@/components/EditorialReveal";
 import { XMark } from "@/components/Brand";
 import LiveNow from "@/components/LiveNow";
-import {
-  getChampions,
-  listTournaments,
-  STATUS_LABEL,
-  type PublicTournament,
-} from "@/lib/tournaments";
+import TournamentTile from "@/components/TournamentTile";
+import { getChampions, listTournaments } from "@/lib/tournaments";
 import { getLiveStream } from "@/lib/youtube";
 import { communityLinks } from "@/lib/community";
-import { championTitle, FORMAT_LABEL, formatChoice } from "@/lib/labels";
+import { championTitle } from "@/lib/labels";
 
 export const revalidate = 30;
 
@@ -53,9 +49,15 @@ export default async function Home() {
           Active and upcoming tournaments
         </h2>
         {running.length + upcoming.length ? (
-          <ul className="on-cards">
+          <ul className="xg-tiles">
             {[...running, ...upcoming].map((t) => (
-              <OnCard key={t.id} t={t} />
+              <li key={t.id}>
+                <TournamentTile
+                  t={t}
+                  href={`/tournaments?t=${encodeURIComponent(t.id)}`}
+                  withActions
+                />
+              </li>
             ))}
           </ul>
         ) : (
@@ -216,36 +218,5 @@ export default async function Home() {
         <XMark className="finale-mark" />
       </section>
     </div>
-  );
-}
-
-/** Compact tournament card: name, status, format and two links — no data. */
-function OnCard({ t }: { t: PublicTournament }) {
-  const format = formatChoice(t);
-  const go = (tab: string) =>
-    `/tournaments?t=${encodeURIComponent(t.id)}&tab=${tab}`;
-  // Knockout-only is played in the eFootball app, so it has updates, not fixtures.
-  const first =
-    format === "knockout"
-      ? { label: "Updates", href: go("updates") }
-      : { label: "Fixtures", href: go("fixtures") };
-  return (
-    <li className="on-card">
-      <div className="min-w-0">
-        <span className={`status-pill status-${t.status}`}>
-          {STATUS_LABEL[t.status]}
-        </span>
-        <h3 className="on-card-title">{t.label}</h3>
-        <p className="text-sm text-slate-400">{FORMAT_LABEL[format]}</p>
-      </div>
-      <div className="on-card-links">
-        <Link href={first.href} className="button-secondary om-small">
-          {first.label}
-        </Link>
-        <Link href={go("standings")} className="button-secondary om-small">
-          Standings
-        </Link>
-      </div>
-    </li>
   );
 }
