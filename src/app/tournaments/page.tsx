@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowUpRight, Trophy } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Trophy } from "lucide-react";
 import { PageTitle, Unavailable } from "@/components/LeagueUI";
 import LeaderboardClient from "@/components/LeaderboardClient";
 import AutoRefresh from "@/components/AutoRefresh";
 import LiveNow from "@/components/LiveNow";
-import TournamentPicker from "@/components/hub/TournamentPicker";
 import RoundList, { type HubRound } from "@/components/hub/RoundList";
 import {
   getTournament,
@@ -48,7 +47,7 @@ const defaultTab = (t: PublicTournament): Tab =>
 export default async function Tournaments({
   searchParams,
 }: {
-  searchParams: Promise<{ t?: string; tab?: string }>;
+  searchParams: Promise<{ t?: string; tab?: string; past?: string }>;
 }) {
   const params = await searchParams;
   const list = await listTournaments();
@@ -64,20 +63,16 @@ export default async function Tournaments({
       </div>
     );
   const all = [...list.live, ...list.upcoming, ...list.past];
-  const chosen = all.find((t) => t.id === params.t) ?? all[0];
+  const chosen = all.find((t) => t.id === params.t);
+  // No tournament picked: the selection page (nothing is chosen automatically).
   if (!chosen)
     return (
-      <div className="page-shell py-12">
-        <PageTitle
-          label="COMPETE / EFOOTBALL"
-          title="Tournaments."
-          description="Fixtures, results, standings and players."
-        />
-        <p className="notice">
-          No tournament is published yet. Join our Discord to hear about the
-          next one.
-        </p>
-      </div>
+      <TournamentCards
+        list={list}
+        tab={TABS.some(([k]) => k === params.tab) ? params.tab! : null}
+        showAllPast={params.past === "all"}
+        missing={!!params.t}
+      />
     );
   const tab: Tab = TABS.some(([k]) => k === params.tab)
     ? (params.tab as Tab)
@@ -123,19 +118,9 @@ export default async function Tournaments({
 
   return (
     <div className="page-shell py-12">
-      <PageTitle
-        label="COMPETE / EFOOTBALL"
-        title="Tournaments."
-        description="Pick a tournament to see its fixtures, results, standings and players."
-      />
-      <TournamentPicker
-        current={t.id}
-        groups={[
-          { label: "Live", items: list.live },
-          { label: "Upcoming", items: list.upcoming },
-          { label: "Past", items: list.past },
-        ]}
-      />
+      <Link href="/tournaments" className="hub-back">
+        <ArrowLeft size={16} aria-hidden="true" /> All tournaments
+      </Link>
       <header className="hub-head">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-2xl sm:text-3xl font-bold">{t.label}</h2>
@@ -340,5 +325,102 @@ function PodiumStrip({
         ) : null,
       )}
     </ol>
+  );
+}
+
+const PAST_SHOWN = 3;
+
+/** /tournaments with nothing selected: one card per published tournament. */
+function TournamentCards({
+  list,
+  tab,
+  showAllPast,
+  missing,
+}: {
+  list: {
+    live: PublicTournament[];
+    upcoming: PublicTournament[];
+    past: PublicTournament[];
+  };
+  tab: string | null;
+  showAllPast: boolean;
+  missing: boolean;
+}) {
+  const past = showAllPast ? list.past : list.past.slice(0, PAST_SHOWN);
+  const groups = [
+    { id: "live", title: "Live", items: list.live },
+    { id: "upcoming", title: "Upcoming", items: list.upcoming },
+    { id: "past", title: "Past", items: past },
+  ].filter((g) => g.items.length);
+  return (
+    <div className="page-shell py-12">
+      <PageTitle
+        label="COMPETE / EFOOTBALL"
+        title="Tournaments."
+        description="Choose a tournament to see its fixtures, results, standings, players and updates."
+      />
+      {missing && (
+        <p className="notice mb-8">
+          That tournament isn&apos;t available. Pick one below.
+        </p>
+      )}
+      {groups.length ? (
+        <div className="space-y-10">
+          {groups.map((g) => (
+            <section key={g.id} aria-labelledby={`group-${g.id}`}>
+              <h2 id={`group-${g.id}`} className="t-group-title">
+                {g.title}
+              </h2>
+              <ul className="t-cards">
+                {g.items.map((t) => (
+                  <li key={t.id}>
+                    <Link
+                      href={`/tournaments?t=${encodeURIComponent(t.id)}${tab ? `&tab=${tab}` : ""}`}
+                      className="t-card"
+                    >
+                      <span className={`status-pill status-${t.status}`}>
+                        {STATUS_LABEL[t.status]}
+                      </span>
+                      <span className="t-card-name">
+                        {t.competition ?? t.name}
+                      </span>
+                      {t.season && (
+                        <span className="t-card-season">Season {t.season}</span>
+                      )}
+                      <span className="t-card-format">
+                        {FORMAT_LABEL[formatChoice(t)]}
+                      </span>
+                      <ArrowUpRight
+                        className="t-card-arrow"
+                        aria-hidden="true"
+                      />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              {g.id === "past" && list.past.length > PAST_SHOWN && (
+                <Link
+                  href={
+                    showAllPast
+                      ? "/tournaments"
+                      : `/tournaments?past=all${tab ? `&tab=${tab}` : ""}#group-past`
+                  }
+                  className="editorial-link mt-5"
+                >
+                  {showAllPast
+                    ? "Show fewer"
+                    : `Show all ${list.past.length} past tournaments`}
+                </Link>
+              )}
+            </section>
+          ))}
+        </div>
+      ) : (
+        <p className="notice">
+          No tournament is published yet. Join our Discord to hear about the
+          next one.
+        </p>
+      )}
+    </div>
   );
 }
