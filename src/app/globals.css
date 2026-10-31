@@ -2635,3 +2635,116 @@ a.hub-name:hover {
 .hub-hero:has(.page-heading) { padding-bottom: clamp(32px, 5vw, 56px); }
 .t-group-title { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: #94a3b8; margin-bottom: 14px; }
 .whats-on .xg-tiles { margin-top: 18px; }
+
+/* XG-006 — XGamer LIVE: shared platform cards (/live, tournament Live tab) */
+.live-hub-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid #1f2a3a;
+  background: linear-gradient(120deg, #101a28, #0b1119 60%, #130f24);
+}
+.live-hub-icon { flex: none; width: 30px; height: 30px; color: var(--xg-cyan); margin-top: 2px; }
+.live-hub-title { font-size: 20px; font-weight: 800; }
+.live-hub-text { font-size: 14px; color: #94a3b8; margin-top: 2px; }
+.live-hub-note { font-size: 13px; color: #64748b; margin-top: 6px; }
+.stream-grid { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 700px) { .stream-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .stream-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.stream-grid > li { min-width: 0; }
+.stream-card {
+  --accent: #22d3ee;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid #1f2a3a;
+  background: linear-gradient(170deg, #111a27, #0b1119 70%);
+}
+.stream-youtube { --accent: #ef4444; }
+.stream-twitch { --accent: #a78bfa; }
+.stream-kick { --accent: #4ade80; }
+.stream-live { border-color: color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: 0 10px 34px -22px var(--accent); }
+.stream-head { display: flex; align-items: center; gap: 12px; }
+.stream-badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 900;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.stream-name { display: block; font-weight: 800; }
+.stream-handle { display: block; font-size: 13px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stream-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  background: #1e293b;
+  color: #cbd5e1;
+}
+.stream-state-live { background: #e11d48; color: #fff; letter-spacing: 0.08em; }
+.stream-state-unavailable { background: rgba(245, 158, 11, 0.14); color: #fcd34d; }
+.stream-body { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; align-items: center; }
+.stream-thumb {
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--accent) 22%, #0b1119), #070b12 75%);
+  border: 1px solid #1f2a3a;
+}
+.stream-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.stream-thumb-mark { font-size: 11px; font-weight: 900; letter-spacing: 0.12em; color: #cbd5e1; text-align: center; line-height: 1.2; }
+.stream-thumb-mark small { display: block; font-size: 9px; color: #64748b; letter-spacing: 0.16em; }
+.stream-live .stream-thumb-mark small { color: #fda4af; }
+.stream-title { font-weight: 700; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.stream-sub { font-size: 13px; color: #94a3b8; margin-top: 2px; }
+.stream-button {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  color: #f8fafc;
+  transition: background 0.15s, border-color 0.15s;
+}
+.stream-button:hover, .stream-button:focus-visible { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.stream-button-live { background: #e11d48; border-color: #e11d48; }
+.stream-button-live:hover, .stream-button-live:focus-visible { background: #f43f5e; }
+.stream-foot { margin-top: 12px; font-size: 13px; color: #64748b; }
+@media (max-width: 360px) {
+  .stream-card { padding: 14px; }
+  .stream-body { grid-template-columns: 1fr; }
+  .stream-thumb { max-width: 220px; }
+}
+@media (prefers-reduced-motion: reduce) { .stream-button { transition: none; } }
+/* Homepage "XGamer LIVE" strip */
+.live-now { padding-top: 16px; }
+.live-now .live-banner { margin: 0 0 10px; }
+.live-all { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: #a5f3fc; }
+.live-all:hover { color: #fff; }
+@media (max-width: 380px) {
+  .nav-live { padding: 4px 8px; font-size: 10px; letter-spacing: 0.08em; }
+  .nav-live .live-dot { width: 6px; height: 6px; }
+}

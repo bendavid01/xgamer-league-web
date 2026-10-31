@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Space_Grotesk, Barlow_Condensed } from "next/font/google";
 import Brand from "@/components/Brand";
 import { communityLinks } from "@/lib/community";
-import { getLiveStream } from "@/lib/youtube";
+import { getLiveStatus, liveNow } from "@/lib/live";
 const bodyFont = Space_Grotesk({
   subsets: ["latin"],
   variable: "--font-body",
@@ -32,7 +32,8 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const live = await getLiveStream();
+  // Shared live status: the badge shows only when a channel is confirmed live.
+  const live = liveNow(await getLiveStatus().catch(() => []));
   return (
     <html lang="en" className={`${bodyFont.variable} ${displayFont.variable}`}>
       <body>
@@ -40,7 +41,7 @@ export default async function RootLayout({
           Skip to content
         </a>
         <div className="min-h-screen flex flex-col">
-          <Navbar liveUrl={live?.url ?? null} />
+          <Navbar livePlatforms={live.map((c) => c.name)} />
           <main id="content" className="flex-grow">
             <RouteMotion>{children}</RouteMotion>
           </main>

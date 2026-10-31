@@ -4,7 +4,8 @@ import { ArrowLeft, ArrowUpRight, Trophy } from "lucide-react";
 import { PageTitle, Unavailable } from "@/components/LeagueUI";
 import LeaderboardClient from "@/components/LeaderboardClient";
 import AutoRefresh from "@/components/AutoRefresh";
-import LiveNow from "@/components/LiveNow";
+import LiveChannels from "@/components/live/LiveChannels";
+import LiveHeader from "@/components/live/LiveHeader";
 import TournamentTile from "@/components/TournamentTile";
 import RoundList, { type HubRound } from "@/components/hub/RoundList";
 import {
@@ -15,7 +16,7 @@ import {
   type PublicFixture,
   type PublicTournament,
 } from "@/lib/tournaments";
-import { getLiveStream } from "@/lib/youtube";
+import { getLiveStatus, REFRESH_SECONDS } from "@/lib/live";
 import { FORMAT_LABEL, formatChoice, PLACE_LABEL } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -81,7 +82,7 @@ export default async function Tournaments({
     : defaultTab(chosen);
   const [data, stream] = await Promise.all([
     getTournament(chosen.id),
-    tab === "live" ? getLiveStream() : Promise.resolve(null),
+    tab === "live" ? getLiveStatus() : Promise.resolve(null),
   ]);
   const t = chosen;
   const format = formatChoice(t);
@@ -110,9 +111,6 @@ export default async function Tournaments({
   const fixtures = data?.fixtures ?? [];
   const upcoming = fixtures.filter((f) => f.home_score === null);
   const done = fixtures.filter((f) => f.home_score !== null);
-  const currentRound = upcoming.length
-    ? Math.min(...upcoming.map((f) => f.round))
-    : null;
   const qualified = new Set(data?.qualified ?? []);
   const knockoutOnly = format === "knockout";
   const href = (k: Tab) =>
@@ -166,27 +164,13 @@ export default async function Tournaments({
       {!data ? (
         <Unavailable />
       ) : tab === "live" ? (
-        <div className="space-y-6">
-          {stream ? (
-            <LiveNow stream={stream} />
-          ) : (
-            <p className="notice">
-              Not streaming right now. When we go live on YouTube, it shows up
-              here.
-            </p>
-          )}
-          {currentRound !== null && (
-            <>
-              <h3 className="text-xl font-bold">Now playing</h3>
-              <RoundList
-                search={false}
-                rounds={toRounds(
-                  upcoming.filter((f) => f.round === currentRound),
-                )}
-                empty=""
-              />
-            </>
-          )}
+        // Global XGamer broadcasts — the same data as /live, never tied to this tournament.
+        <div className="space-y-5">
+          <LiveHeader note="These are XGamer's official channels. Broadcasts may include other content and aren't necessarily about this tournament." />
+          <LiveChannels
+            initial={stream ?? []}
+            refreshSeconds={REFRESH_SECONDS}
+          />
         </div>
       ) : tab === "fixtures" ? (
         knockoutOnly ? (

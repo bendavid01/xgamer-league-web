@@ -17,9 +17,10 @@ const isCurrent = (pathname: string, href: string) =>
     ? pathname === href || pathname.startsWith("/players")
     : pathname === href;
 export default function Navbar({
-  liveUrl = null,
+  livePlatforms = [],
 }: {
-  liveUrl?: string | null;
+  /** Official channels confirmed live right now (e.g. ["YouTube", "Kick"]). */
+  livePlatforms?: string[];
 }) {
   const toggle = useRef<HTMLButtonElement>(null);
   const reduced = useReducedMotion();
@@ -36,7 +37,7 @@ export default function Navbar({
       aria-label="Main navigation"
       className={`sticky top-0 z-50 border-b border-slate-800 ${open ? "bg-[#0b1118]" : "bg-slate-950/95"}`}
     >
-      <div className="page-shell flex min-h-20 items-center justify-between gap-5">
+      <div className="page-shell flex min-h-20 items-center justify-between gap-2 sm:gap-5">
         <Link
           href="/"
           aria-label="X-Gamer home"
@@ -60,16 +61,14 @@ export default function Navbar({
             </Link>
           ))}
         </div>
-        {liveUrl && (
-          <a
-            href={liveUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="nav-live ml-auto lg:ml-0"
-          >
+        {livePlatforms.length > 0 && (
+          <Link href="/live" className="nav-live ml-auto lg:ml-0">
             <span className="live-dot" aria-hidden="true" /> LIVE
-            <span className="sr-only"> on YouTube (opens in a new tab)</span>
-          </a>
+            <span className="sr-only">
+              {" "}
+              now on {livePlatforms.join(" and ")} — watch XGamer live
+            </span>
+          </Link>
         )}
         <Link
           href="/register"
@@ -99,21 +98,17 @@ export default function Navbar({
             className="lg:hidden overflow-hidden"
           >
             <div className="page-shell pb-5 flex flex-col gap-1">
-              {[...items, ["Register now", "/register"]].map(
-                ([name, href]) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setOpen(false)}
-                    aria-current={
-                      isCurrent(pathname, href) ? "page" : undefined
-                    }
-                    className="p-3 rounded-lg hover:bg-slate-900"
-                  >
-                    {name}
-                  </Link>
-                ),
-              )}
+              {[...items, ["Register now", "/register"]].map(([name, href]) => (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setOpen(false)}
+                  aria-current={isCurrent(pathname, href) ? "page" : undefined}
+                  className="p-3 rounded-lg hover:bg-slate-900"
+                >
+                  {name}
+                </Link>
+              ))}
             </div>
           </motion.div>
         )}

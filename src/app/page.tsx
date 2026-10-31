@@ -7,7 +7,7 @@ import { XMark } from "@/components/Brand";
 import LiveNow from "@/components/LiveNow";
 import TournamentTile from "@/components/TournamentTile";
 import { getChampions, listTournaments } from "@/lib/tournaments";
-import { getLiveStream } from "@/lib/youtube";
+import { getLiveStatus, liveNow } from "@/lib/live";
 import { communityLinks } from "@/lib/community";
 import { championTitle } from "@/lib/labels";
 
@@ -15,7 +15,7 @@ export const revalidate = 30;
 
 export default async function Home() {
   const [live, list, champions] = await Promise.all([
-    getLiveStream(),
+    getLiveStatus().catch(() => []),
     listTournaments(),
     getChampions(),
   ]);
@@ -34,7 +34,7 @@ export default async function Home() {
   return (
     <div className="editorial-home">
       <HomeIntro />
-      {live && <LiveNow stream={live} />}
+      <LiveNow live={liveNow(live)} />
 
       <section
         id="whats-on"
