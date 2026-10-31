@@ -2523,3 +2523,74 @@ a.hub-name:hover {
 .hub-back { display: inline-flex; align-items: center; gap: 8px; color: #a5f3fc; font-weight: 600; min-height: 44px; }
 .hub-back:hover { color: #fff; }
 @media (prefers-reduced-motion: reduce) { .t-card { transition: none; } .t-card:hover { transform: none; } }
+
+/* XG-001 — Champions page */
+.records-totals { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 8px; }
+.records-totals > div { padding: 14px 16px; border: 1px solid #1e293b; border-radius: 14px; background: #0b1118; }
+.records-totals dt { font-size: 12px; color: #94a3b8; }
+.records-totals dd { font-size: 28px; font-weight: 900; }
+@media (max-width: 640px) { .records-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.records-section { margin-top: 56px; }
+.records-h2 { font-size: 26px; font-weight: 900; margin-bottom: 16px; }
+.hall-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+@media (max-width: 400px) { .hall-list { grid-template-columns: 1fr; } }
+.hall-card {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  background: linear-gradient(180deg, #111827, #0b1118);
+  animation: podium-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hall-photo {
+  flex: none;
+  width: 92px;
+  height: 115px;
+  border-radius: 14px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 30%, #3b2f0b, #0b1118 75%);
+  color: rgba(250, 204, 21, 0.8);
+  font-size: 30px;
+  font-weight: 900;
+}
+.hall-photo img { width: 100%; height: 100%; object-fit: cover; }
+.hall-tournament { font-weight: 800; font-size: 17px; }
+.hall-tournament:hover { color: var(--xg-cyan); }
+.hall-places { margin-top: 8px; display: grid; gap: 6px; }
+.hall-place { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; }
+.hall-place a { font-weight: 700; }
+.hall-place a:hover { color: var(--xg-cyan); }
+.hall-place-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #94a3b8; }
+.hall-1 svg { color: #facc15; }
+.hall-2 svg { color: #cbd5e1; }
+.hall-3 svg { color: #d97706; }
+.records-table { width: 100%; min-width: 860px; font-size: 14px; }
+.records-table th, .records-table td { padding: 12px 10px; text-align: left; border-bottom: 1px solid rgba(30, 41, 59, 0.7); white-space: nowrap; }
+.records-table thead th { font-size: 12px; text-transform: uppercase; color: #94a3b8; }
+.records-table td { font-family: var(--font-mono, ui-monospace, monospace); color: #cbd5e1; }
+.records-table tbody th a:hover { color: var(--xg-cyan); }
+.records-pts { font-weight: 800; color: var(--xg-cyan) !important; }
+.rank-1 td:first-child { color: #facc15; font-weight: 900; }
+.rank-2 td:first-child { color: #cbd5e1; font-weight: 900; }
+.rank-3 td:first-child { color: #d97706; font-weight: 900; }
+.boards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.boards-2 { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+@media (max-width: 400px) { .boards, .boards-2 { grid-template-columns: 1fr; } }
+.board { padding: 16px; border-radius: 16px; border: 1px solid #1e293b; background: #0b1118; }
+.board h3 { font-weight: 800; margin-bottom: 10px; }
+.board h3 span { display: block; font-size: 12px; font-weight: 500; color: #64748b; }
+.board ol { display: grid; gap: 4px; }
+.board li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid rgba(30, 41, 59, 0.6); }
+.board li:first-child { border-top: 0; }
+.board-rank { width: 18px; color: #64748b; font-size: 13px; }
+.board li:first-child .board-rank { color: #facc15; font-weight: 900; }
+.board-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.board-name:hover, .board-match a:hover { color: var(--xg-cyan); }
+.board-value { font-family: var(--font-mono, ui-monospace, monospace); font-weight: 800; color: var(--xg-cyan); }
+.board-form { display: flex; gap: 3px; }
+.board-form .form-chip { width: 22px; height: 22px; font-size: 11px; }
+.board-empty { font-size: 14px; color: #64748b; }
+@media (prefers-reduced-motion: reduce) { .hall-card { animation: none; } }

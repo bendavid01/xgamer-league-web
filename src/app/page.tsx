@@ -23,6 +23,16 @@ export default async function Home() {
     listTournaments(),
     getChampions(),
   ]);
+  // Current champion of each competition (latest season) and each one-off cup.
+  const seen = new Set<string>();
+  const current = champions
+    .filter((c) => {
+      const key = c.competition?.toLowerCase() ?? `cup:${c.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 4);
   const running = list?.live ?? [];
   const upcoming = list?.upcoming ?? [];
   return (
@@ -56,7 +66,7 @@ export default async function Home() {
         )}
       </section>
 
-      {champions.length > 0 && (
+      {current.length > 0 && (
         <section
           id="champions"
           className="page-shell champions"
@@ -65,14 +75,21 @@ export default async function Home() {
           <EditorialReveal>
             <div className="section-index">
               <span>02 / CHAMPIONS</span>
-              <span>THE ROLL OF HONOUR</span>
+              <span>REIGNING CHAMPIONS</span>
             </div>
-            <h2 id="champions-title" className="statement">
-              Champions.
-            </h2>
+            <div className="section-heading">
+              <h2 id="champions-title" className="statement">
+                Current
+                <br />
+                <i>champions.</i>
+              </h2>
+              <Link href="/champions" className="editorial-link">
+                Hall of Fame <ArrowUpRight size={20} />
+              </Link>
+            </div>
           </EditorialReveal>
           <ul className="champion-shelf">
-            {champions.map((c) => {
+            {current.map((c) => {
               const winner = c.places.find((p) => p.place === 1)!;
               const runnerUp = c.places.find((p) => p.place === 2);
               return (

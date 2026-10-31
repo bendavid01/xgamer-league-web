@@ -7,7 +7,7 @@ import { Menu, X, ArrowUpRight } from "lucide-react";
 import Brand from "@/components/Brand";
 const items = [
   ["Tournaments", "/tournaments"],
-  ["Champions", "/#champions"],
+  ["Champions", "/champions"],
   ["Community", "/community"],
   ["Rules", "/rules"],
 ];
