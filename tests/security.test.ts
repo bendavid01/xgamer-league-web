@@ -154,3 +154,27 @@ test("audit rejects malformed nested documents without crashing", async () => {
     );
   }
 });
+
+test("forms accept only XGamer's own addresses (old and new), never other sites", async () => {
+  const { allowedOrigin } = await import("../src/lib/api");
+  const app = "https://xgamer-league-web.vercel.app";
+  assert.equal(
+    allowedOrigin("https://xgamer-league-web.vercel.app", app),
+    true,
+  );
+  assert.equal(allowedOrigin("https://xgamerproleague.vercel.app", app), true);
+  assert.equal(allowedOrigin("https://evil.example", app), false);
+  assert.equal(
+    allowedOrigin("https://xgamerproleague.vercel.app.evil.example", app),
+    false,
+  );
+  assert.equal(allowedOrigin(null, app), false);
+  assert.equal(
+    allowedOrigin("http://localhost:3000", "http://localhost:3000"),
+    true,
+  );
+  assert.equal(
+    allowedOrigin("https://xgamerproleague.vercel.app", undefined),
+    false,
+  );
+});

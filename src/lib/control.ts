@@ -1,7 +1,7 @@
 import { randomBytes, randomInt } from "node:crypto";
 import { z } from "zod";
 import { db } from "./db";
-import { actor, HttpError } from "./api";
+import { actor, allowedOrigin, HttpError } from "./api";
 import { decrypt, encrypt, fingerprint } from "./private-data";
 import {
   buildLeague,
@@ -815,7 +815,7 @@ export function imageType(b: Uint8Array) {
 
 /** Saves the champion photo (uploaded only with the player's consent). */
 export async function savePhoto(request: Request) {
-  if (request.headers.get("origin") !== process.env.APP_ORIGIN)
+  if (!allowedOrigin(request.headers.get("origin")))
     throw new HttpError(403, "Invalid request origin.");
   const url = new URL(request.url);
   const t = tid.safeParse(url.searchParams.get("t"));

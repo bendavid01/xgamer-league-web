@@ -30,8 +30,24 @@ export async function endpoint(fn: () => Promise<Response>) {
     );
   }
 }
+/**
+ * XGamer's own production addresses. While the site moves from the old
+ * Vercel address to the new one, forms work on both. Requests from any other
+ * site are still refused (CSRF protection).
+ */
+export const OFFICIAL_ORIGINS = [
+  "https://xgamerproleague.vercel.app",
+  "https://xgamer-league-web.vercel.app",
+];
+export function allowedOrigin(
+  origin: string | null,
+  appOrigin = process.env.APP_ORIGIN,
+) {
+  if (!origin || !appOrigin) return false;
+  return origin === appOrigin || OFFICIAL_ORIGINS.includes(origin);
+}
 export async function body(request: Request) {
-  if (request.headers.get("origin") !== process.env.APP_ORIGIN)
+  if (!allowedOrigin(request.headers.get("origin")))
     throw new HttpError(403, "Invalid request origin.");
   if (!request.headers.get("content-type")?.startsWith("application/json"))
     throw new HttpError(415, "JSON is required.");
