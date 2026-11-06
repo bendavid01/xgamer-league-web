@@ -2,7 +2,7 @@
 
 ## Deployment boundary
 
-Continue using Vercel project `prj_BFl9HwZRzBnSgRdxjsQSqdBFbzyJ`, team `team_0S3pngB9m77spOYOSSNowIR0` and https://xgamer-league-web.vercel.app. Preserve Sanity project `aqtsgm5o`, dataset `production`, existing content and social destinations. No production Sanity writes or migrations are required.
+Continue using Vercel project `prj_BFl9HwZRzBnSgRdxjsQSqdBFbzyJ`, team `team_0S3pngB9m77spOYOSSNowIR0` and https://xgamerproleague.vercel.app. Preserve Sanity project `aqtsgm5o`, dataset `production`, existing content and social destinations. No production Sanity writes or migrations are required.
 
 The owner explicitly requested that new registration and organizer operations stay closed until access can be configured. `REGISTRATION_ENABLED` defaults false. The API accepts no registration without this flag, a private database and encryption key. Admin operations reject requests until exactly two distinct numeric Discord administrator IDs and auth are configured. Nothing in this release provisions a database or claims live application persistence yet.
 
@@ -20,7 +20,7 @@ The owner explicitly requested that new registration and organizer operations st
 
 1. Provision a dedicated private PostgreSQL database; do not use a shared database with unrelated public tables. Connect server-only `DATABASE_URL` using TLS. Configure separate preview/development databases; never point tests at production.
 2. Configure Vercel locally, link the existing project and pull secrets into ignored `.env.local`. Set a random 32-byte hexadecimal `PRIVATE_DATA_KEY` and high-entropy `AUTH_SECRET` directly in Vercel. Back up the encryption key separately with restricted access: losing it makes private contact data unrecoverable. Rotation needs a decrypt/re-encrypt migration, not simply replacing the key.
-3. Create a Discord OAuth app with callback `https://xgamer-league-web.vercel.app/api/auth/callback/discord`. Set `AUTH_DISCORD_ID`, `AUTH_DISCORD_SECRET`, `AUTH_URL`, `APP_ORIGIN` and exactly two numeric IDs in `MAIN_ADMIN_DISCORD_IDS` (comma-separated). Do not put secrets in Git or chat. Register alternate localhost callback only for local testing.
+3. Create a Discord OAuth app with callback `https://xgamerproleague.vercel.app/api/auth/callback/discord`. Set `AUTH_DISCORD_ID`, `AUTH_DISCORD_SECRET`, `AUTH_URL`, `APP_ORIGIN` and exactly two numeric IDs in `MAIN_ADMIN_DISCORD_IDS` (comma-separated). Do not put secrets in Git or chat. Register alternate localhost callback only for local testing.
 4. Run `npm run db:migrate` only after project linkage and required env verification. The script applies SQL inside a transaction with an advisory lock and checksum ledger. No migration has been run against a hosted database in this release.
 5. Configure provider backups/PITR, restricted application credentials and a separate migration owner. Audit triggers do not stop the database owner; revoke mutation permissions on audit rows from the runtime role. Use a dedicated runtime role with only SELECT/INSERT/UPDATE on application tables, INSERT/SELECT on audit_event, and sequence USAGE. No schema administration, TRUNCATE or role management. Keep migration-owner credentials out of the runtime environment.
 6. Review Sanity membership and enforce no-delete coordinator permissions at the Sanity service, or keep coordinators entirely out of Studio. See the Studio repository's `docs/CONTROL-CENTER-ACCESS.md`. UI action filtering alone is not security.

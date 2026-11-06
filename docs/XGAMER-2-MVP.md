@@ -5,7 +5,7 @@
 - Repository: bendavid01/xgamer-league-web, production branch main.
 - Vercel project: prj_BFl9HwZRzBnSgRdxjsQSqdBFbzyJ.
 - Team: team_0S3pngB9m77spOYOSSNowIR0.
-- Existing URL: https://xgamer-league-web.vercel.app/.
+- Existing URL: https://xgamerproleague.vercel.app/.
 - Original production commit: 31cd646c918e4782e6888919aeee9ee468b384e9.
 - Existing Sanity project aqtsgm5o, dataset production; no migration or content writes during release.
 - Existing studio repository and permissions remain unchanged.

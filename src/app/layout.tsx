@@ -19,7 +19,7 @@ const displayFont = Barlow_Condensed({
   display: "swap",
 });
 export const metadata: Metadata = {
-  metadataBase: new URL("https://xgamer-league-web.vercel.app"),
+  metadataBase: new URL("https://xgamerproleague.vercel.app"),
   title: { default: "X-Gamer Pro League | 2.0", template: "%s | X-Gamer" },
   description:
     "The home of X-Gamer competitive eFootball. Competitions, fixtures, results and standings.",

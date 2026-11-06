@@ -1,6 +1,6 @@
 # X-Gamer Pro League — 2.0 MVP
 
-Production: https://xgamer-league-web.vercel.app/
+Production: https://xgamerproleague.vercel.app/
 
 Next.js App Router, TypeScript, Tailwind, Motion, Lucide and the existing Sanity content source. Cyan/slate X-GAMER branding and the existing production data are retained.
 
@@ -20,9 +20,9 @@ Discord sign-in for the two main admins (and optional coordinators). No player c
 Set these in Vercel → Settings → Environment Variables (never in Git), then run `npm run db:migrate` once against the database:
 - `DATABASE_URL` — private PostgreSQL (e.g. Neon from the Vercel Marketplace).
 - `PRIVATE_DATA_KEY` — 64 hex characters (`openssl rand -hex 32`). Back it up: phone numbers cannot be read without it.
-- `AUTH_SECRET`, `AUTH_DISCORD_ID`, `AUTH_DISCORD_SECRET` — Discord app with redirect `https://xgamer-league-web.vercel.app/api/auth/callback/discord`.
+- `AUTH_SECRET`, `AUTH_DISCORD_ID`, `AUTH_DISCORD_SECRET` — Discord app with redirect `https://xgamerproleague.vercel.app/api/auth/callback/discord`.
 - `MAIN_ADMIN_DISCORD_IDS` — exactly two numeric Discord user IDs, comma-separated.
-- `APP_ORIGIN` and `AUTH_URL` — `https://xgamer-league-web.vercel.app`.
+- `APP_ORIGIN` and `AUTH_URL` — `https://xgamerproleague.vercel.app`.
 - `REGISTRATION_ENABLED=true` — then open registration from OM.
 - Optional: `YOUTUBE_API_KEY`, `YOUTUBE_CHANNEL_ID` for the Live Now banner.
 Until these are set the live site keeps working: registration shows "not open yet", OM stays locked and public pages show the existing season.
