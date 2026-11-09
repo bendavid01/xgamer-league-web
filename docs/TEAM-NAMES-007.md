@@ -63,6 +63,17 @@ If someone registers between the migration and the new code going live, their te
 - **Schema:** not needed, because 007 only adds columns. If removal were ever required, it would be a new approved migration dropping the two columns. Current teams and registration records would still hold every name.
 - **Data (last resort):** restore from the `before-007` Neon branch.
 
+## Approval package (before asking to run 007 on production)
+
+`docs/sql/007-isolated-test.sql` covers it, with no database credentials leaving Neon:
+
+1. **Verified backup:** a Neon branch `backup-before-007` whose snapshot (Part A) matches production.
+2. **Isolated test:** 007 applied to a separate branch `test-007`, never to production.
+3. **Reconciliation:** Part A must be identical before and after 007 (players, highest XG ID, entries, results, goals, final positions, audit, fingerprints). Part D lists every recovered team name.
+4. **Rollback:** see above. The backup branch is the data restore point.
+
+Status: the design is approved (PM, 9 Nov 2026). Running 007 on production is **not authorized** yet.
+
 ## Regression tests (59 passing)
 
 - **`database.test`:** 007 on a pre-007 database.
