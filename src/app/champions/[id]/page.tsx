@@ -4,32 +4,39 @@ import { notFound } from "next/navigation";
 import {
   ArrowLeft,
   BarChart3,
+  ChevronRight,
   Flame,
   Medal,
-  Shield,
-  Swords,
+  ShieldCheck,
   Target,
   Trophy,
   Users,
+  Zap,
 } from "lucide-react";
 import { Unavailable } from "@/components/LeagueUI";
+import { LaurelTrophy, PodiumSteps } from "@/components/ChampionsArt";
 import {
   DEFENCE_MIN_MATCHES,
   getChampionsTournament,
   type Holders,
   type Who,
 } from "@/lib/champions";
+import { codeNumber } from "@/lib/codes";
 import { STATUS_LABEL } from "@/lib/tournaments";
 import { FORMAT_SHORT, formatChoice, PLACE_LABEL } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
 const TABS = [
-  ["podium", "Podium"],
-  ["players", "Players"],
-  ["records", "Records"],
+  { key: "podium", label: "Podium", Icon: Trophy },
+  { key: "players", label: "Players", Icon: Users },
+  { key: "records", label: "Records", Icon: BarChart3 },
 ] as const;
-type Tab = (typeof TABS)[number][0];
+type Tab = (typeof TABS)[number]["key"];
+
+const initials = (name: string) => name.slice(0, 2).toUpperCase();
+const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z]+/g, "-");
 
 export async function generateMetadata({
   params,
@@ -67,325 +74,377 @@ export default async function TournamentChampions({
     notFound();
   }
   const t = data.tournament;
-  const tab: Tab = TABS.some(([k]) => k === raw) ? (raw as Tab) : "podium";
+  const tab: Tab = TABS.find((x) => x.key === raw)?.key ?? "podium";
   const byId = new Map(data.players.map((p) => [p.id, p]));
   const statsHref = (p: Who) =>
     `/players/${p.code}?t=${encodeURIComponent(t.id)}`;
   const finished = t.status === "completed";
+  // Permanent ID order.
+  const roster = [...data.players].sort(
+    (a, b) => (codeNumber(a.code) ?? 0) - (codeNumber(b.code) ?? 0),
+  );
+  const r = data.records;
 
   return (
-    <div className="page-shell py-10 champ">
-      <Link href="/champions" className="hub-back">
-        <ArrowLeft size={16} aria-hidden="true" /> Champions
-      </Link>
-      <header className="champ-head">
-        <span className="champ-crest" aria-hidden="true">
-          <Trophy />
-        </span>
-        <div className="min-w-0">
-          {t.season && <p className="champ-season">Season {t.season}</p>}
-          <h1 className="champ-title">{t.competition ?? t.name}</h1>
-          <p className="champ-meta">
-            <span className={`status-pill status-${t.status}`}>
-              {STATUS_LABEL[t.status]}
-            </span>
-            <span>{FORMAT_SHORT[formatChoice(t)]}</span>
-            <span>
-              <Users size={14} aria-hidden="true" /> {data.players.length}{" "}
-              players
-            </span>
-            {data.rounds > 0 && <span>{data.rounds} rounds</span>}
-            {t.starts_on && (
-              <span>
-                Started{" "}
-                {new Date(t.starts_on).toLocaleDateString("en-IN", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                })}
+    <div className="page-shell py-10">
+      <div className="champ">
+        <Link href="/champions" className="hub-back">
+          <ArrowLeft size={16} aria-hidden="true" /> Back to Champions
+        </Link>
+        <header className="champ-hero">
+          <span className="champ-emblem" aria-hidden="true" />
+          <div className="min-w-0">
+            <h1 className="champ-title">{t.competition ?? t.name}</h1>
+            <p className="champ-meta">
+              <span className={`champ-pill champ-pill-${t.status}`}>
+                {STATUS_LABEL[t.status]}
               </span>
-            )}
-          </p>
-        </div>
-      </header>
-
-      <nav className="champ-tabs" aria-label="Tournament records">
-        {TABS.map(([k, label]) => (
-          <Link
-            key={k}
-            href={`/champions/${t.id}?tab=${k}`}
-            aria-current={k === tab ? "page" : undefined}
-            className={k === tab ? "champ-tab champ-tab-on" : "champ-tab"}
-          >
-            {k === "podium" ? (
-              <Trophy size={17} aria-hidden="true" />
-            ) : k === "players" ? (
-              <Users size={17} aria-hidden="true" />
-            ) : (
-              <BarChart3 size={17} aria-hidden="true" />
-            )}
-            {label}
-            {k === "players" && ` (${data.players.length})`}
-          </Link>
-        ))}
-      </nav>
-
-      {tab === "podium" &&
-        (data.official ? (
-          <ol className="champ-podium" aria-label="Official final positions">
-            {data.podium.map((pid, i) => {
-              const p = pid ? byId.get(pid) : null;
-              if (!p) return null;
-              return (
-                <li
-                  key={i}
-                  className={`champ-place champ-place-${i + 1}`}
-                  tabIndex={0}
-                >
-                  {i === 0 && t.photo ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- consented champion photo from our own route
-                    <img
-                      className="champ-place-photo"
-                      src={`/api/photo/${t.id}?v=${t.photo}`}
-                      alt={`${p.name}, champion`}
-                    />
-                  ) : (
-                    <span className="champ-place-avatar" aria-hidden="true">
-                      {p.name.slice(0, 2).toUpperCase()}
-                    </span>
-                  )}
-                  <span className="champ-place-label">
-                    {i === 0 ? (
-                      <Trophy size={16} aria-hidden="true" />
-                    ) : (
-                      <Medal size={16} aria-hidden="true" />
-                    )}
-                    {PLACE_LABEL[i + 1]}
-                  </span>
-                  <strong className="champ-place-name">{p.name}</strong>
-                  <span className="champ-place-code">{p.code}</span>
-                  {p.team && <span className="champ-place-team">{p.team}</span>}
-                  <Link href={statsHref(p)} className="champ-action">
-                    View Player Stats
-                  </Link>
-                </li>
-              );
-            })}
-          </ol>
-        ) : (
-          <div className="champ-empty">
-            <Trophy aria-hidden="true" />
-            <h2>Podium pending</h2>
-            <p>
-              {finished
-                ? "The final positions haven't been confirmed by the organizers yet."
-                : "The champion is decided when the tournament finishes. Official placements appear here once an organizer confirms them."}
+              <span>
+                {FORMAT_SHORT[formatChoice(t)]}
+                {t.season ? ` · Season ${t.season}` : ""}
+              </span>
             </p>
           </div>
-        ))}
+        </header>
 
-      {tab === "players" &&
-        (data.players.length ? (
-          <ul className="champ-players">
-            {data.players.map((p) => {
-              const l = data.records.lines[p.id];
-              return (
-                <li key={p.id} className="champ-player">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <strong className="block truncate">{p.name}</strong>
-                      <span className="text-sm text-slate-400">
-                        <span className="font-mono text-cyan-300">
-                          {p.code}
-                        </span>
-                        {p.team ? ` · ${p.team}` : ""}
-                      </span>
-                    </div>
-                    <span
-                      className={`champ-status champ-status-${data.status[p.id].toLowerCase().replace(/[^a-z]+/g, "-")}`}
+        <nav className="champ-tabs" aria-label="Tournament records">
+          {TABS.map(({ key, label, Icon }) => (
+            <Link
+              key={key}
+              href={`/champions/${t.id}?tab=${key}`}
+              scroll={false}
+              aria-current={key === tab ? "page" : undefined}
+              className={key === tab ? "champ-tab is-on" : "champ-tab"}
+            >
+              <Icon aria-hidden="true" />
+              {label}
+            </Link>
+          ))}
+        </nav>
+
+        {tab === "podium" &&
+          (data.official ? (
+            <section className="champ-panel" aria-labelledby="podium-h">
+              <h2 id="podium-h" className="sr-only">
+                Official final positions
+              </h2>
+              <ol className="champ-podium">
+                {data.podium.map((pid, i) => {
+                  const p = pid ? byId.get(pid) : null;
+                  if (!p) return null;
+                  const n = i + 1;
+                  return (
+                    <li
+                      key={n}
+                      className={`champ-place champ-place-${n}`}
+                      tabIndex={0}
                     >
-                      {data.status[p.id]}
-                    </span>
-                  </div>
-                  <p className="champ-line">
-                    <span>
-                      <b>{l.played}</b> P
-                    </span>
-                    <span>
-                      <b>{l.won}</b>W <b>{l.drawn}</b>D <b>{l.lost}</b>L
-                    </span>
-                    <span>
-                      Goals <b>{l.gf}</b>–<b>{l.ga}</b>
-                    </span>
-                    <span>
-                      GD <b>{l.gd > 0 ? `+${l.gd}` : l.gd}</b>
-                    </span>
-                  </p>
-                  <Link href={statsHref(p)} className="champ-link">
-                    View Player Details →
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p className="notice">
-            Players appear here once the organizers approve them.
-          </p>
-        ))}
-
-      {tab === "records" && (
-        <section aria-label="Tournament records">
-          <p className="champ-note">
-            {finished
-              ? "Final records, calculated from official results only."
-              : "Current records — they update as official results come in."}{" "}
-            Goals are those scored by each player&apos;s eFootball team.
-          </p>
-          {data.records.matches === 0 ? (
-            <p className="notice">
-              No official results yet. Records appear after the first scores are
-              entered.
-            </p>
+                      <div className="champ-place-card">
+                        {n === 1 && t.photo ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- consented champion photo from our own route
+                          <img
+                            className="champ-place-photo"
+                            src={`/api/photo/${t.id}?v=${t.photo}`}
+                            alt={`${p.name}, champion`}
+                          />
+                        ) : (
+                          <span
+                            className="champ-place-avatar"
+                            aria-hidden="true"
+                          >
+                            {initials(p.name)}
+                          </span>
+                        )}
+                        <span className="champ-place-label">
+                          {n === 1 ? (
+                            <Trophy aria-hidden="true" />
+                          ) : (
+                            <Medal aria-hidden="true" />
+                          )}
+                          {PLACE_LABEL[n]}
+                        </span>
+                        <strong className="champ-place-name">{p.name}</strong>
+                        <span className="champ-code">{p.code}</span>
+                        {p.team && (
+                          <span className="champ-place-team">{p.team}</span>
+                        )}
+                        <Link href={statsHref(p)} className="champ-action">
+                          View Player Stats
+                        </Link>
+                      </div>
+                      <span
+                        className={`champ-step champ-step-${n}`}
+                        aria-hidden="true"
+                      >
+                        {n}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
           ) : (
-            <>
-              <div className="champ-records">
-                <RecordCard
-                  icon={<Target />}
-                  title="Top Scorer"
-                  holders={data.records.topScorer}
-                  unit="goals"
-                  href={statsHref}
-                />
-                <RecordCard
-                  icon={<Shield />}
-                  title="Best Defence"
-                  holders={
-                    data.records.bestDefence && {
-                      value: data.records.bestDefence.perMatch,
-                      players: data.records.bestDefence.players,
-                    }
-                  }
-                  unit="conceded per match"
-                  empty={`Insufficient matches (needs ${data.records.defenceMin}+)`}
-                  href={statsHref}
-                />
-                <RecordCard
-                  icon={<Flame />}
-                  title="Longest Winning Streak"
-                  holders={data.records.longestStreak}
-                  unit="wins in a row"
-                  href={statsHref}
-                />
-                <article className="champ-record">
-                  <h3>
-                    <Swords aria-hidden="true" /> Biggest Victory
-                  </h3>
-                  {data.records.biggestVictory.length ? (
-                    <ul className="space-y-3">
-                      {data.records.biggestVictory.map((v) => (
-                        <li key={v.fixtureId}>
-                          <span className="champ-record-value">
-                            {v.winnerGoals}–{v.loserGoals}
-                          </span>
-                          <span className="block">
-                            <Link href={statsHref(v.winner)}>
-                              {v.winner.name}
-                            </Link>{" "}
-                            <span className="font-mono text-xs text-cyan-300">
-                              {v.winner.code}
-                            </span>{" "}
-                            beat {v.loser.name}
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            Round {v.round}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="champ-record-empty">No wins yet</p>
-                  )}
-                </article>
-              </div>
-              <h2 className="champ-subhead">More records</h2>
-              <div className="champ-records champ-records-small">
-                <RecordCard
-                  title="Most Wins"
-                  holders={data.records.mostWins}
-                  unit="wins"
-                  href={statsHref}
-                />
-                <RecordCard
-                  title="Most Draws"
-                  holders={data.records.mostDraws}
-                  unit="draws"
-                  href={statsHref}
-                />
-                <RecordCard
-                  title="Highest Goal Difference"
-                  holders={data.records.highestGoalDifference}
-                  unit="goal difference"
-                  signed
-                  href={statsHref}
-                />
-              </div>
-              <p className="champ-note">
-                Best Defence: fewest goals conceded per match among players with
-                at least {DEFENCE_MIN_MATCHES} matches and at least half of the
-                most active player&apos;s matches. Winning streaks follow the
-                official round order, not necessarily the order the matches were
-                played (match dates aren&apos;t recorded). Ties list every
-                player. Walkovers aren&apos;t recorded separately.
+            <section
+              className="champ-panel champ-pending"
+              aria-labelledby="pending-h"
+            >
+              <LaurelTrophy tone="muted" className="champ-pending-art" />
+              <h2 id="pending-h">Podium Pending</h2>
+              <p>
+                Official 1st, 2nd and 3rd places will appear after the
+                tournament is finalized.
               </p>
-            </>
-          )}
-        </section>
+              <PodiumSteps />
+            </section>
+          ))}
+
+        {tab === "players" && (
+          <section className="champ-panel" aria-labelledby="players-h">
+            <div className="champ-panel-head">
+              <div>
+                <h2 id="players-h">Tournament Participants</h2>
+                <p>All approved competitors in this tournament.</p>
+              </div>
+              <span className="champ-count">
+                {roster.length} {roster.length === 1 ? "player" : "players"}
+              </span>
+            </div>
+            {roster.length ? (
+              <div className="champ-roster-wrap">
+                <div className="champ-roster-head" aria-hidden="true">
+                  <span>#</span>
+                  <span />
+                  <span>Player (XG ID)</span>
+                  <span>Status</span>
+                  <span />
+                </div>
+                <ol className="champ-roster">
+                  {roster.map((p, i) => {
+                    const l = r.lines[p.id];
+                    const status = data.status[p.id];
+                    return (
+                      <li key={p.id}>
+                        <Link href={statsHref(p)} className="champ-roster-row">
+                          <span className="champ-roster-n">{i + 1}</span>
+                          <span className="champ-avatar" aria-hidden="true">
+                            {initials(p.name)}
+                          </span>
+                          <span className="champ-roster-name">
+                            {p.name}{" "}
+                            <span className="champ-code">({p.code})</span>
+                          </span>
+                          <span className="champ-roster-line">
+                            {l.played} played · {l.won}W {l.drawn}D {l.lost}L ·
+                            GD {signed(l.gd)}
+                            {p.team ? ` · ${p.team}` : ""}
+                          </span>
+                          <span
+                            className={`champ-status champ-status-${slug(status)}`}
+                          >
+                            {status}
+                          </span>
+                          <span className="champ-roster-go">
+                            <span className="champ-roster-go-text">
+                              View Player Details
+                            </span>
+                            <ChevronRight aria-hidden="true" />
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            ) : (
+              <p className="notice">
+                Players appear here once the organizers approve them.
+              </p>
+            )}
+          </section>
+        )}
+
+        {tab === "records" && (
+          <section className="champ-panel" aria-labelledby="records-h">
+            <div className="champ-panel-head">
+              <div>
+                <h2 id="records-h">Tournament Records</h2>
+                <p>
+                  {finished
+                    ? "Final records, from official results only."
+                    : "From official results only — they update as results come in."}
+                </p>
+              </div>
+            </div>
+            {r.matches === 0 && (
+              <p className="champ-note">
+                No official results yet. Records appear after the first scores
+                are entered.
+              </p>
+            )}
+            <h3 className="champ-subhead">Featured records</h3>
+            <div className="champ-records">
+              <RecordCard
+                tone="cyan"
+                icon={<Target />}
+                title="Top Scorer"
+                desc="Most goals scored"
+                holders={r.topScorer}
+                unit="goals"
+                href={statsHref}
+              />
+              <RecordCard
+                tone="green"
+                icon={<ShieldCheck />}
+                title="Best Defence"
+                desc="Fewest goals conceded (per match)"
+                holders={
+                  r.bestDefence && {
+                    value: r.bestDefence.perMatch,
+                    players: r.bestDefence.players,
+                  }
+                }
+                unit="conceded per match"
+                empty={`Insufficient matches (needs ${r.defenceMin}+)`}
+                href={statsHref}
+              />
+              <RecordCard
+                tone="orange"
+                icon={<Flame />}
+                title="Longest Winning Streak"
+                desc="Consecutive wins (round order)"
+                holders={r.longestStreak}
+                unit="wins in a row"
+                href={statsHref}
+              />
+              <article className="champ-record tone-yellow">
+                <RecordTop
+                  icon={<Zap />}
+                  title="Biggest Victory"
+                  desc="Largest goal difference in a single match"
+                />
+                {r.biggestVictory.length ? (
+                  <ul className="champ-victories">
+                    {r.biggestVictory.map((v) => (
+                      <li key={v.fixtureId}>
+                        <span className="champ-record-value">
+                          {v.winnerGoals}–{v.loserGoals}
+                        </span>
+                        <span className="block">
+                          <Link href={statsHref(v.winner)}>
+                            {v.winner.name}
+                          </Link>{" "}
+                          <span className="champ-code">{v.winner.code}</span>{" "}
+                          beat {v.loser.name}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          Round {v.round}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="champ-record-empty">No wins yet</p>
+                )}
+              </article>
+            </div>
+            <h3 className="champ-subhead">Secondary records</h3>
+            <div className="champ-records champ-records-small">
+              <RecordCard
+                title="Most Wins"
+                holders={r.mostWins}
+                unit="wins"
+                href={statsHref}
+              />
+              <RecordCard
+                title="Most Draws"
+                holders={r.mostDraws}
+                unit="draws"
+                href={statsHref}
+              />
+              <RecordCard
+                title="Highest Goal Difference"
+                holders={r.highestGoalDifference}
+                unit="goal difference"
+                signedValue
+                href={statsHref}
+              />
+            </div>
+            <p className="champ-note">
+              Best Defence: fewest goals conceded per match among players with
+              at least {DEFENCE_MIN_MATCHES} matches and at least half of the
+              most active player&apos;s matches. Winning streaks follow the
+              official round order, not necessarily the order the matches were
+              played (match dates aren&apos;t recorded). Ties list every player.
+              Walkovers aren&apos;t recorded separately.
+            </p>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecordTop({
+  icon,
+  title,
+  desc,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  desc?: string;
+}) {
+  return (
+    <div className="champ-record-top">
+      {icon && (
+        <span className="champ-record-icon" aria-hidden="true">
+          {icon}
+        </span>
       )}
+      <div className="min-w-0">
+        <h4>{title}</h4>
+        {desc && <p className="champ-record-desc">{desc}</p>}
+      </div>
     </div>
   );
 }
 
 function RecordCard({
+  tone = "violet",
   icon,
   title,
+  desc,
   holders,
   unit,
   empty = "Not enough results yet",
-  signed = false,
+  signedValue = false,
   href,
 }: {
+  tone?: "cyan" | "green" | "orange" | "yellow" | "violet";
   icon?: React.ReactNode;
   title: string;
+  desc?: string;
   holders: Holders | null;
   unit: string;
   empty?: string;
-  signed?: boolean;
+  signedValue?: boolean;
   href: (p: Who) => string;
 }) {
   return (
-    <article className="champ-record">
-      <h3>
-        {icon && <span aria-hidden="true">{icon}</span>}
-        {title}
-      </h3>
+    <article className={`champ-record tone-${tone}`}>
+      <RecordTop icon={icon} title={title} desc={desc} />
       {holders ? (
-        <>
+        <div className="champ-record-body">
           <p>
             <span className="champ-record-value">
-              {signed && holders.value > 0
-                ? `+${holders.value}`
-                : holders.value}
+              {signedValue ? signed(holders.value) : holders.value}
             </span>{" "}
-            <span className="text-sm text-slate-400">{unit}</span>
+            <span className="champ-record-unit">{unit}</span>
           </p>
           <ul className="champ-holders">
             {holders.players.map((p) => (
               <li key={p.id}>
                 <Link href={href(p)}>{p.name}</Link>{" "}
-                <span className="font-mono text-xs text-cyan-300">
-                  {p.code}
-                </span>
+                <span className="champ-code">{p.code}</span>
                 {p.team && (
                   <span className="text-xs text-slate-500"> · {p.team}</span>
                 )}
@@ -397,7 +456,7 @@ function RecordCard({
               Shared by {holders.players.length} players
             </p>
           )}
-        </>
+        </div>
       ) : (
         <p className="champ-record-empty">{empty}</p>
       )}
