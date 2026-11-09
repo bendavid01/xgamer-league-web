@@ -1,471 +1,215 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Medal, Trophy } from "lucide-react";
+import {
+  BarChart3,
+  CalendarDays,
+  ChevronRight,
+  Layers,
+  Trophy,
+} from "lucide-react";
 import { PageTitle, Unavailable } from "@/components/LeagueUI";
+import { LaurelTrophy } from "@/components/ChampionsArt";
+import { getRecords } from "@/lib/records";
+import { championTitle, FORMAT_SHORT, formatChoice } from "@/lib/labels";
 import {
-  getRecords,
-  MIN_MATCHES,
-  RANKING_POINTS,
-  type MatchRecord,
-  type PlayerRecord,
-} from "@/lib/records";
-import {
-  championTitle,
-  FORMAT_SHORT,
-  formatChoice,
-  PLACE_LABEL,
-} from "@/lib/labels";
-import { listTournaments } from "@/lib/tournaments";
-import TournamentTile from "@/components/TournamentTile";
+  listTournaments,
+  STATUS_LABEL,
+  type PublicTournament,
+} from "@/lib/tournaments";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = {
-  title: "Champions",
-  description:
-    "XGamer Hall of Fame, all-time player rankings, leaderboards and records.",
-};
+const SUBTITLE =
+  "Hall of Fame · Explore the history of every XGamer competition.";
+export const metadata: Metadata = { title: "Champions", description: SUBTITLE };
 
-type Board = {
-  title: string;
-  note?: string;
-  rows: PlayerRecord[];
-  value: (p: PlayerRecord) => string | number;
-};
-
+/**
+ * Champions landing, tournament-first and compact:
+ * Hall of Fame → Tournaments → Archive → All-Time Ranking.
+ * The all-time tables live on /champions/rankings.
+ */
 export default async function Champions() {
   const [records, list] = await Promise.all([getRecords(), listTournaments()]);
+  const heading = (
+    <PageTitle
+      compact
+      label="HALL OF FAME"
+      title="Champions."
+      description={SUBTITLE}
+    />
+  );
   if (!records)
     return (
       <div className="page-shell py-12">
-        <PageTitle
-          compact
-          label="HALL OF FAME"
-          title="Champions."
-          description="Winners, rankings and records."
-        />
-        <Unavailable />
+        <div className="champ-home">
+          {heading}
+          <Unavailable />
+        </div>
       </div>
     );
-  const { players, hall, biggestWins, highestScoring, totals } = records;
-  // Running tournaments: shown in the Hall of Fame as "Champion not decided".
-  const deciding = (list?.live ?? []).filter((t) =>
-    ["league", "knockout"].includes(t.status),
-  );
-  const browse = [
+  const tournaments = [
     ...(list?.live ?? []),
     ...(list?.upcoming ?? []),
     ...(list?.past ?? []),
   ];
-  const active = players.filter((p) => p.played > 0);
-  const qualified = players.filter((p) => p.played >= MIN_MATCHES);
-  const top = (
-    list: PlayerRecord[],
-    key: (p: PlayerRecord) => number,
-    asc = false,
-  ) =>
-    [...list]
-      .sort((a, b) => (asc ? key(a) - key(b) : key(b) - key(a)))
-      .slice(0, 5);
-
-  const boards: Board[] = [
-    {
-      title: "Most titles",
-      rows: top(
-        players.filter((p) => p.titles),
-        (p) => p.titles,
-      ),
-      value: (p) => p.titles,
-    },
-    {
-      title: "Most podiums",
-      note: "1st, 2nd or 3rd",
-      rows: top(
-        players.filter((p) => p.podiums),
-        (p) => p.podiums,
-      ),
-      value: (p) => p.podiums,
-    },
-    {
-      title: "Knockouts reached",
-      rows: top(
-        players.filter((p) => p.knockouts),
-        (p) => p.knockouts,
-      ),
-      value: (p) => p.knockouts,
-    },
-    {
-      title: "Most wins",
-      rows: top(
-        active.filter((p) => p.won),
-        (p) => p.won,
-      ),
-      value: (p) => p.won,
-    },
-    {
-      title: "Win rate",
-      note: `${MIN_MATCHES}+ matches`,
-      rows: top(qualified, (p) => p.winRate),
-      value: (p) => `${p.winRate}%`,
-    },
-    {
-      title: "Points per game",
-      note: `${MIN_MATCHES}+ matches`,
-      rows: top(qualified, (p) => p.pointsPerGame),
-      value: (p) => p.pointsPerGame.toFixed(2),
-    },
-    {
-      title: "Goals scored",
-      note: "by the player's team",
-      rows: top(
-        active.filter((p) => p.gf),
-        (p) => p.gf,
-      ),
-      value: (p) => p.gf,
-    },
-    {
-      title: "Goal difference",
-      rows: top(active, (p) => p.gd),
-      value: (p) => (p.gd > 0 ? `+${p.gd}` : p.gd),
-    },
-    {
-      title: "Best defence",
-      note: `goals conceded per game · ${MIN_MATCHES}+ matches`,
-      rows: top(qualified, (p) => p.concededPerGame, true),
-      value: (p) => p.concededPerGame.toFixed(2),
-    },
-    {
-      title: "Clean sheets",
-      rows: top(
-        active.filter((p) => p.cleanSheets),
-        (p) => p.cleanSheets,
-      ),
-      value: (p) => p.cleanSheets,
-    },
-    {
-      title: "Longest winning streak",
-      rows: top(
-        active.filter((p) => p.bestWinStreak),
-        (p) => p.bestWinStreak,
-      ),
-      value: (p) => p.bestWinStreak,
-    },
-    {
-      title: "Longest unbeaten run",
-      rows: top(
-        active.filter((p) => p.bestUnbeaten),
-        (p) => p.bestUnbeaten,
-      ),
-      value: (p) => p.bestUnbeaten,
-    },
-  ];
-  const inForm = top(active, (p) => p.formPoints);
+  const official = new Set(records.hall.map((h) => h.id));
+  // No official champion yet: still being played, or finished but final positions not confirmed.
+  const undecided = tournaments.filter(
+    (t) =>
+      t.status === "league" ||
+      t.status === "knockout" ||
+      (t.status === "completed" && !official.has(t.id)),
+  );
 
   return (
-    <div className="page-shell py-12 records">
-      <PageTitle
-        compact
-        label="HALL OF FAME"
-        title="Champions."
-        description="Winners, all-time rankings and records — calculated from every published XGamer tournament."
-      />
-      <dl className="records-totals">
-        {(
-          [
-            ["Tournaments", totals.tournaments],
-            ["Players", totals.players],
-            ["Matches played", totals.matches],
-            ["Goals", totals.goals],
-          ] as const
-        ).map(([k, v]) => (
-          <div key={k}>
-            <dt>{k}</dt>
-            <dd>{v}</dd>
+    <div className="page-shell py-12">
+      <div className="champ-home">
+        {heading}
+
+        <section aria-labelledby="hall" className="champ-fame">
+          <div className="champ-fame-head">
+            <LaurelTrophy className="champ-fame-emblem" />
+            <div className="min-w-0">
+              <h2 id="hall" className="champ-fame-title">
+                Hall of Fame
+              </h2>
+              <p className="champ-fame-text">
+                Official champions of completed tournaments.
+              </p>
+            </div>
           </div>
-        ))}
-      </dl>
-
-      <section aria-labelledby="hall" className="records-section">
-        <h2 id="hall" className="records-h2">
-          Hall of Fame
-        </h2>
-        {hall.length || deciding.length ? (
-          <ul className="hall-list">
-            {deciding.map((t) => (
-              <li key={t.id} className="hall-card hall-pending">
-                <div className="hall-photo" aria-hidden="true">
-                  <Trophy size={34} />
-                </div>
-                <div className="min-w-0">
-                  <Link href={`/champions/${t.id}`} className="hall-tournament">
-                    {t.label}
-                  </Link>
-                  <span className="hall-format">
-                    {FORMAT_SHORT[formatChoice(t)]}
-                  </span>
-                  <p className="hall-pending-text">
-                    In progress — champion not decided
-                  </p>
-                </div>
-              </li>
-            ))}
-            {hall.map((h) => (
-              <li key={h.id} className="hall-card">
-                <div className="hall-photo">
-                  {h.photo ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- served by our own photo route
-                    <img
-                      src={`/api/photo/${h.id}?v=${h.photo}`}
-                      alt={`${h.places[0]?.name}, ${championTitle(h)}`}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span aria-hidden="true">
-                      {h.places[0]?.name.slice(0, 2).toUpperCase()}
-                    </span>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <Link href={`/champions/${h.id}`} className="hall-tournament">
-                    {h.label}
-                  </Link>
-                  <span className="hall-format">
-                    {FORMAT_SHORT[formatChoice(h)]}
-                  </span>
-                  <ol className="hall-places">
-                    {h.places.map((p, i) =>
-                      p ? (
-                        <li key={i} className={`hall-place hall-${i + 1}`}>
-                          {i === 0 ? (
-                            <Trophy size={16} aria-hidden="true" />
-                          ) : (
-                            <Medal size={16} aria-hidden="true" />
+          {records.hall.length || undecided.length ? (
+            <ul className="champ-fame-list">
+              {records.hall.map((h) => {
+                const champion = h.places[0];
+                return (
+                  <li key={h.id}>
+                    <Link
+                      href={`/champions/${h.id}`}
+                      className="champ-fame-row"
+                    >
+                      <span className="champ-fame-icon" aria-hidden="true">
+                        <Trophy />
+                      </span>
+                      <span className="champ-fame-info">
+                        <span className="champ-fame-name">{h.label}</span>
+                        <span className="champ-fame-sub">
+                          {championTitle(h)}
+                          {champion && (
+                            <>
+                              : <b>{champion.name}</b>{" "}
+                              <span className="champ-code">
+                                {champion.code}
+                              </span>
+                            </>
                           )}
-                          <span className="hall-place-label">
-                            {i === 0 ? championTitle(h) : PLACE_LABEL[i + 1]}
-                          </span>
-                          <Link href={`/players/${p.code}?t=${h.id}`}>
-                            {p.name}
-                          </Link>
-                          <span className="hall-code">{p.code}</span>
-                          {p.team && (
-                            <span className="text-slate-500 text-sm">
-                              {p.team}
-                            </span>
-                          )}
-                        </li>
-                      ) : null,
-                    )}
-                  </ol>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="notice">
-            No champions yet. Winners appear here when a tournament finishes.
-          </p>
-        )}
-      </section>
-
-      <section aria-labelledby="browse" className="records-section">
-        <h2 id="browse" className="records-h2">
-          Tournaments
-        </h2>
-        {browse.length ? (
-          <ul className="xg-tiles">
-            {browse.map((t) => (
-              <li key={t.id}>
-                <TournamentTile
-                  t={t}
-                  href={`/champions/${t.id}`}
-                  exploreLabel="View Tournament Records"
-                />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="notice">No tournament is published yet.</p>
-        )}
-        <Link href="/champions/archive" className="archive-link">
-          <span>
-            <strong>Archive</strong> — results from before XGamer 2.0
-          </span>
-          <span aria-hidden="true">→</span>
-        </Link>
-      </section>
-
-      <section aria-labelledby="ranking" className="records-section">
-        <h2 id="ranking" className="records-h2">
-          XGamer Ranking
-        </h2>
-        <p className="text-sm text-slate-400 -mt-2 mb-4">
-          All-time, across every tournament. Champion {RANKING_POINTS.champion}{" "}
-          pts · Runner-up {RANKING_POINTS.runnerUp} · Third{" "}
-          {RANKING_POINTS.third} · Knockout reached {RANKING_POINTS.knockout} ·{" "}
-          {RANKING_POINTS.leagueWin} per league win. Separate from each
-          tournament&apos;s own standings.
-        </p>
-        {players.length ? (
-          <div className="panel overflow-x-auto">
-            <table className="records-table">
-              <thead>
-                <tr>
-                  {[
-                    ["#", "Rank"],
-                    ["Player", "Player"],
-                    ["T", "Tournaments"],
-                    ["Cups", "Titles"],
-                    ["Pod", "Podiums"],
-                    ["KO", "Knockouts reached"],
-                    ["P", "Played"],
-                    ["W", "Won"],
-                    ["D", "Drawn"],
-                    ["L", "Lost"],
-                    ["GF", "Goals for"],
-                    ["GA", "Goals against"],
-                    ["GD", "Goal difference"],
-                    ["Win%", "Win rate"],
-                    ["Pts", "Ranking points"],
-                  ].map(([h, title]) => (
-                    <th key={h} scope="col" title={title}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {players.map((p, i) => (
-                  <tr key={p.id} className={i < 3 ? `rank-${i + 1}` : ""}>
-                    <td>{i + 1}</td>
-                    <th scope="row">
-                      <Link href={`/players/${p.code}`}>{p.name}</Link>
-                    </th>
-                    {[
-                      p.tournaments,
-                      p.titles,
-                      p.podiums,
-                      p.knockouts,
-                      p.played,
-                      p.won,
-                      p.drawn,
-                      p.lost,
-                      p.gf,
-                      p.ga,
-                      p.gd > 0 ? `+${p.gd}` : p.gd,
-                      p.played ? `${p.winRate}%` : "—",
-                    ].map((v, j) => (
-                      <td key={j}>{v}</td>
-                    ))}
-                    <td className="records-pts">{p.ranking}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="notice">Rankings start once players are confirmed.</p>
-        )}
-      </section>
-
-      <section aria-labelledby="boards" className="records-section">
-        <h2 id="boards" className="records-h2">
-          All-time leaderboards
-        </h2>
-        <div className="boards">
-          {boards.map((b) => (
-            <section key={b.title} className="board">
-              <h3>
-                {b.title}
-                {b.note && <span>{b.note}</span>}
-              </h3>
-              {b.rows.length ? (
-                <ol>
-                  {b.rows.map((p, i) => (
-                    <li key={p.id}>
-                      <span className="board-rank">{i + 1}</span>
-                      <Link href={`/players/${p.code}`} className="board-name">
-                        {p.name}
-                      </Link>
-                      <span className="board-value">{b.value(p)}</span>
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p className="board-empty">Not enough results yet.</p>
-              )}
-            </section>
-          ))}
-          <section className="board">
-            <h3>
-              In form<span>last 5 matches</span>
-            </h3>
-            {inForm.length ? (
-              <ol>
-                {inForm.map((p, i) => (
-                  <li key={p.id}>
-                    <span className="board-rank">{i + 1}</span>
-                    <Link href={`/players/${p.code}`} className="board-name">
-                      {p.name}
-                    </Link>
-                    <span className="board-form">
-                      {p.form.map((r, j) => (
-                        <span key={j} className={`form-chip form-${r}`}>
-                          {r}
                         </span>
-                      ))}
-                    </span>
+                      </span>
+                      <ChevronRight className="champ-chev" aria-hidden="true" />
+                    </Link>
                   </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="board-empty">Not enough results yet.</p>
-            )}
-          </section>
-        </div>
-      </section>
+                );
+              })}
+              {undecided.map((t) => (
+                <li key={t.id}>
+                  <Link
+                    href={`/champions/${t.id}`}
+                    className="champ-fame-row is-pending"
+                  >
+                    <span className="champ-fame-icon" aria-hidden="true">
+                      <Trophy />
+                    </span>
+                    <span className="champ-fame-info">
+                      <span className="champ-fame-name">{t.label}</span>
+                      <span className="champ-fame-sub">
+                        {t.status === "completed"
+                          ? "Finished — champion not confirmed yet"
+                          : "In progress — champion not decided"}
+                      </span>
+                    </span>
+                    <ChevronRight className="champ-chev" aria-hidden="true" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="champ-fame-empty">
+              No champions yet. Winners appear here when a tournament finishes.
+            </p>
+          )}
+        </section>
 
-      <section aria-labelledby="matches" className="records-section">
-        <h2 id="matches" className="records-h2">
-          Match records
-        </h2>
-        <div className="boards boards-2">
-          <MatchBoard title="Biggest wins" rows={biggestWins} />
-          <MatchBoard title="Highest-scoring matches" rows={highestScoring} />
-        </div>
-      </section>
+        <section aria-labelledby="tournaments" className="champ-block">
+          <div className="champ-block-head">
+            <h2 id="tournaments" className="champ-h2">
+              Tournaments
+            </h2>
+            <span className="champ-count">
+              {tournaments.length}{" "}
+              {tournaments.length === 1 ? "tournament" : "tournaments"}
+            </span>
+          </div>
+          {tournaments.length ? (
+            <ul className="champ-cards">
+              {tournaments.map((t) => (
+                <li key={t.id}>
+                  <TournamentCard t={t} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="notice">No tournament is published yet.</p>
+          )}
+        </section>
+
+        <nav aria-label="More from Champions" className="champ-more">
+          <Link href="/champions/archive" className="champ-link-card">
+            <Layers className="champ-link-icon" aria-hidden="true" />
+            <span className="champ-link-text">
+              <strong>Archive</strong> — Results from before XGamer 2.0
+            </span>
+            <ChevronRight className="champ-chev" aria-hidden="true" />
+          </Link>
+          <Link
+            href="/champions/rankings"
+            className="champ-link-card champ-rank-card"
+          >
+            <BarChart3 className="champ-link-icon" aria-hidden="true" />
+            <span className="champ-link-text">
+              <strong>All-Time Ranking</strong>
+              <span className="champ-link-sub">
+                Overall ranking, 13 leaderboards and match records
+              </span>
+            </span>
+            <ChevronRight className="champ-chev" aria-hidden="true" />
+          </Link>
+        </nav>
+      </div>
     </div>
   );
 }
 
-function MatchBoard({ title, rows }: { title: string; rows: MatchRecord[] }) {
+function TournamentCard({ t }: { t: PublicTournament }) {
   return (
-    <section className="board">
-      <h3>{title}</h3>
-      {rows.length ? (
-        <ol>
-          {rows.map((m, i) => (
-            <li key={i} className="board-match">
-              <span className="board-rank">{i + 1}</span>
-              <span className="min-w-0">
-                <span className="block truncate">
-                  <Link href={`/players/${m.winner.code}`}>
-                    {m.winner.name}
-                  </Link>{" "}
-                  <b className="text-cyan-300">
-                    {m.winnerGoals}–{m.loserGoals}
-                  </b>{" "}
-                  <Link href={`/players/${m.loser.code}`}>{m.loser.name}</Link>
-                </span>
-                <span className="block text-xs text-slate-500 truncate">
-                  {m.tournament} · Round {m.round}
-                </span>
-              </span>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="board-empty">No results yet.</p>
-      )}
-    </section>
+    <Link href={`/champions/${t.id}`} className="champ-tcard">
+      <span className="champ-tcard-art" aria-hidden="true" />
+      <span className="champ-tcard-body">
+        <span className={`champ-pill champ-pill-${t.status}`}>
+          {STATUS_LABEL[t.status]}
+        </span>
+        <span className="champ-tcard-name">{t.competition ?? t.name}</span>
+        <span className="champ-tcard-format">
+          {FORMAT_SHORT[formatChoice(t)]}
+        </span>
+        {t.season && (
+          <span className="champ-tcard-season">
+            <CalendarDays aria-hidden="true" /> Season {t.season}
+          </span>
+        )}
+      </span>
+      <span className="champ-tcard-go">
+        <span className="sr-only">Explore Tournament</span>
+        <ChevronRight className="champ-chev" aria-hidden="true" />
+      </span>
+    </Link>
   );
 }
