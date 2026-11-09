@@ -1,0 +1,7 @@
+{
+  "git": {
+    "deploymentEnabled": {
+      "feature/xg-009-champions": false
+    }
+  }
+}

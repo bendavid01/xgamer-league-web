@@ -86,6 +86,7 @@ export type PublicPlayer = {
 export type PublicFixture = {
   id: string;
   round: number;
+  slot: number;
   home: string;
   away: string;
   home_score: number | null;
@@ -106,7 +107,7 @@ export const getTournament = cache(async (id: string) => {
     ).map(({ no, ...p }) => ({ ...p, code: playerCode(no) }));
     const fixtures = await sql<
       PublicFixture[]
-    >`select id,round,home,away,home_score,away_score from fixture where tournament_id=${id} and stage='league' and away is not null order by round,slot`;
+    >`select id,round,slot,home,away,home_score,away_score from fixture where tournament_id=${id} and stage='league' and away is not null order by round,slot,id`;
     const qualified = (
       await sql<
         { player_id: string }[]

@@ -12,10 +12,12 @@ export default function TournamentTile({
   t,
   href,
   withActions = false,
+  exploreLabel = "Explore",
 }: {
   t: PublicTournament;
   href: string;
   withActions?: boolean;
+  exploreLabel?: string;
 }) {
   const format = formatChoice(t);
   const go = (tab: string) =>
@@ -43,7 +45,7 @@ export default function TournamentTile({
         {t.season && <span className="xg-tile-season">Season {t.season}</span>}
         <span className="xg-tile-format">{FORMAT_SHORT[format]}</span>
         <span className="xg-tile-explore" aria-hidden="true">
-          Explore <ArrowRight size={16} />
+          {exploreLabel} <ArrowRight size={16} />
         </span>
       </Link>
       {withActions && (

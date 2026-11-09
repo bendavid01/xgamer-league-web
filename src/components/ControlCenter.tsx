@@ -361,9 +361,9 @@ function HomeView({
   openTournament: (id: string) => void;
 }) {
   const admin = data.user.role === "admin";
-  const [tab, setTab] = useState<"tournaments" | "coordinators" | "log">(
-    "tournaments",
-  );
+  const [tab, setTab] = useState<
+    "tournaments" | "coordinators" | "log" | "health"
+  >("tournaments");
   const [adding, setAdding] = useState(false);
   const tabs = [
     ["tournaments", "Tournaments"],
@@ -371,6 +371,7 @@ function HomeView({
       ? [
           ["coordinators", "Coordinators"],
           ["log", "Activity log"],
+          ["health", "Data health"],
         ]
       : []),
   ] as const;
@@ -476,6 +477,7 @@ function HomeView({
         <Coordinators data={data} act={act} />
       )}
       {tab === "log" && admin && <ActivityLog rows={data.audit} />}
+      {tab === "health" && admin && <DataHealth />}
     </>
   );
 }
@@ -1512,6 +1514,7 @@ function FixturesTab({
   const missingIds = data.applications
     .filter((a) => a.status === "approved" && !a.efootballId)
     .map((a) => a.gaming_name);
+  const [reviewing, setReviewing] = useState(false);
   const anyScore = data.fixtures.some((f) => f.home_score !== null);
   const allScored =
     data.fixtures.length > 0 &&
@@ -1650,9 +1653,7 @@ function FixturesTab({
                 <button
                   className="button-primary"
                   disabled={!allScored}
-                  onClick={() =>
-                    void act({ action: "complete" }, "League finished.")
-                  }
+                  onClick={() => setReviewing(true)}
                 >
                   Finish league
                 </button>
@@ -1674,6 +1675,13 @@ function FixturesTab({
                 </span>
               )}
             </div>
+          )}
+          {reviewing && t.status === "league" && !t.knockout && (
+            <FinishLeague
+              data={data}
+              act={act}
+              cancel={() => setReviewing(false)}
+            />
           )}
           {t.status === "league" && t.knockout && allScored && (
             <details className="om-card">
@@ -1794,6 +1802,182 @@ function FixturesTab({
   );
 }
 
+/**
+ * League-only: the final table PROPOSES 1st–3rd; an organizer must confirm
+ * (and may correct, e.g. after a tie-break) before the league is finished.
+ */
+function FinishLeague({
+  data,
+  act,
+  cancel,
+}: {
+  data: Workspace;
+  act: Act;
+  cancel: () => void;
+}) {
+  const table = data.standings;
+  const [places, setPlaces] = useState<string[]>(
+    [0, 1, 2].map((i) => table[i]?.id ?? ""),
+  );
+  // Level on points and goal difference around the podium: needs a human look.
+  const tie = table
+    .slice(0, 4)
+    .some(
+      (r, i, all) =>
+        i > 0 && r.pts === all[i - 1].pts && r.gd === all[i - 1].gd,
+    );
+  const changed = places.some((p, i) => p !== (table[i]?.id ?? ""));
+  return (
+    <form
+      className="om-card space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void act(
+          { action: "complete", podium: places.map((p) => p || null) },
+          "League finished. Final positions confirmed and published.",
+        ).then((ok) => ok && cancel());
+      }}
+    >
+      <h3 className="text-xl font-bold">Confirm final positions</h3>
+      <p className="text-slate-400 text-sm">
+        Proposed from the final league table. Nothing is published until you
+        confirm. The confirmation is recorded in the activity log.
+      </p>
+      {tie && (
+        <p className="notice text-amber-200">
+          Players near the top are level on points and goal difference. Check
+          the tie-break before confirming.
+        </p>
+      )}
+      <div className="grid gap-4 md:grid-cols-3">
+        {["1st — Champion", "2nd — Runner-up", "3rd"].map((label, i) => (
+          <label className="block" key={label}>
+            {label}
+            <select
+              className="control-input"
+              value={places[i]}
+              required={i === 0}
+              onChange={(e) => {
+                const next = [...places];
+                next[i] = e.target.value;
+                setPlaces(next);
+              }}
+            >
+              <option value="">— Not set —</option>
+              {table.map((r, j) => (
+                <option
+                  key={r.id}
+                  value={r.id}
+                  disabled={places.includes(r.id) && places[i] !== r.id}
+                >
+                  {j + 1}. {r.name} ({r.pts} pts)
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+      {changed && (
+        <p className="text-sm text-amber-200">
+          This differs from the table order — it will be noted in the activity
+          log.
+        </p>
+      )}
+      <div className="om-footer">
+        <button type="button" className="button-secondary" onClick={cancel}>
+          Cancel
+        </button>
+        <button className="button-primary" disabled={!places[0]}>
+          Confirm and finish league
+        </button>
+      </div>
+    </form>
+  );
+}
+
+type HealthSection = {
+  title: string;
+  checks: {
+    title: string;
+    level: "ok" | "warn" | "error" | "info";
+    detail: string;
+    items?: string[];
+  }[];
+};
+
+/** Read-only integrity report (admins). Nothing here changes data. */
+function DataHealth() {
+  const [sections, setSections] = useState<HealthSection[] | null>(null);
+  const [error, setError] = useState("");
+  const fetchReport = useCallback(async () => {
+    try {
+      const r = await fetch("/api/admin?health=1", { cache: "no-store" });
+      const v = await r.json();
+      if (!r.ok) throw new Error(v.error);
+      setSections(v);
+      setError("");
+    } catch (e) {
+      setError((e as Error).message || "Could not load the report.");
+    }
+  }, []);
+  const load = () => {
+    setError("");
+    setSections(null);
+    void fetchReport();
+  };
+  useEffect(() => {
+    const go = async () => {
+      await fetchReport();
+    };
+    void go();
+  }, [fetchReport]);
+  const LABEL = { ok: "OK", warn: "Review", error: "Problem", info: "Info" };
+  return (
+    <section className="panel p-4 md:p-7 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold">Data health</h2>
+          <p className="text-slate-400 mt-1 text-sm">
+            Read-only checks of player IDs, tournaments, results, placements,
+            the ranking and the legacy archive. Nothing is changed, merged or
+            deleted from here.
+          </p>
+        </div>
+        <button className="button-secondary" onClick={load}>
+          <RefreshCw size={16} aria-hidden="true" /> Run again
+        </button>
+      </div>
+      {error && <p className="notice text-amber-200">{error}</p>}
+      {!sections && !error && <p className="text-slate-400">Checking…</p>}
+      {sections?.map((sec) => (
+        <div key={sec.title}>
+          <h3 className="text-lg font-bold mb-2">{sec.title}</h3>
+          <ul className="space-y-2">
+            {sec.checks.map((c) => (
+              <li key={c.title} className="om-card">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`om-health om-health-${c.level}`}>
+                    {LABEL[c.level]}
+                  </span>
+                  <strong>{c.title}</strong>
+                </div>
+                <p className="text-sm text-slate-300 mt-1">{c.detail}</p>
+                {c.items && c.items.length > 0 && (
+                  <ul className="mt-2 text-sm text-slate-400 list-disc pl-5">
+                    {c.items.slice(0, 50).map((x) => (
+                      <li key={x}>{x}</li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /** Shrinks a photo in the browser to a JPEG under ~700 KB before upload. */
 async function compress(file: File) {
   const bitmap = await createImageBitmap(file);
@@ -1874,7 +2058,7 @@ function PodiumTab({
         <h3 className="text-xl font-bold">Final positions</h3>
         <p className="text-slate-400 -mt-3">
           {auto
-            ? "Filled in automatically from the table when the league finished. Change them only if needed."
+            ? "Confirmed by an organizer when the league was finished. Change them only if needed."
             : "Enter who finished 1st, 2nd and 3rd in the knockout (eFootball app)."}
         </p>
         <div className="grid gap-5 md:grid-cols-3">

@@ -65,6 +65,8 @@ export type MatchRecord = {
 export type HallEntry = {
   id: string;
   name: string;
+  format: string;
+  knockout: boolean;
   label: string;
   competition: string | null;
   season: number | null;
@@ -83,9 +85,11 @@ export const getRecords = cache(async () => {
         competition: string | null;
         season: number | null;
         status: string;
+        format?: string;
+        knockout?: boolean;
         photo: number | null;
       }[]
-    >`select t.id,t.name,t.competition,t.season,t.status,extract(epoch from p.updated_at)::int as photo
+    >`select t.id,t.name,t.competition,t.season,t.status,t.format,t.knockout,extract(epoch from p.updated_at)::int as photo
       from tournament t left join tournament_photo p on p.tournament_id=t.id
       where t.published and t.deleted_at is null order by t.created_at`;
     const ids = tournaments.map((t) => t.id);
@@ -146,6 +150,8 @@ export function compute(
     competition: string | null;
     season: number | null;
     status: string;
+    format?: string;
+    knockout?: boolean;
     photo: number | null;
   }[],
   entries: {
@@ -318,6 +324,8 @@ export function compute(
     .map((t) => ({
       id: t.id,
       name: t.name,
+      format: t.format ?? "league",
+      knockout: t.knockout ?? false,
       label: label.get(t.id)!,
       competition: t.competition,
       season: t.season,

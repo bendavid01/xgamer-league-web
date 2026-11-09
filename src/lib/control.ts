@@ -130,7 +130,12 @@ const command = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("restore_tournament"), tournament: tid }),
   z.object({ action: z.literal("remove_photo"), tournament: tid }),
-  z.object({ action: z.literal("complete"), tournament: tid }),
+  z.object({
+    action: z.literal("complete"),
+    tournament: tid,
+    /** League-only: the organizer-confirmed 1st, 2nd, 3rd (required to finish). */
+    podium: z.array(uuid.nullable()).length(3).optional(),
+  }),
   z.object({
     action: z.literal("announce"),
     tournament: tid,
@@ -725,7 +730,8 @@ export async function run(user: Who, c: Command) {
         throw new HttpError(409, "Nothing to finish yet.");
       await tx`update tournament set status='completed',revision=revision+1 where id=${tournamentId}`;
       summary = "Marked tournament completed";
-      // League only: final positions come straight from the table.
+      // League only: the final table is only a PROPOSAL. Official placements
+      // need the organizer's explicit confirmation (XG-009).
       if (T.format === "league" && !T.knockout) {
         const league =
           await tx`select home,away,home_score,away_score from fixture where tournament_id=${tournamentId} and stage='league' and away is not null`;
@@ -738,13 +744,33 @@ export async function run(user: Who, c: Command) {
             awayScore: f.away_score,
           })),
         );
+        const proposed = [0, 1, 2].map((i) => table[i]?.id ?? null);
+        const confirmed = c.podium;
+        if (!confirmed || !confirmed[0])
+          throw new HttpError(
+            400,
+            "Confirm the final positions (1st, 2nd, 3rd) to finish the league.",
+          );
+        const ids = confirmed.filter((p): p is string => !!p);
+        if (new Set(ids).size !== ids.length)
+          throw new HttpError(400, "A player can only take one place.");
+        const ok = table.map((r) => r.id);
+        if (ids.some((id) => !ok.includes(id)))
+          throw new HttpError(400, "Only approved players can be placed.");
         await tx`delete from podium where tournament_id=${tournamentId}`;
-        for (let i = 0; i < Math.min(3, table.length); i++)
-          await tx`insert into podium(tournament_id,place,player_id) values(${tournamentId},${i + 1},${table[i].id})`;
-        affected = table
-          .slice(0, 3)
-          .map((r, i) => `${i + 1}. ${r.name}`)
-          .join(" · ");
+        for (let i = 0; i < 3; i++)
+          if (confirmed[i])
+            await tx`insert into podium(tournament_id,place,player_id) values(${tournamentId},${i + 1},${confirmed[i]})`;
+        const n = await Promise.all(
+          confirmed.map((p) => (p ? names([p]) : "—")),
+        );
+        summary = "Finished league and confirmed final positions";
+        affected = n.map((x, i) => `${i + 1}. ${x}`).join(" · ");
+        after = {
+          confirmed,
+          proposed,
+          sameAsTable: proposed.every((p, i) => p === (confirmed[i] ?? null)),
+        };
       }
     } else if (c.action === "announce") {
       const [row] =

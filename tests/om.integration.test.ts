@@ -409,8 +409,33 @@ test(
         homeScore: order.indexOf(m.home) < order.indexOf(m.away) ? 3 : 1,
         awayScore: order.indexOf(m.home) < order.indexOf(m.away) ? 1 : 3,
       });
-    await cmd({ action: "complete", tournament: s1.id });
-    // League only: the podium comes from the table automatically.
+    // League only: the table only PROPOSES the podium; an organizer must confirm it.
+    await assert.rejects(
+      () => cmd({ action: "complete", tournament: s1.id }),
+      /Confirm the final positions/,
+    );
+    await assert.rejects(
+      () =>
+        cmd({
+          action: "complete",
+          tournament: s1.id,
+          podium: [order[0], order[0], null],
+        }),
+      /one place/,
+    );
+    assert.equal((await tour(s1.id)).status, "league", "nothing changed");
+    await cmd({
+      action: "complete",
+      tournament: s1.id,
+      podium: order.slice(0, 3),
+    });
+    const confirmLog =
+      await sql`select summary, after_value from audit_event where tournament_id=${s1.id} and action='complete'`;
+    assert.equal(
+      confirmLog[0].summary,
+      "Finished league and confirmed final positions",
+    );
+    assert.equal(confirmLog[0].after_value.sameAsTable, true);
     const podium =
       await sql`select place,player_id from podium where tournament_id=${s1.id} order by place`;
     assert.deepEqual(
@@ -510,6 +535,29 @@ test(
     assert.equal(profile.career[0].podium, 1);
     assert.equal(profile.form.join(""), "WWW");
     assert(!JSON.stringify(profile).includes("+91"));
+
+    // Data health: read-only report, no private data.
+    const { healthReport } = await import("../src/lib/health");
+    const before = await sql`select count(*)::int n from audit_event`;
+    const report = JSON.stringify(await healthReport());
+    assert.match(report, /Permanent player IDs/);
+    assert(!report.includes("+91"), "no phone numbers in the health report");
+    assert.deepEqual(
+      (await sql`select count(*)::int n from audit_event`)[0].n,
+      before[0].n,
+      "health report writes nothing",
+    );
+    // Tournament Champions data: podium official only once completed.
+    const { getChampionsTournament } = await import("../src/lib/champions");
+    const champ = (await getChampionsTournament(s1.id))!;
+    assert.equal(champ.official, true);
+    assert.equal(champ.status[order[0]], "Champion");
+    const live = (await getChampionsTournament(s2.id))!;
+    assert.equal(
+      live.official,
+      false,
+      "no podium for an unfinished tournament",
+    );
 
     // Delete (type the name), hidden everywhere, then restore.
     await assert.rejects(

@@ -33,17 +33,28 @@ const STATUS: Record<string, string> = {
 
 export default async function PlayerProfile({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ t?: string }>;
 }) {
+  const { t: focusId } = await searchParams;
   const { id } = await params;
   const no = codeNumber(id);
   if (!no) notFound();
-  if (id !== playerCode(no)) permanentRedirect(`/players/${playerCode(no)}`);
+  if (id !== playerCode(no))
+    permanentRedirect(
+      `/players/${playerCode(no)}${focusId ? `?t=${encodeURIComponent(focusId)}` : ""}`,
+    );
   const profile = await getProfile(id);
   if (!profile) notFound();
   const { player, trophies, totals, career, form, history, next, headToHead } =
     profile;
+  // ?t=<tournament>: that tournament's numbers, kept apart from career totals.
+  const focus = career.find((c) => c.id === focusId) ?? null;
+  const focusMatches = focus
+    ? history.filter((m) => m.tournament === focus.id)
+    : [];
   const since = new Date(player.since).toLocaleDateString("en-IN", {
     month: "long",
     year: "numeric",
@@ -65,6 +76,80 @@ export default async function PlayerProfile({
           </p>
         </div>
       </header>
+
+      {focus && (
+        <section className="profile-focus" aria-labelledby="focus-title">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="focus-title" className="profile-h2 !mb-0">
+              In {focus.label}
+            </h2>
+            <Link
+              href={`/champions/${focus.id}`}
+              className="text-sm text-cyan-300 hover:text-white"
+            >
+              Tournament records →
+            </Link>
+          </div>
+          <p className="text-sm text-slate-400 mt-1">
+            {focus.podium && focus.finished
+              ? `Official placement: ${PLACE_LABEL[focus.podium]}`
+              : focus.finished
+                ? "Tournament finished"
+                : focus.position
+                  ? `Currently ${ordinal(focus.position)} of ${focus.field} (not final)`
+                  : "Tournament in progress"}
+            {" · "}Statistics for this tournament only
+          </p>
+          <dl className="profile-stats mt-4">
+            {(
+              [
+                ["Matches", focus.played],
+                ["Won", focus.won],
+                ["Drawn", focus.drawn],
+                ["Lost", focus.lost],
+                ["Goals for", focus.gf],
+                ["Goals against", focus.ga],
+                [
+                  "Goal difference",
+                  focus.gf - focus.ga > 0
+                    ? `+${focus.gf - focus.ga}`
+                    : focus.gf - focus.ga,
+                ],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {focusMatches.length > 0 && (
+            <ul className="hub-round mt-4">
+              {focusMatches.map((m) => (
+                <li key={m.id} className="hub-row">
+                  <span className={`form-chip form-${m.outcome}`}>
+                    {m.outcome}
+                  </span>
+                  <span className="hub-score">
+                    {m.gf} – {m.ga}
+                  </span>
+                  <span className="hub-name hub-away">
+                    <Link
+                      href={`/players/${m.opponent.code}?t=${encodeURIComponent(focus.id)}`}
+                      className="hover:text-cyan-300"
+                    >
+                      {m.home ? "vs" : "@"} {m.opponent.name}
+                    </Link>
+                    <span className="block text-xs text-slate-500">
+                      Round {m.round}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="trophy-cabinet" aria-label="Trophies">
         {(
@@ -130,7 +215,7 @@ export default async function PlayerProfile({
 
       <section aria-labelledby="career" className="mt-12">
         <h2 id="career" className="profile-h2">
-          Tournaments
+          Tournament history
         </h2>
         {career.length ? (
           <ul className="career-list">

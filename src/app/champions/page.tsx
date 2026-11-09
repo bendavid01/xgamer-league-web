@@ -9,7 +9,14 @@ import {
   type MatchRecord,
   type PlayerRecord,
 } from "@/lib/records";
-import { championTitle, PLACE_LABEL } from "@/lib/labels";
+import {
+  championTitle,
+  FORMAT_SHORT,
+  formatChoice,
+  PLACE_LABEL,
+} from "@/lib/labels";
+import { listTournaments } from "@/lib/tournaments";
+import TournamentTile from "@/components/TournamentTile";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -26,7 +33,7 @@ type Board = {
 };
 
 export default async function Champions() {
-  const records = await getRecords();
+  const [records, list] = await Promise.all([getRecords(), listTournaments()]);
   if (!records)
     return (
       <div className="page-shell py-12">
@@ -40,6 +47,15 @@ export default async function Champions() {
       </div>
     );
   const { players, hall, biggestWins, highestScoring, totals } = records;
+  // Running tournaments: shown in the Hall of Fame as "Champion not decided".
+  const deciding = (list?.live ?? []).filter((t) =>
+    ["league", "knockout"].includes(t.status),
+  );
+  const browse = [
+    ...(list?.live ?? []),
+    ...(list?.upcoming ?? []),
+    ...(list?.past ?? []),
+  ];
   const active = players.filter((p) => p.played > 0);
   const qualified = players.filter((p) => p.played >= MIN_MATCHES);
   const top = (
@@ -172,8 +188,26 @@ export default async function Champions() {
         <h2 id="hall" className="records-h2">
           Hall of Fame
         </h2>
-        {hall.length ? (
+        {hall.length || deciding.length ? (
           <ul className="hall-list">
+            {deciding.map((t) => (
+              <li key={t.id} className="hall-card hall-pending">
+                <div className="hall-photo" aria-hidden="true">
+                  <Trophy size={34} />
+                </div>
+                <div className="min-w-0">
+                  <Link href={`/champions/${t.id}`} className="hall-tournament">
+                    {t.label}
+                  </Link>
+                  <span className="hall-format">
+                    {FORMAT_SHORT[formatChoice(t)]}
+                  </span>
+                  <p className="hall-pending-text">
+                    In progress — champion not decided
+                  </p>
+                </div>
+              </li>
+            ))}
             {hall.map((h) => (
               <li key={h.id} className="hall-card">
                 <div className="hall-photo">
@@ -191,12 +225,12 @@ export default async function Champions() {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <Link
-                    href={`/tournaments?t=${h.id}&tab=standings`}
-                    className="hall-tournament"
-                  >
+                  <Link href={`/champions/${h.id}`} className="hall-tournament">
                     {h.label}
                   </Link>
+                  <span className="hall-format">
+                    {FORMAT_SHORT[formatChoice(h)]}
+                  </span>
                   <ol className="hall-places">
                     {h.places.map((p, i) =>
                       p ? (
@@ -209,7 +243,10 @@ export default async function Champions() {
                           <span className="hall-place-label">
                             {i === 0 ? championTitle(h) : PLACE_LABEL[i + 1]}
                           </span>
-                          <Link href={`/players/${p.code}`}>{p.name}</Link>
+                          <Link href={`/players/${p.code}?t=${h.id}`}>
+                            {p.name}
+                          </Link>
+                          <span className="hall-code">{p.code}</span>
                           {p.team && (
                             <span className="text-slate-500 text-sm">
                               {p.team}
@@ -228,6 +265,33 @@ export default async function Champions() {
             No champions yet. Winners appear here when a tournament finishes.
           </p>
         )}
+      </section>
+
+      <section aria-labelledby="browse" className="records-section">
+        <h2 id="browse" className="records-h2">
+          Tournaments
+        </h2>
+        {browse.length ? (
+          <ul className="xg-tiles">
+            {browse.map((t) => (
+              <li key={t.id}>
+                <TournamentTile
+                  t={t}
+                  href={`/champions/${t.id}`}
+                  exploreLabel="View Tournament Records"
+                />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="notice">No tournament is published yet.</p>
+        )}
+        <Link href="/champions/archive" className="archive-link">
+          <span>
+            <strong>Archive</strong> — results from before XGamer 2.0
+          </span>
+          <span aria-hidden="true">→</span>
+        </Link>
       </section>
 
       <section aria-labelledby="ranking" className="records-section">
@@ -305,7 +369,7 @@ export default async function Champions() {
 
       <section aria-labelledby="boards" className="records-section">
         <h2 id="boards" className="records-h2">
-          Leaderboards
+          All-time leaderboards
         </h2>
         <div className="boards">
           {boards.map((b) => (

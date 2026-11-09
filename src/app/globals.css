@@ -2748,3 +2748,74 @@ a.hub-name:hover {
   .nav-live { padding: 4px 8px; font-size: 10px; letter-spacing: 0.08em; }
   .nav-live .live-dot { width: 6px; height: 6px; }
 }
+
+/* XG-009 — Champions: Hall of Fame extras, tournament records, archive, data health */
+.hall-format { display: block; font-size: 12px; color: #94a3b8; margin-top: 2px; }
+.hall-code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; color: #67e8f9; }
+.hall-pending { border-color: rgba(34, 211, 238, 0.3); background: linear-gradient(180deg, #0f1b28, #0b1118); }
+.hall-pending .hall-photo { color: #475569; background: #0b1118; border: 1px dashed #334155; }
+.hall-pending-text { margin-top: 8px; font-size: 14px; color: #a5f3fc; }
+.archive-link { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 16px; max-width: 816px; padding: 14px 18px; border-radius: 16px; border: 1px dashed #334155; color: #cbd5e1; }
+.archive-link:hover { border-color: #64748b; color: #fff; }
+.archive-banner { display: flex; gap: 10px; align-items: flex-start; padding: 12px 16px; border-radius: 14px; border: 1px solid rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.07); color: #fde68a; font-size: 14px; }
+.champ-head { display: flex; gap: 18px; align-items: center; margin-top: 18px; }
+.champ-crest { flex: none; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 18px; border: 1px solid rgba(250, 204, 21, 0.4); background: radial-gradient(circle at 50% 30%, #3b2f0b, #0b1118 75%); color: #facc15; }
+.champ-crest svg { width: 30px; height: 30px; }
+.champ-season { font-size: 12px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: #67e8f9; }
+.champ-title { font-size: clamp(1.7rem, 3.6vw, 2.6rem); font-weight: 900; line-height: 1.1; }
+.champ-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: 14px; color: #94a3b8; }
+.champ-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.champ-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 24px 0 22px; }
+.champ-tab { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border-radius: 14px; border: 1px solid #1f2a3a; background: #0b1118; font-weight: 700; color: #cbd5e1; }
+.champ-tab:hover { border-color: #334155; color: #fff; }
+.champ-tab-on { border-color: rgba(167, 139, 250, 0.7); background: linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(167, 139, 250, 0.16)); color: #fff; }
+.champ-podium { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); max-width: 900px; }
+.champ-place { --medal: #facc15; position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 22px 16px 18px; border-radius: 20px; border: 1px solid color-mix(in srgb, var(--medal) 45%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--medal) 10%, #0b1119), #0b1119 70%); outline: none; animation: podium-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.champ-place-2 { --medal: #cbd5e1; animation-delay: 0.08s; }
+.champ-place-3 { --medal: #d97706; animation-delay: 0.16s; }
+.champ-place:focus-visible { box-shadow: 0 0 0 2px var(--xg-cyan); }
+.champ-place-avatar, .champ-place-photo { width: 76px; height: 76px; border-radius: 50%; border: 2px solid var(--medal); object-fit: cover; display: grid; place-items: center; font-size: 26px; font-weight: 900; color: var(--medal); background: #070b12; }
+.champ-place-label { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--medal); }
+.champ-place-name { font-size: 20px; font-weight: 900; }
+.champ-place-code { font-family: var(--font-mono, ui-monospace, monospace); font-size: 13px; color: #67e8f9; }
+.champ-place-team { font-size: 13px; color: #94a3b8; }
+/* "View Player Stats": revealed on hover (desktop), tap/focus (mobile, keyboard). */
+.champ-action { margin-top: 10px; display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 8px 14px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--medal) 60%, transparent); font-size: 14px; font-weight: 700; color: #f8fafc; visibility: hidden; opacity: 0; transition: opacity 0.15s; }
+.champ-place:hover .champ-action, .champ-place:focus-within .champ-action, .champ-place:focus .champ-action { visibility: visible; opacity: 1; }
+.champ-action:hover, .champ-action:focus-visible { background: color-mix(in srgb, var(--medal) 14%, transparent); }
+.champ-empty { max-width: 640px; padding: 28px; border-radius: 20px; border: 1px dashed #334155; text-align: center; color: #94a3b8; }
+.champ-empty svg { width: 34px; height: 34px; margin: 0 auto 8px; color: #64748b; }
+.champ-empty h2 { font-size: 20px; font-weight: 800; color: #e2e8f0; }
+.champ-players { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+.champ-players > li { min-width: 0; }
+.champ-player { padding: 16px; border-radius: 16px; border: 1px solid #1f2a3a; background: #0b1118; }
+.champ-status { flex: none; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: #1e293b; color: #cbd5e1; }
+.champ-status-champion { background: linear-gradient(135deg, #facc15, #f59e0b); color: #1c1917; }
+.champ-status-runner-up { background: #cbd5e1; color: #0f172a; }
+.champ-status-third-place { background: #d97706; color: #1c1917; }
+.champ-status-qualified { background: rgba(34, 211, 238, 0.15); color: #a5f3fc; }
+.champ-line { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: 14px; color: #94a3b8; }
+.champ-line b { color: #e2e8f0; }
+.champ-link { display: inline-block; margin-top: 10px; font-size: 14px; font-weight: 700; color: #67e8f9; }
+.champ-link:hover { color: #fff; }
+.champ-note { font-size: 13px; color: #64748b; margin: 0 0 14px; max-width: 760px; }
+.champ-records { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); margin-bottom: 14px; }
+.champ-records > * { min-width: 0; }
+.champ-record { padding: 16px; border-radius: 16px; border: 1px solid #1f2a3a; background: linear-gradient(170deg, #111a27, #0b1119 70%); }
+.champ-record h3 { display: flex; align-items: center; gap: 8px; font-weight: 800; margin-bottom: 8px; }
+.champ-record h3 svg { width: 18px; height: 18px; color: #a78bfa; }
+.champ-record-value { font-size: 28px; font-weight: 900; color: #f8fafc; }
+.champ-record-empty { font-size: 14px; color: #64748b; }
+.champ-holders { margin-top: 6px; display: grid; gap: 4px; font-size: 14px; }
+.champ-holders a, .champ-record li a { font-weight: 700; }
+.champ-holders a:hover, .champ-record li a:hover { color: var(--xg-cyan); }
+.champ-records-small .champ-record-value { font-size: 22px; }
+.champ-subhead { font-size: 18px; font-weight: 800; margin: 18px 0 10px; }
+.profile-focus { margin-top: 28px; padding: 18px; border-radius: 18px; border: 1px solid rgba(167, 139, 250, 0.35); background: linear-gradient(170deg, #121a2a, #0b1119 70%); }
+.om-health { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+.om-health-ok { background: rgba(34, 197, 94, 0.15); color: #86efac; }
+.om-health-warn { background: rgba(245, 158, 11, 0.15); color: #fcd34d; }
+.om-health-error { background: rgba(225, 29, 72, 0.18); color: #fda4af; }
+.om-health-info { background: #1e293b; color: #cbd5e1; }
+@media (max-width: 380px) { .champ-tabs { gap: 6px; } .champ-tab { font-size: 13px; gap: 5px; } }
+@media (prefers-reduced-motion: reduce) { .champ-place { animation: none; } .champ-action { transition: none; } }
