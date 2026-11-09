@@ -15,8 +15,20 @@ export type MigrationStatus = {
   pending: string[];
   /** Applied, but the file has been edited since. */
   changed: string[];
-  /** Applied to the database but not part of this code version. */
+  /** Applied outside this code version, but known and accepted (see RECOGNIZED_OUTSIDE). */
+  recognized: string[];
+  /** Applied outside this code version and not recognized. Reported, never touched. */
   unknown: string[];
+};
+
+/**
+ * Migrations applied to production outside this code version that we know about.
+ * 006 was written by the feature/mcp-server preview build on 7 Nov 2026. Its file
+ * lives on that branch and must stay byte-identical; it is never re-run or edited.
+ */
+export const RECOGNIZED_OUTSIDE: Record<string, string> = {
+  "006_mcp_oauth":
+    "MCP branch (feature/mcp-server), applied by its preview build on 7 Nov 2026",
 };
 
 const FILE = /^\d{3}_[a-z0-9_]+\.sql$/;
@@ -37,6 +49,11 @@ export async function migrationFiles(
   );
 }
 
+const outside = (files: Migration[], applied: Map<string, string>) =>
+  [...applied.keys()]
+    .filter((name) => !files.some((f) => f.name === name))
+    .sort();
+
 /** Pure comparison of the migration files with the database ledger. */
 export function compareLedger(
   files: Migration[],
@@ -48,9 +65,8 @@ export function compareLedger(
     changed: files
       .filter((f) => applied.has(f.name) && applied.get(f.name) !== f.hash)
       .map((f) => f.name),
-    unknown: [...applied.keys()]
-      .filter((name) => !files.some((f) => f.name === name))
-      .sort(),
+    recognized: outside(files, applied).filter((n) => n in RECOGNIZED_OUTSIDE),
+    unknown: outside(files, applied).filter((n) => !(n in RECOGNIZED_OUTSIDE)),
   };
 }
 

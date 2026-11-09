@@ -16,6 +16,7 @@ import {
   compareLedger,
   migrationFiles,
   readLedger,
+  RECOGNIZED_OUTSIDE,
 } from "../src/lib/migrations";
 
 const mode = buildMode(process.env);
@@ -39,9 +40,13 @@ if (mode === "skip") {
       );
     }
     const status = compareLedger(files, await readLedger(sql));
+    for (const name of status.recognized)
+      console.log(
+        `[migrate] Recognized, applied outside this code version (left untouched): ${name} — ${RECOGNIZED_OUTSIDE[name]}.`,
+      );
     if (status.unknown.length)
       console.log(
-        `[migrate] Applied outside this code version (left untouched): ${status.unknown.join(", ")}.`,
+        `[migrate] WARNING: applied outside this code version and not recognized (left untouched): ${status.unknown.join(", ")}.`,
       );
     if (status.changed.length)
       failure = `[migrate] Applied migration file(s) were edited: ${status.changed.join(", ")}. Never edit an applied migration; add a new one.`;

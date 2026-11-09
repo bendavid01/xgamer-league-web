@@ -66,12 +66,20 @@ test("ledger check finds pending, edited and outside migrations", async () => {
   assert.deepEqual(compareLedger(files, ledger), {
     pending: [],
     changed: [],
+    recognized: [],
     unknown: [],
   });
-  // Production today also holds 006_mcp_oauth from a preview build: reported, never touched.
+  // Production today: 001–005 plus 006_mcp_oauth from the MCP preview build.
+  // 006 is recognized; the check passes and never touches it.
   assert.deepEqual(
     compareLedger(files, [...ledger, { name: "006_mcp_oauth", hash: "h" }]),
-    { pending: [], changed: [], unknown: ["006_mcp_oauth"] },
+    { pending: [], changed: [], recognized: ["006_mcp_oauth"], unknown: [] },
+  );
+  // Anything else applied outside the code is reported as unknown (still untouched).
+  assert.deepEqual(
+    compareLedger(files, [...ledger, { name: "099_mystery", hash: "h" }])
+      .unknown,
+    ["099_mystery"],
   );
   const last = files.at(-1)!.name;
   assert.deepEqual(compareLedger(files, ledger.slice(0, -1)).pending, [last]);

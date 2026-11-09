@@ -3,6 +3,7 @@ import { actor } from "./api";
 import { getRecords, RANKING_POINTS } from "./records";
 import { getLeague } from "./league";
 import { playerCode } from "./codes";
+import { RECOGNIZED_OUTSIDE } from "./migrations";
 
 /**
  * Data health (XG-009) — a READ-ONLY integrity report for main admins.
@@ -317,7 +318,11 @@ export async function healthReport(): Promise<Section[]> {
     await sql`select name, applied_at from xgamer_migration order by name`.catch(
       () => [],
     );
-  const unknown = ledger.filter((m) => !KNOWN_MIGRATIONS.includes(m.name));
+  const unknown = ledger.filter(
+    (m) =>
+      !KNOWN_MIGRATIONS.includes(m.name) && !(m.name in RECOGNIZED_OUTSIDE),
+  );
+  const recognized = ledger.filter((m) => m.name in RECOGNIZED_OUTSIDE);
   sections.push({
     title: "Database migrations",
     checks: [
@@ -326,10 +331,10 @@ export async function healthReport(): Promise<Section[]> {
         level: unknown.length ? "warn" : "ok",
         detail: unknown.length
           ? "Some applied migrations are not part of this code version (for example applied by a preview build). They are left untouched; their files must never be edited."
-          : `${ledger.length} applied, all part of this code version.`,
+          : `${ledger.length} applied: ${ledger.length - recognized.length} in this code version${recognized.length ? `, ${recognized.length} recognized from another branch (left untouched)` : ""}.`,
         items: ledger.map(
           (m) =>
-            `${m.name} — ${new Date(m.applied_at).toISOString().slice(0, 16).replace("T", " ")} UTC${KNOWN_MIGRATIONS.includes(m.name) ? "" : " (not in this code version)"}`,
+            `${m.name} — ${new Date(m.applied_at).toISOString().slice(0, 16).replace("T", " ")} UTC${KNOWN_MIGRATIONS.includes(m.name) ? "" : m.name in RECOGNIZED_OUTSIDE ? ` (recognized: ${RECOGNIZED_OUTSIDE[m.name]})` : " (not in this code version)"}`,
         ),
       },
       process.env.MIGRATE_ON_BUILD === "true"
