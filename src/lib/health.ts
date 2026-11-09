@@ -3,7 +3,7 @@ import { actor } from "./api";
 import { getRecords, RANKING_POINTS } from "./records";
 import { getLeague } from "./league";
 import { playerCode } from "./codes";
-import { RECOGNIZED_OUTSIDE } from "./migrations";
+import { RECOGNIZED_OUTSIDE } from "./known-migrations";
 
 /**
  * Data health (XG-009) — a READ-ONLY integrity report for main admins.

@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import type { db } from "./db";
+import { RECOGNIZED_OUTSIDE } from "./known-migrations";
 
 /**
  * Database migrations: migrations/NNN_name.sql, applied once each, in order,
@@ -21,15 +22,7 @@ export type MigrationStatus = {
   unknown: string[];
 };
 
-/**
- * Migrations applied to production outside this code version that we know about.
- * 006 was written by the feature/mcp-server preview build on 7 Nov 2026. Its file
- * lives on that branch and must stay byte-identical; it is never re-run or edited.
- */
-export const RECOGNIZED_OUTSIDE: Record<string, string> = {
-  "006_mcp_oauth":
-    "MCP branch (feature/mcp-server), applied by its preview build on 7 Nov 2026",
-};
+export { RECOGNIZED_OUTSIDE } from "./known-migrations";
 
 const FILE = /^\d{3}_[a-z0-9_]+\.sql$/;
 
