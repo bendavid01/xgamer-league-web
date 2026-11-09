@@ -227,7 +227,7 @@ export async function snapshot(tournament: string) {
   if (t.starts_on instanceof Date)
     t.starts_on = t.starts_on.toISOString().slice(0, 10);
   const applications =
-    await sql`select a.id,a.status,a.revision,a.created_at,p.id as player_id,p.public_no,p.gaming_name,p.team_name,p.contact_cipher,p.efootball_cipher
+    await sql`select a.id,a.status,a.revision,a.created_at,p.id as player_id,p.public_no,p.gaming_name,a.team_name,p.contact_cipher,p.efootball_cipher
       from application a join player p on p.id=a.player_id
       where a.tournament_id=${tournament} and a.deleted_at is null order by a.created_at`;
   const fixtures =

@@ -22,6 +22,8 @@ export type CareerMatch = {
 export type CareerEntry = {
   id: string;
   label: string;
+  /** The team used in this tournament; null when it wasn't recorded. */
+  team: string | null;
   format: FormatChoice;
   status: string;
   finished: boolean;
@@ -63,8 +65,9 @@ export const getProfile = cache(async (code: string) => {
       format: string;
       knockout: boolean;
       status: string;
+      team: string | null;
     }[]
-  >`select t.id,t.name,t.competition,t.season,t.format,t.knockout,t.status
+  >`select t.id,t.name,t.competition,t.season,t.format,t.knockout,t.status,a.team_name as team
     from tournament t join application a on a.tournament_id=t.id
     where a.player_id=${player.id} and a.status='approved' and a.deleted_at is null
       and t.published and t.deleted_at is null
@@ -123,6 +126,7 @@ export const getProfile = cache(async (code: string) => {
     return {
       id: t.id,
       label: labels.get(t.id)!,
+      team: t.team,
       format,
       status: t.status,
       finished,

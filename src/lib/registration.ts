@@ -78,7 +78,9 @@ export async function register(
         values(${input.playerName},${input.teamName},${phoneHash},${encrypt(input.phone)},'whatsapp','2026-10-v3') returning id,public_no`;
     }
     const [application] =
-      await tx`insert into application(tournament_id,player_id,status) values(${t.id},${player.id},'pending') returning id,status`;
+      // The team for THIS tournament; later registrations never change it.
+      await tx`insert into application(tournament_id,player_id,status,team_name,team_name_source)
+        values(${t.id},${player.id},'pending',${input.teamName},'registration') returning id,status`;
     const code = `XG-${String(player.public_no).padStart(4, "0")}`;
     await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,after_value)
       values(${"player:" + player.id},${input.playerName},'player','application.create',${application.id},${t.id},'Registered',${code},${tx.json({ playerId: player.id, team: input.teamName, status: application.status })})`;

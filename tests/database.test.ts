@@ -9,6 +9,7 @@ const MIGRATIONS = [
   "003_multi_tournament.sql",
   "004_seasons_podium.sql",
   "005_announcement_dates.sql",
+  "007_application_team_name.sql",
 ];
 async function migrated() {
   const pg = new PGlite();
@@ -284,6 +285,94 @@ test("migration 004: seasons are unique per competition, live tournaments stay p
           [id],
         ),
       /check/,
+    );
+  } finally {
+    await pg.close();
+  }
+});
+
+test("007: each tournament keeps its own team name; only recorded names are recovered", async () => {
+  const pg = new PGlite();
+  const apply = async (file: string) =>
+    pg.exec(
+      await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"),
+    );
+  try {
+    for (const file of MIGRATIONS.filter((f) => !f.startsWith("007")))
+      await apply(file);
+    await pg.exec(
+      `insert into tournament(id,name) values('cup-one','Cup One'),('cup-two','Cup Two'),('cup-three','Cup Three')`,
+    );
+    const player = async (name: string, team: string | null) =>
+      (
+        await pg.query<{ id: string }>(
+          `insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_version) values($1,$2,$3,'encrypted','test') returning id`,
+          [name, team, `hash-${name}`],
+        )
+      ).rows[0].id;
+    // audit: undefined = no registration record; null = a record without a team.
+    const entry = async (t: string, playerId: string, team?: string | null) => {
+      const { id } = (
+        await pg.query<{ id: string }>(
+          `insert into application(tournament_id,player_id,status) values($1,$2,'approved') returning id`,
+          [t, playerId],
+        )
+      ).rows[0];
+      if (team !== undefined)
+        await pg.query(
+          `insert into audit_event(actor,action,entity,after_value) values($1,'application.create',$2,$3::jsonb)`,
+          [
+            `player:${playerId}`,
+            id,
+            JSON.stringify(team === null ? { playerId } : { playerId, team }),
+          ],
+        );
+      return id;
+    };
+    // One player, three tournaments, three teams. Their current team is the last one.
+    const seven = await player("Seven", "Arsenal");
+    const a1 = await entry("cup-one", seven, "Real Madrid");
+    const a2 = await entry("cup-two", seven, "Barcelona");
+    const a3 = await entry("cup-three", seven, "Arsenal");
+    // Older entries without a recorded team: the current team must NOT be copied back.
+    const old = await player("Old", "Chelsea");
+    const b1 = await entry("cup-one", old, null);
+    const b2 = await entry("cup-two", old);
+    const players = `select id, public_no, gaming_name, team_name from player order by public_no`;
+    const before = (await pg.query(players)).rows;
+    const audits = `select count(*)::int n from audit_event`;
+    const auditCount = (await pg.query<{ n: number }>(audits)).rows[0].n;
+
+    await apply("007_application_team_name.sql");
+    const team = async (id: string) =>
+      (
+        await pg.query(
+          `select team_name, team_name_source from application where id=$1`,
+          [id],
+        )
+      ).rows[0];
+    const recovered = (name: string) => ({
+      team_name: name,
+      team_name_source: "registration_record",
+    });
+    const unknown = { team_name: null, team_name_source: null };
+    assert.deepEqual(await team(a1), recovered("Real Madrid"));
+    assert.deepEqual(await team(a2), recovered("Barcelona"));
+    assert.deepEqual(await team(a3), recovered("Arsenal"));
+    assert.deepEqual(await team(b1), unknown);
+    assert.deepEqual(await team(b2), unknown);
+    // Player IDs, names, current teams and the audit trail are untouched.
+    assert.deepEqual((await pg.query(players)).rows, before);
+    assert.equal((await pg.query<{ n: number }>(audits)).rows[0].n, auditCount);
+    // Running it again changes nothing.
+    await apply("007_application_team_name.sql");
+    assert.deepEqual(await team(a1), recovered("Real Madrid"));
+    assert.deepEqual(await team(b1), unknown);
+    // Only known sources are accepted.
+    await assert.rejects(
+      pg.query(`update application set team_name_source='guess' where id=$1`, [
+        b1,
+      ]),
     );
   } finally {
     await pg.close();

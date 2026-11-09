@@ -102,7 +102,7 @@ export const getTournament = cache(async (id: string) => {
     const players = (
       await sql<
         { id: string; no: number; name: string; team: string | null }[]
-      >`select p.id,p.public_no as no,p.gaming_name as name,p.team_name as team from player p join application a on a.player_id=p.id
+      >`select p.id,p.public_no as no,p.gaming_name as name,a.team_name as team from player p join application a on a.player_id=p.id
         where a.tournament_id=${id} and a.status='approved' and a.deleted_at is null and p.deleted_at is null order by p.gaming_name`
     ).map(({ no, ...p }) => ({ ...p, code: playerCode(no) }));
     const fixtures = await sql<
@@ -171,8 +171,9 @@ export const getChampions = cache(async () => {
         team: string | null;
       })[]
     >`select t.id,t.name,t.competition,t.season,extract(epoch from ph.updated_at)::int as photo,
-        po.place,p.public_no as no,p.gaming_name as player,p.team_name as team
+        po.place,p.public_no as no,p.gaming_name as player,a.team_name as team
       from tournament t join podium po on po.tournament_id=t.id join player p on p.id=po.player_id
+      left join application a on a.tournament_id=t.id and a.player_id=p.id and a.deleted_at is null
       left join tournament_photo ph on ph.tournament_id=t.id
       where t.published and t.deleted_at is null and t.status='completed'
       order by t.created_at desc, po.place`;

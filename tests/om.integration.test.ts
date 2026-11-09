@@ -597,3 +597,71 @@ test(
     ]);
   },
 );
+
+test(
+  "team names stay with each tournament; the player ID never changes",
+  { skip },
+  async () => {
+    const ids: string[] = [];
+    for (const name of ["Team Cup One", "Team Cup Two", "Team Cup Three"]) {
+      const t = (await cmd({
+        action: "create",
+        name,
+        format: "league",
+        season: null,
+        published: true,
+      })) as { id: string };
+      await cmd({ action: "registration", tournament: t.id, open: true });
+      ids.push(t.id);
+    }
+    const teams = ["Real Madrid", "Barcelona", "Arsenal"];
+    const done: Awaited<ReturnType<typeof register>>[] = [];
+    for (const [i, t] of ids.entries())
+      done.push(
+        await register(
+          {
+            playerName: "Seven",
+            teamName: teams[i],
+            phone: "9811100077",
+            consent: true,
+            website: "",
+            tournament: t,
+          },
+          `10.77.${i}.1`,
+        ),
+      );
+    assert.ok(
+      done.every(
+        (d) => d.code === done[0].code && d.playerId === done[0].playerId,
+      ),
+    );
+    for (const t of ids) {
+      const mine = (await apps(t)).filter(
+        (a) => a.player_id === done[0].playerId,
+      );
+      await cmd({
+        action: "review",
+        tournament: t,
+        status: "approved",
+        verified: true,
+        items: mine.map(({ id, revision }) => ({ id, revision })),
+      });
+    }
+    for (const [i, t] of ids.entries())
+      assert.equal(
+        (await getTournament(t))!.players.find((p) => p.code === done[0].code)!
+          .team,
+        teams[i],
+      );
+    const profile = (await getProfile(done[0].code))!;
+    assert.equal(profile.player.team, "Arsenal"); // current team
+    for (const [i, t] of ids.entries())
+      assert.equal(profile.career.find((c) => c.id === t)!.team, teams[i]);
+    const stored =
+      await sql`select team_name_source from application where player_id=${done[0].playerId}`;
+    assert.ok(
+      stored.length === 3 &&
+        stored.every((r) => r.team_name_source === "registration"),
+    );
+  },
+);

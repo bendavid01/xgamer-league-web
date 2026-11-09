@@ -102,8 +102,9 @@ export const getRecords = cache(async () => {
           no: number;
           name: string;
           team: string | null;
+          entry_team: string | null;
         }[]
-      >`select a.tournament_id,p.id,p.public_no as no,p.gaming_name as name,p.team_name as team
+      >`select a.tournament_id,p.id,p.public_no as no,p.gaming_name as name,p.team_name as team,a.team_name as entry_team
         from application a join player p on p.id=a.player_id
         where a.tournament_id = any(${ids}) and a.status='approved' and a.deleted_at is null and p.deleted_at is null`,
       sql<
@@ -159,7 +160,10 @@ export function compute(
     id: string;
     no: number;
     name: string;
+    /** The player's current team (all-time boards). */
     team: string | null;
+    /** The team used in that tournament; null when it wasn't recorded. */
+    entry_team?: string | null;
   }[],
   fixtures: {
     tournament_id: string;
@@ -174,6 +178,9 @@ export function compute(
   qualified: { tournament_id: string; player_id: string }[],
 ) {
   const order = new Map(tournaments.map((t, i) => [t.id, i]));
+  const teamAt = new Map(
+    entries.map((e) => [`${e.tournament_id}:${e.id}`, e.entry_team ?? null]),
+  );
   const label = new Map(tournaments.map((t) => [t.id, tournamentLabel(t)]));
   const people = new Map<
     string,
@@ -335,7 +342,14 @@ export function compute(
           (p) => p.tournament_id === t.id && p.place === n,
         )?.player_id;
         const p = id ? people.get(id) : null;
-        return p ? { code: p.code, name: p.name, team: p.team } : null;
+        // The team they used in THAT tournament — never their current one.
+        return p
+          ? {
+              code: p.code,
+              name: p.name,
+              team: teamAt.get(`${t.id}:${id}`) ?? null,
+            }
+          : null;
       }),
     }));
 

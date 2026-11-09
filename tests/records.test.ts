@@ -114,3 +114,36 @@ test("records: nothing is invented when there are no results", () => {
   assert.equal(r.players[0].winRate, 0);
   assert.equal(r.players[0].ranking, 0);
 });
+
+test("Hall of Fame shows the team used in that tournament, never a later one", () => {
+  const e = (t: string, id: string, no: number, entry_team: string | null) => ({
+    tournament_id: t,
+    id,
+    no,
+    name: id,
+    team: id === "p1" ? "Arsenal" : "Chelsea",
+    entry_team,
+  });
+  const r = compute(
+    [T("t1"), T("t2")],
+    [
+      e("t1", "p1", 7, "Real Madrid"),
+      e("t1", "p2", 8, null),
+      e("t2", "p1", 7, "Arsenal"),
+      e("t2", "p2", 8, "Chelsea"),
+    ],
+    [],
+    [
+      { tournament_id: "t1", place: 1, player_id: "p1" },
+      { tournament_id: "t1", place: 2, player_id: "p2" },
+      { tournament_id: "t2", place: 1, player_id: "p1" },
+    ],
+    [],
+  );
+  const hall = (id: string) => r.hall.find((h) => h.id === id)!;
+  assert.equal(hall("t1").places[0]!.team, "Real Madrid");
+  assert.equal(hall("t1").places[1]!.team, null); // not recorded: no team shown
+  assert.equal(hall("t2").places[0]!.team, "Arsenal");
+  // All-time boards use the player's current team.
+  assert.equal(r.players.find((p) => p.id === "p1")!.team, "Arsenal");
+});

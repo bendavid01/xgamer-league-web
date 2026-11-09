@@ -90,6 +90,9 @@ export default async function PlayerProfile({
               Tournament records →
             </Link>
           </div>
+          {focus.team && (
+            <p className="text-sm text-slate-300 mt-1">Team: {focus.team}</p>
+          )}
           <p className="text-sm text-slate-400 mt-1">
             {focus.podium && focus.finished
               ? `Official placement: ${PLACE_LABEL[focus.podium]}`
@@ -341,6 +344,7 @@ function CareerCard({ c }: { c: CareerEntry }) {
             {FORMAT_LABEL[c.format]} · {STATUS[c.status] ?? c.status}
             {c.qualified && <span className="qualified-badge">Qualified</span>}
           </p>
+          {c.team && <p className="text-sm text-slate-300">Team: {c.team}</p>}
         </div>
         {c.podium ? (
           <span className={`place-badge place-${c.podium}`}>

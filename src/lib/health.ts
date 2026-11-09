@@ -26,6 +26,7 @@ export const KNOWN_MIGRATIONS = [
   "003_multi_tournament",
   "004_seasons_podium",
   "005_announcement_dates",
+  "007_application_team_name",
 ];
 
 const n = (v: unknown) => Number(v ?? 0);
@@ -112,6 +113,12 @@ export async function healthReport(): Promise<Section[]> {
       where a.status='approved' and a.deleted_at is null and p.deleted_at is not null`;
   const seasonOdd = await sql`select name, competition, season from tournament
       where deleted_at is null and ((competition is null) <> (season is null))`;
+  const teamRows = await sql<{ source: string; c: number }[]>`
+      select coalesce(team_name_source, 'unknown') as source, count(*)::int c
+      from application where deleted_at is null group by 1 order by 1`.catch(
+    () => [],
+  );
+  const unrecordedTeams = n(teamRows.find((r) => r.source === "unknown")?.c);
   sections.push({
     title: "Tournaments and participants",
     checks: [
@@ -141,6 +148,23 @@ export async function healthReport(): Promise<Section[]> {
           ? "Approved entries whose player record was removed."
           : "All approved entries reference active player records.",
         items: orphanApps.map((r) => `${r.name}: ${code(r.public_no)}`),
+      },
+      {
+        title: "Team names per tournament",
+        level: unrecordedTeams ? "warn" : "ok",
+        detail: unrecordedTeams
+          ? `${unrecordedTeams} entries have no recorded team name for their tournament. They show without a team; nothing is guessed.`
+          : "Every entry has the team name recorded for its tournament.",
+        items: teamRows.map(
+          (r) =>
+            `${
+              {
+                registration: "Stored at registration",
+                registration_record: "Recovered from registration records",
+                unknown: "Not recorded",
+              }[r.source] ?? r.source
+            }: ${r.c}`,
+        ),
       },
     ],
   });
