@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import type { db } from "./db";
+import { RECOGNIZED_OUTSIDE } from "./known-migrations";
 
 /**
  * Database migrations: migrations/NNN_name.sql, applied once each, in order,
@@ -15,9 +16,13 @@ export type MigrationStatus = {
   pending: string[];
   /** Applied, but the file has been edited since. */
   changed: string[];
-  /** Applied to the database but not part of this code version. */
+  /** Applied outside this code version, but known and accepted (see RECOGNIZED_OUTSIDE). */
+  recognized: string[];
+  /** Applied outside this code version and not recognized. Reported, never touched. */
   unknown: string[];
 };
+
+export { RECOGNIZED_OUTSIDE } from "./known-migrations";
 
 const FILE = /^\d{3}_[a-z0-9_]+\.sql$/;
 
@@ -37,6 +42,11 @@ export async function migrationFiles(
   );
 }
 
+const outside = (files: Migration[], applied: Map<string, string>) =>
+  [...applied.keys()]
+    .filter((name) => !files.some((f) => f.name === name))
+    .sort();
+
 /** Pure comparison of the migration files with the database ledger. */
 export function compareLedger(
   files: Migration[],
@@ -48,9 +58,8 @@ export function compareLedger(
     changed: files
       .filter((f) => applied.has(f.name) && applied.get(f.name) !== f.hash)
       .map((f) => f.name),
-    unknown: [...applied.keys()]
-      .filter((name) => !files.some((f) => f.name === name))
-      .sort(),
+    recognized: outside(files, applied).filter((n) => n in RECOGNIZED_OUTSIDE),
+    unknown: outside(files, applied).filter((n) => !(n in RECOGNIZED_OUTSIDE)),
   };
 }
 
