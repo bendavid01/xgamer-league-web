@@ -37,7 +37,7 @@ export default async function ChampionsArchive() {
   return (
     <div className="page-shell py-12">
       <Link href="/champions" className="hub-back">
-        <ArrowLeft size={16} aria-hidden="true" /> Champions
+        <ArrowLeft size={16} aria-hidden="true" /> Back to Champions
       </Link>
       <PageTitle
         compact
