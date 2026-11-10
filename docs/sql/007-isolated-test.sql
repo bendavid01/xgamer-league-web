@@ -1,16 +1,28 @@
 -- XG — migration 007 approval package: backup check, isolated test, reconciliation.
--- Run in the Neon SQL Editor. Parts A and B are read-only.
+-- Run in the Neon SQL Editor. Parts 0, A, B and D are read-only.
 -- Part C writes, so run it ONLY on the test branch `test-007`, never on production.
 --
 -- Steps (Neon console → project of `xgamer-league` → Branches):
---   1. Create branch `backup-before-007` from production (the restore point). Keep it.
+--   1. Create branch `backup-before-007` from production (the restore point for this test). Keep it.
 --   2. Create branch `test-007` from production.
---   3. Run Part A on production, on `backup-before-007` and on `test-007`: all three must match.
+--   3. Run Part 0 and Part A on production, on `backup-before-007` and on `test-007`.
+--      Part A must match on all three. Part 0 shows whether each branch has its own target identity
+--      (an error in Part 0 is also a useful answer: send it).
 --   4. On `test-007` only: run Part B, then Part C (paste migrations/007_application_team_name.sql),
 --      then Part A again and Part D. Part A must still match; Part D shows the recovered names.
---   5. Send Claude the outputs. Delete `test-007` afterwards; keep the backup until 007 is live and verified.
+--   5. Send Claude the outputs (never connection strings or passwords). Delete `test-007` afterwards;
+--      keep `backup-before-007` until 007 is live and verified.
 
--- ── Part A: snapshot (read-only). Same numbers before and after 007. ──
+-- ── Part 0: target identity (read-only). Decides how the production packet recognises production. ──
+-- Expected if Neon exposes it: the same tenant on all three, a different timeline on each.
+select current_database() as database,
+       current_setting('neon.tenant_id', true) as neon_tenant,
+       current_setting('neon.timeline_id', true) as neon_timeline,
+       (select count(*) from xgamer_migration) as ledger_rows,
+       now() as checked_at;
+
+-- ── Part A: snapshot (read-only). Same values before and after 007. ──
+-- Times are compared as epoch seconds, so the editor's time zone can't change a fingerprint.
 select 'players' as check, count(*)::text as value from player
 union all select 'players_active', count(*)::text from player where deleted_at is null
 union all select 'highest_xg_id', coalesce(max(public_no), 0)::text from player
@@ -24,7 +36,11 @@ union all select 'audit_records', count(*)::text from audit_event
 union all select 'migrations', string_agg(name, ', ' order by name) from xgamer_migration
 union all select 'players_fingerprint', md5(string_agg(id::text || ':' || public_no || ':' || gaming_name || ':' || coalesce(team_name, ''), ',' order by public_no)) from player
 union all select 'results_fingerprint', md5(string_agg(id::text || ':' || coalesce(home_score::text, '-') || ':' || coalesce(away_score::text, '-'), ',' order by id)) from fixture
-union all select 'final_positions_fingerprint', md5(string_agg(tournament_id || ':' || place || ':' || player_id::text, ',' order by tournament_id, place)) from podium;
+union all select 'final_positions_fingerprint', md5(string_agg(tournament_id || ':' || place || ':' || player_id::text, ',' order by tournament_id, place)) from podium
+union all select 'entries_fingerprint', md5(string_agg(id::text || ':' || tournament_id || ':' || player_id::text || ':' || status || ':' || revision || ':' || coalesce(extract(epoch from deleted_at)::text, '-'), ',' order by id)) from application
+union all select 'fixtures_fingerprint', md5(string_agg(id::text || ':' || tournament_id || ':' || stage || ':' || round || ':' || slot || ':' || home::text || ':' || coalesce(away::text, '-') || ':' || coalesce(winner::text, '-') || ':' || revision, ',' order by id)) from fixture
+union all select 'qualification_fingerprint', md5(string_agg(tournament_id || ':' || rank || ':' || player_id::text, ',' order by tournament_id, rank)) from qualification
+union all select 'tournaments_fingerprint', md5(string_agg(id || ':' || status || ':' || format || ':' || coalesce(season::text, '-') || ':' || published || ':' || coalesce(extract(epoch from deleted_at)::text, '-'), ',' order by id)) from tournament;
 
 -- ── Part B: dry run (read-only). What 007 will recover from registration records. ──
 select count(*) as entries,

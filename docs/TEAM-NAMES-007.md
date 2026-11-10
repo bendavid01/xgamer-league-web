@@ -1,6 +1,6 @@
 # Tournament-specific team names (migration 007)
 
-Status: prepared on branch `feature/team-names-007`, which also contains `chore/no-auto-migrations`. Nothing is deployed and nothing has been applied to any shared database. The production migration needs separate approval.
+Status: prepared on branch `feature/team-names-007`, brought up to date with `main` (`0a29071`) on 10 Nov 2026. Nothing is deployed and nothing has been applied to any shared database. The production migration needs separate approval.
 
 ## Requirement
 
@@ -16,9 +16,9 @@ Each player's team name is kept separately for every tournament they enter. The 
 
 No changes to player IDs, fixtures, results, standings, final positions or the audit trail.
 
-## Migration history (verified 9 Nov 2026)
+## Migration history (verified 9 Nov 2026, rechecked 10 Nov)
 
-- This code holds 001–005. On production, 001–005 match: the production build log for `339cb79` says `Migrations verified.`
+- This code holds 001–005. On production, 001–005 match. The read-only check in the latest production build (`0a29071`, 9 Nov) says `Database schema matches this code. Nothing was changed.`
 - Production also has `006_mcp_oauth`, written by the MCP preview build on 7 Nov. It is not in `main`, it holds 3 empty OAuth tables, and it is left untouched.
 - **007 is the next free number.** 006 stays reserved for the MCP branch, and its file must stay byte-identical. If that branch is merged later, fresh databases apply 006 before 007, the same order as production. They touch different tables, so they can't conflict.
 
@@ -41,21 +41,33 @@ No changes to player IDs, fixtures, results, standings, final positions or the a
 - **Player profile:** the current team in the header, plus "Team: …" for each tournament in the history and in the tournament view (`?t=`).
 - **Current team:** the all-time leaderboards and the XGamer Ranking.
 
-## Release plan (needs approval)
+## Release plan: Neon SQL Editor procedure (needs approval)
 
-1. Merge `chore/no-auto-migrations` first, or merge both together. Production builds then only check the database.
-2. **Owner approves 007.** Release while registration is closed, if possible.
-3. **Backup.** In Neon, create a branch `before-007-<date>` from production. It's an instant copy and serves as the restore point.
-4. **Before numbers.** Record players, highest XG ID, tournaments, matches, goals and the ranking, as for XG-009.
-5. **Apply.** Set `MIGRATE_ON_BUILD=true` for Production only, then merge `feature/team-names-007` into `main`. The build applies 007, then builds.
-   - If the build fails, the current version stays live. 007 only adds columns, so the current version keeps working.
-6. **Turn it off.** Remove `MIGRATE_ON_BUILD` straight away. Data health should then show "Automatic migrations: Off".
-7. **Verify.**
-   - Data health: 007 is listed, the team-name counts, and the highest XG ID is unchanged.
-   - `/champions` numbers equal the before numbers.
-   - Player pages show the teams.
+007 follows the approved Production Migration Procedure (XG-008 V1.2 §13.1, "used for 007 and every later migration"). Ordinary builds never apply migrations, and `MIGRATE_ON_BUILD` is not used for production.
 
-If someone registers between the migration and the new code going live, their team is still in the registration record. Running the same backfill again (a follow-up migration) fills it in.
+1. **Approval package passes** (below), and the Owner authorizes this one migration by name and SHA-256:
+   - name: `007_application_team_name`
+   - SHA-256: `bbc004390ba1b09cbc7ce09c2fc644192e7d081d92e54a3bfaec397655f5ea41`
+2. **Change freeze.** No result entry, registration decisions or other OM edits until step 8. If a tournament is open, close registration. 007 only adds columns, so this is a precaution.
+3. **Backup.** In Neon, create a branch `before-007-<date>` from production. Run Part A on both production and the branch. The two results must be identical.
+4. **Preflight (read-only).** Run Part 0 and Part A on production. Record the target identity and the ledger.
+5. **Apply.** Run the 007 packet in the Neon SQL Editor as one transaction:
+   - `lock_timeout`, then the migration advisory lock
+   - a guard that aborts unless the target (Part 0) and the full ledger exactly match what step 4 recorded
+   - the 007 SQL, byte for byte
+   - `insert into xgamer_migration(name, hash)` with the SHA-256 above
+
+   If anything fails, the whole transaction rolls back, ledger row included. If the packet is run on a branch, the guard aborts it. The packet with the exact guard values is written once the test outputs come back.
+6. **Post-check (read-only).**
+   - The ledger equals step 4 plus 007, with the right checksum.
+   - Part A is identical to step 4, apart from the new `migrations` line.
+   - Part D shows the recovered team names.
+7. **Deploy.** Merge `feature/team-names-007` into `main`. The production build's read-only check must report `Database schema matches this code`.
+8. **Reconcile, then end the freeze.**
+   - Data health: 007 is listed, the team-name counts are shown, and the highest XG ID is unchanged.
+   - The champions page, rankings, standings and player histories show the same figures as before, plus team names.
+
+If someone registers between steps 5 and 7, their team is still in the registration record. Running the same backfill again, as a follow-up migration, fills it in.
 
 ## Rollback
 
@@ -67,14 +79,19 @@ If someone registers between the migration and the new code going live, their te
 
 `docs/sql/007-isolated-test.sql` covers it, with no database credentials leaving Neon:
 
-1. **Verified backup:** a Neon branch `backup-before-007` whose snapshot (Part A) matches production.
-2. **Isolated test:** 007 applied to a separate branch `test-007`, never to production.
-3. **Reconciliation:** Part A must be identical before and after 007 (players, highest XG ID, entries, results, goals, final positions, audit, fingerprints). Part D lists every recovered team name.
-4. **Rollback:** see above. The backup branch is the data restore point.
+1. **Verified backup:** a Neon branch `backup-before-007`, whose Part A snapshot matches production.
+2. **Target identity (Part 0):** shows whether Neon gives each branch its own timeline ID. If it does, the production guard uses that ID (Mode A), and the same answer settles the XG-008 target guard.
+3. **Isolated test:** 007 applied to a separate branch, `test-007`, never to production.
+4. **Reconciliation:** Part A has 18 checks and must be identical before and after 007:
+   - counts: players, highest XG ID, entries, results, goals, final positions, audit
+   - fingerprints of players, entries, every fixture field used by standings and rankings, qualification, final positions and tournaments
+
+   Part D lists every recovered team name.
+5. **Rollback:** see above. The backup branch is the data restore point.
 
 Status: the design is approved (PM, 9 Nov 2026). Running 007 on production is **not authorized** yet.
 
-## Regression tests (59 passing)
+## Regression tests (59 passing, rerun on 10 Nov after merging `main`)
 
 - **`database.test`:** 007 on a pre-007 database.
   - The XG-0007 example is recovered exactly.
