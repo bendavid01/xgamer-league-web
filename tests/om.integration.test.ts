@@ -2,17 +2,15 @@
  * Full organizer flow against a real PostgreSQL server.
  * Runs only when TEST_DATABASE_URL points at a disposable LOCAL database, e.g.
  *   TEST_DATABASE_URL=postgres://postgres@127.0.0.1:55432/postgres DATABASE_SSL=disable npm test
+ * CI sets REQUIRE_DATABASE_TESTS=1, so there a missing database fails instead of skipping.
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
+import { testDatabaseUrl } from "./helpers/test-database";
 
-const url = process.env.TEST_DATABASE_URL;
 // WHY: this test wipes its database. Refuse anything that is not a local server.
-if (url && !/@(127\.0\.0\.1|localhost)(:\d+)?\//.test(url))
-  throw new Error(
-    "TEST_DATABASE_URL must point at a local disposable database.",
-  );
+const url = testDatabaseUrl();
 const skip = !url && "TEST_DATABASE_URL not set";
 if (url) {
   process.env.DATABASE_URL = url;

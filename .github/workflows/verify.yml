@@ -7,6 +7,24 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      # Disposable database for the integration tests. It exists only inside this job,
+      # is reachable only from the runner, and is destroyed when the job ends.
+      # PostgreSQL 16 provisionally: production's major version is not yet confirmed
+      # (the 007 test pack records it). Change this tag once it is.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only-disposable
+          POSTGRES_DB: xgamer_ci
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d xgamer_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -14,7 +32,29 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Check the disposable database is up
+        env:
+          TEST_DATABASE_URL: postgres://postgres:ci-only-disposable@127.0.0.1:5432/xgamer_ci
+        run: >-
+          node -e "const sql = require('postgres')(process.env.TEST_DATABASE_URL, { ssl: false, connect_timeout: 10 });
+          sql\`select version()\`.then(([r]) => { console.log('Disposable test database:', r.version); return sql.end(); })
+          .catch((e) => { console.error('::error::The disposable PostgreSQL service is unreachable, so the database tests cannot run:', e.message); process.exit(1); });"
+      - name: Unit and database integration tests
+        shell: bash
+        env:
+          # Only the test step sees this. Build and other steps get no database.
+          TEST_DATABASE_URL: postgres://postgres:ci-only-disposable@127.0.0.1:5432/xgamer_ci
+          DATABASE_SSL: disable
+          # Missing database = failure, never a skip.
+          REQUIRE_DATABASE_TESTS: "1"
+        run: |
+          npm test 2>&1 | tee test-output.txt
+          if grep -Eq '(#|ℹ) skipped [1-9]' test-output.txt; then
+            echo "::error::Some tests were skipped. CI must run every test, including the database tests."
+            exit 1
+          fi
+          grep -Eq '(#|ℹ) skipped 0' test-output.txt || { echo "::error::Test summary not found."; exit 1; }
+      - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=high
