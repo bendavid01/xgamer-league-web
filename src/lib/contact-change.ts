@@ -4,6 +4,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import type { JSONValue, TransactionSql } from "postgres";
 import { z } from "zod";
 import { db } from "./db";
 import { actor, HttpError } from "./api";
@@ -12,6 +13,7 @@ import { decrypt, encrypt, fingerprint, subkey } from "./private-data";
 import { canonicalPhone, maskPhone, waUrl } from "./phone";
 import { efootballIdInput } from "./registration";
 import { playerCode } from "./codes";
+import { lockAuditRequest } from "./audit-request";
 
 /**
  * WhatsApp number changes and disclosure in OM (plan revision 2, 13 Nov 2026).
@@ -25,7 +27,8 @@ import { playerCode } from "./codes";
  * Route 2, independent evidence (two different main admins): every legacy number.
  *   Evidence first (eFootball possession with a server-issued challenge, or a person
  *   who knows the player, live or on video), the code comes back from the new number,
- *   then a second, different main admin approves within 72 hours.
+ *   the requesting admin checks the code, then a different main admin approves
+ *   within 72 hours.
  *
  * Never stored or logged: full numbers outside their ciphertexts, codes, challenges.
  * The audit holds no digits of any number, no hashes and no ciphertexts.
@@ -62,9 +65,9 @@ const safeText = (min: number, max: number) =>
         "Don't include phone numbers or long digit sequences (write dates like 13 Nov).",
     });
 
-const uuid = z.string().uuid();
+const uuid = z.string().uuid().toLowerCase();
 const tid = z.string().regex(/^[a-z0-9-]{3,80}$/);
-const requestId = z.string().uuid();
+const requestId = uuid;
 const ROUTES = ["established_channel", "independent_evidence"] as const;
 const EVIDENCE = [
   "efootball_possession",
@@ -150,15 +153,7 @@ export const isContactCommand = (raw: unknown) =>
   );
 
 type Resolve = (operation: Operation, tournament: string) => Promise<Actor>;
-type Who = Pick<Actor, "id" | "role"> &
-  Partial<Pick<Actor, "name" | "operations" | "tournaments">>;
-const full = (u: Who): Actor => ({
-  id: u.id,
-  name: u.name,
-  role: u.role,
-  operations: u.operations ?? [],
-  tournaments: u.tournaments ?? [],
-});
+type Who = Pick<Actor, "id" | "role" | "name">;
 
 /** POST /api/admin with a contact action. */
 export async function executeContact(raw: unknown, resolve: Resolve = actor) {
@@ -182,26 +177,38 @@ class Committed {
   constructor(public error: HttpError) {}
 }
 
-export async function runContact(user: Who, c: ContactCommand) {
+function requireMainAdmin(user: Who, changes: boolean) {
+  if (changes && !contactEditingOn())
+    throw new HttpError(403, "WhatsApp number editing is switched off.");
+  if (user.role !== "admin" || !adminIds().includes(user.id))
+    throw new HttpError(403, "Only a configured main admin can do this.");
+}
+
+async function authorize(tx: Tx, user: Who, c: ContactCommand) {
   if (c.action !== "contact.disclose") {
-    if (!contactEditingOn())
-      throw new HttpError(403, "WhatsApp number editing is switched off.");
-    if (user.role !== "admin" || !adminIds().includes(user.id))
-      throw new HttpError(
-        403,
-        "Only a configured main admin can change WhatsApp numbers.",
-      );
-  } else if (
-    user.role !== "admin" &&
-    !(
-      allowed(full(user), "registrations", c.tournament) &&
-      COORDINATOR_PURPOSES.includes(c.purpose)
-    )
-  )
-    throw new HttpError(403, "This operation is not assigned to you.");
-  let out: unknown;
+    requireMainAdmin(user, true);
+    return;
+  }
+  if (user.role === "admin") {
+    requireMainAdmin(user, false);
+    return;
+  }
+  if (COORDINATOR_PURPOSES.includes(c.purpose)) {
+    const [scope] = await tx<{ operations: string[]; tournaments: string[] }[]>`
+      select operations,tournaments from coordinator
+      where discord_id=${user.id} and active for share`;
+    if (scope && allowed({ ...user, ...scope }, "registrations", c.tournament))
+      return;
+  }
+  throw new HttpError(403, "This operation is not assigned to you.");
+}
+
+export async function runContact(user: Who, c: ContactCommand) {
+  let out;
   try {
-    out = await db().begin((tx) => apply(tx, user, c));
+    out = await db().begin("isolation level read committed", (tx) =>
+      apply(tx, user, { ...c, requestId: c.requestId.toLowerCase() }),
+    );
   } catch (error) {
     // Unique indexes are the final guards: one number per player record, one open change.
     const e = error as { code?: string; constraint_name?: string };
@@ -215,11 +222,10 @@ export async function runContact(user: Who, c: ContactCommand) {
     throw error;
   }
   if (out instanceof Committed) throw out.error;
-  return out as Record<string, unknown>;
+  return out;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Tx = any;
+type Tx = TransactionSql;
 type Change = {
   id: string;
   player_id: string;
@@ -232,6 +238,7 @@ type Change = {
   code_hash: string | null;
   code_expires_at: Date | null;
   challenge_hash: string | null;
+  challenge_confirmed_at: Date | null;
   attempts: number;
   resends: number;
   status: string;
@@ -240,13 +247,52 @@ type Change = {
   approve_by: Date | null;
 };
 
+type DisclosurePlayer = {
+  public_no: number;
+  contact_cipher: string;
+  deleted_at: Date | null;
+};
+type ChangePlayer = Pick<DisclosurePlayer, "public_no" | "deleted_at"> & {
+  contact_hash: string;
+  contact_version: number;
+  contact_verified_at: Date | null;
+  efootball_hash: string | null;
+  efootball_cipher: string | null;
+};
+
 const CHANGED = "Changed by someone else. Reload and try again.";
+const USED_REQUEST = "This request was already used for another change.";
+const RESTART_CHANGE = "Cancel this number change and start again.";
+
+function requireSecondAdmin(user: Who, change: Change) {
+  if (change.requested_by === user.id)
+    throw new HttpError(
+      403,
+      "A second, different main admin must approve this change.",
+    );
+  if (!adminIds().includes(change.requested_by))
+    throw new HttpError(
+      409,
+      `The admin who started this change is no longer a main admin. ${RESTART_CHANGE}`,
+    );
+}
+
 const keyed = (label: string, value: string) =>
   createHmac("sha256", subkey(label)).update(value).digest("hex");
 const codeHash = (changeId: string, code: string) =>
   keyed("xg-contact-code-v1", `${changeId}:${code}`);
-const challengeHash = (changeId: string, challenge: string) =>
-  keyed("xg-contact-challenge-v1", `${changeId}:${challenge}`);
+// Both eFootball edit paths re-encrypt the ID with a fresh IV on every write,
+// so this revision changes even when an ID is changed back to its old value.
+const efootballRevision = (changeId: string, ciphertext: string) =>
+  keyed(
+    "xg-contact-efootball-revision-v1",
+    JSON.stringify([changeId, ciphertext]),
+  );
+const challengeHash = (changeId: string, revision: string, challenge: string) =>
+  keyed(
+    "xg-contact-challenge-v2",
+    JSON.stringify([changeId, revision, challenge]),
+  );
 const sameHash = (a: string | null, b: string) =>
   !!a &&
   a.length === b.length &&
@@ -262,6 +308,36 @@ const minutes = (n: number) => new Date(Date.now() + n * 60_000);
 /** A chat with the NEW number, prefilled with the code (only for the admin who asked). */
 const sendUrl = (phone: string, code: string) =>
   `${waUrl(phone)}?text=${encodeURIComponent(`XGamer verification code: ${code}`)}`;
+
+function efootballProof(ch: Change, ciphertext: string | null) {
+  const parts = ch.challenge_hash?.split(":") ?? [];
+  const [version, boundRevision, challengeDigest] = parts;
+  const revision = ciphertext && efootballRevision(ch.id, ciphertext);
+  // Only versioned proofs can be checked. After checking, erase the challenge
+  // digest and keep the revision through approval.
+  const expectedParts = ch.status === "pending_code" ? 3 : 2;
+  if (
+    version !== "v2" ||
+    parts.length !== expectedParts ||
+    !revision ||
+    !sameHash(boundRevision ?? null, revision)
+  )
+    throw new HttpError(
+      409,
+      `The eFootball evidence changed or is unbound. ${RESTART_CHANGE}`,
+    );
+  return { revision, challengeDigest };
+}
+
+function wrongCode(attempts: number, efootball: boolean) {
+  const left = LIMITS.attempts - attempts;
+  return new HttpError(
+    409,
+    left <= 0
+      ? "Wrong details. This change is now closed after 5 wrong attempts."
+      : `Wrong code${efootball ? " or eFootball details" : ""}. ${left} attempt${left === 1 ? "" : "s"} left.`,
+  );
+}
 
 /** Shared counters in the existing rate_limit table; keys are HMACs (no IDs or numbers). */
 async function underLimit(tx: Tx, label: string, max: number, seconds: number) {
@@ -283,8 +359,8 @@ async function writeAudit(
   tournament: string,
   summary: string,
   affected: string,
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
+  before: Record<string, JSONValue>,
+  after: Record<string, JSONValue>,
 ) {
   await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,before_value,after_value)
     values(${user?.id ?? "system:contact-change"},${user?.name ?? null},${user?.role ?? "system"},${action},${entity},${tournament},
@@ -305,55 +381,115 @@ async function finish(
 }
 
 async function apply(tx: Tx, user: Who, c: ContactCommand) {
-  // Locks, always in this order: tournament → player → contact_change.
+  // Lock the request ID before the rows. Disclosures can share row locks, but
+  // only one transaction can consume any request ID.
+  await lockAuditRequest(tx, c.requestId);
+  await authorize(tx, user, c);
+  // Row lock order: tournament → player → application or contact_change.
   let change: Change | null = null;
-  let playerId: string;
+  let playerId: string | undefined;
   if ("changeId" in c) {
-    const [ref] =
-      await tx`select player_id, tournament_id from contact_change where id=${c.changeId}`;
-    if (!ref || ref.tournament_id !== c.tournament)
-      throw new HttpError(404, "Number change not found.");
-    playerId = ref.player_id;
+    const [ref] = await tx<
+      { player_id: string }[]
+    >`select player_id from contact_change
+      where id=${c.changeId} and tournament_id=${c.tournament}`;
+    playerId = ref?.player_id;
   } else playerId = c.playerId;
   const [t] =
     c.action === "contact.disclose"
-      ? await tx`select id from tournament where id=${c.tournament} and deleted_at is null`
+      ? await tx`select id from tournament where id=${c.tournament} and deleted_at is null for share`
       : await tx`select id from tournament where id=${c.tournament} and deleted_at is null for update`;
+  if (!playerId) throw new HttpError(404, "Number change not found.");
   if (!t) throw new HttpError(404, "Tournament not found.");
-  const [player] =
+  const [target] =
     c.action === "contact.disclose"
-      ? await tx`select id,public_no,contact_cipher,deleted_at from player where id=${playerId}`
-      : await tx`select id,public_no,contact_hash,contact_cipher,contact_version,contact_verified_at,efootball_hash,deleted_at
+      ? await tx<
+          DisclosurePlayer[]
+        >`select public_no,contact_cipher,deleted_at from player where id=${playerId} for share`
+      : await tx<
+          ChangePlayer[]
+        >`select public_no,contact_hash,contact_version,contact_verified_at,efootball_hash,efootball_cipher,deleted_at
           from player where id=${playerId} for update`;
-  if (!player || player.deleted_at)
+  if (!target || target.deleted_at)
     throw new HttpError(404, "Player not found.");
-  const [entry] =
-    await tx`select 1 from application where player_id=${playerId} and tournament_id=${c.tournament} and deleted_at is null`;
+  const [entry] = await tx`select 1 from application
+    where player_id=${playerId} and tournament_id=${c.tournament} and deleted_at is null for share`;
   if (!entry) throw new HttpError(404, "This player isn't in this tournament.");
   if ("changeId" in c) {
-    [change] =
-      await tx`select * from contact_change where id=${c.changeId} for update`;
-    if (!change) throw new HttpError(404, "Number change not found.");
+    [change] = await tx<Change[]>`select * from contact_change
+        where id=${c.changeId} and tournament_id=${c.tournament} and player_id=${playerId} for update`;
+  }
+  // Coordinator permissions are share-locked through commit. Re-read the
+  // runtime allowlist for admins after waiting for the other row locks.
+  if (user.role === "admin")
+    requireMainAdmin(user, c.action !== "contact.disclose");
+  if ("changeId" in c && !change)
+    throw new HttpError(404, "Number change not found.");
+
+  if (change?.route === "independent_evidence") {
+    if (
+      (c.action === "contact.change_resend" ||
+        c.action === "contact.change_code") &&
+      change.requested_by !== user.id
+    )
+      throw new HttpError(
+        403,
+        "Only the requesting main admin can resend or check the code.",
+      );
+    if (c.action === "contact.change_approve") requireSecondAdmin(user, change);
   }
 
-  // Idempotency: a retried request returns its first outcome and writes nothing.
-  const [prior] =
-    await tx`select action, after_value->>'change_id' as change_id from audit_event where after_value->>'request_id' = ${c.requestId} limit 1`;
-  if (prior) {
-    if (prior.action !== c.action)
+  const prior = await tx<
+    {
+      actor: string;
+      action: string;
+      entity: string;
+      tournament_id: string | null;
+      attempts: number | null;
+    }[]
+  >`select actor,action,entity,tournament_id,
+         case when action in ('contact.change_code_rejected','contact.change_failed')
+              then (after_value->>'attempts')::int end as attempts
+    from audit_event where lower(after_value->>'request_id')=${c.requestId} limit 2`;
+  if (prior.length) {
+    const [event] = prior;
+    // A disclosure request ID is single use. Never decrypt or return contact
+    // data from a replay, even when its original scope still matches.
+    if (
+      prior.length !== 1 ||
+      event.actor !== user.id ||
+      event.tournament_id !== c.tournament ||
+      (change && event.entity !== change.id)
+    )
+      throw new HttpError(409, USED_REQUEST);
+    if (c.action === "contact.disclose")
       throw new HttpError(
         409,
-        "This request was already used for another change.",
+        "This reveal request was already used. Open the number again.",
       );
-    if (c.action === "contact.disclose") {
-      const phone = decrypt(player.contact_cipher);
-      return { ok: true, repeated: true, phone, waUrl: waUrl(phone) };
-    }
-    return { ok: true, repeated: true, changeId: prior.change_id };
+    if (
+      c.action === "contact.change_code" &&
+      (event.action === "contact.change_code_rejected" ||
+        event.action === "contact.change_failed") &&
+      event.attempts !== null
+    )
+      throw wrongCode(
+        event.attempts,
+        change?.evidence_type === "efootball_possession",
+      );
+    if (event.action !== c.action) throw new HttpError(409, USED_REQUEST);
+    if (change) return { ok: true, repeated: true, changeId: change.id };
+    // A successful start may be acknowledged again for the same player without
+    // returning the code, challenge, or number.
+    const [started] = await tx`select id from contact_change
+      where id::text=${event.entity} and player_id=${playerId}
+      and tournament_id=${c.tournament} and requested_by=${user.id}`;
+    if (!started) throw new HttpError(409, USED_REQUEST);
+    return { ok: true, repeated: true, changeId: event.entity };
   }
 
-  const code = playerCode(player.public_no);
-  const base = (extra: Record<string, unknown> = {}) => ({
+  const code = playerCode(target.public_no);
+  const base = (extra: Record<string, JSONValue> = {}) => ({
     request_id: c.requestId,
     ...extra,
   });
@@ -385,10 +521,14 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
       {},
       base({ purpose: c.purpose }),
     );
-    const phone = decrypt(player.contact_cipher);
+    if (user.role === "admin") requireMainAdmin(user, false);
+    if (!("contact_cipher" in target)) throw new Error("No contact selected.");
+    const phone = decrypt(target.contact_cipher);
     return { ok: true, phone, waUrl: waUrl(phone), masked: maskPhone(phone) };
   }
 
+  if (!("contact_version" in target)) throw new Error("No player selected.");
+  const player = target;
   /* ── Start ── */
   if (c.action === "contact.change_start") {
     if (player.contact_version !== c.expectedContactVersion)
@@ -412,7 +552,10 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
           "Choose the evidence type and describe the check.",
         );
       if (c.evidenceType === "efootball_possession") {
-        if (!player.efootball_hash)
+        if (
+          !player.efootball_hash ||
+          typeof player.efootball_cipher !== "string"
+        )
           throw new HttpError(
             409,
             "This player has no eFootball ID on record, so possession can't be checked. Choose another evidence type.",
@@ -485,14 +628,23 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
       );
     const id = randomUUID();
     const oneTime = newCode();
-    const challenge =
-      c.evidenceType === "efootball_possession" ? newChallenge() : null;
+    const evidenceCipher =
+      c.evidenceType === "efootball_possession"
+        ? player.efootball_cipher
+        : null;
+    const challenge = evidenceCipher ? newChallenge() : null;
+    let boundChallenge = null;
+    if (evidenceCipher && challenge) {
+      const revision = efootballRevision(id, evidenceCipher);
+      boundChallenge = `v2:${revision}:${challengeHash(id, revision, challenge)}`;
+    }
     const expiresAt = minutes(LIMITS.changeMinutes);
     const codeExpires = minutes(LIMITS.codeMinutes);
+    requireMainAdmin(user, true);
     await tx`insert into contact_change(id,player_id,tournament_id,route,evidence_type,evidence_note,evidence_observed_at,challenge_hash,
         new_contact_hash,new_contact_cipher,from_contact_version,code_hash,code_expires_at,requested_by,expires_at)
       values(${id},${playerId},${c.tournament},${c.route},${c.evidenceType ?? null},${c.evidenceNote ?? null},${c.evidenceObservedAt ?? null},
-        ${challenge ? challengeHash(id, challenge) : null},${newHash},${encrypt(parsed.phone)},${player.contact_version},
+        ${boundChallenge},${newHash},${encrypt(parsed.phone)},${player.contact_version},
         ${codeHash(id, oneTime)},${codeExpires},${user.id},${expiresAt})`;
     await writeAudit(
       tx,
@@ -578,6 +730,10 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
   if (c.action === "contact.change_resend") {
     if (ch.status !== "pending_code")
       throw new HttpError(409, "The code was already checked.");
+    if (ch.evidence_type === "efootball_possession")
+      efootballProof(ch, player.efootball_cipher);
+    if (player.contact_version !== ch.from_contact_version)
+      throw new HttpError(409, CHANGED);
     if (ch.resends >= LIMITS.resends)
       throw new HttpError(
         429,
@@ -590,6 +746,7 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
         new Date(ch.expires_at).getTime(),
       ),
     );
+    requireMainAdmin(user, true);
     await tx`update contact_change set code_hash=${codeHash(ch.id, oneTime)}, code_expires_at=${codeExpires}, resends=resends+1 where id=${ch.id}`;
     await writeAudit(
       tx,
@@ -619,6 +776,8 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
         409,
         "This number now belongs to another player record.",
       );
+    requireMainAdmin(user, true);
+    if (approvedBy) requireSecondAdmin(user, ch);
     const [done] =
       await tx`update player set contact_hash=${ch.new_contact_hash}, contact_cipher=${ch.new_contact_cipher},
           contact_version=contact_version+1, contact_verified_at=now(), contact_verification_method=${method}
@@ -633,6 +792,8 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
   if (c.action === "contact.change_code") {
     if (ch.status !== "pending_code")
       throw new HttpError(409, "The code was already checked.");
+    if (player.contact_version !== ch.from_contact_version)
+      throw new HttpError(409, CHANGED);
     if (now >= new Date(ch.code_expires_at!).getTime())
       throw new HttpError(409, "This code expired. Send a new one.");
     const efootball = ch.evidence_type === "efootball_possession";
@@ -641,49 +802,40 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
         400,
         "Enter the eFootball ID you checked and the challenge you saw on it.",
       );
-    let ok = sameHash(ch.code_hash, codeHash(ch.id, c.code));
-    if (efootball)
-      ok =
-        sameHash(player.efootball_hash, fingerprint("ef:" + c.efootballId)) &&
-        sameHash(ch.challenge_hash, challengeHash(ch.id, c.challenge!)) &&
-        ok;
+    const proof = efootball
+      ? efootballProof(ch, player.efootball_cipher)
+      : null;
+    const proofMatches =
+      !proof ||
+      (sameHash(player.efootball_hash, fingerprint("ef:" + c.efootballId)) &&
+        sameHash(
+          proof.challengeDigest ?? null,
+          challengeHash(ch.id, proof.revision, c.challenge!),
+        ));
+    const ok = proofMatches && sameHash(ch.code_hash, codeHash(ch.id, c.code));
+    requireMainAdmin(user, true);
     if (!ok) {
       const attempts = ch.attempts + 1;
-      if (attempts >= LIMITS.attempts) {
-        await tx`update contact_change set attempts=${attempts} where id=${ch.id}`;
-        await finish(tx, ch.id, "failed");
-        await writeAudit(
-          tx,
-          user,
-          "contact.change_failed",
-          ch.id,
-          ch.tournament_id,
-          "WhatsApp number change closed after 5 wrong attempts",
-          code,
-          { status: ch.status },
-          { change_id: ch.id, attempts },
-        );
-        return new Committed(
-          new HttpError(
-            409,
-            "Wrong details. This change is now closed after 5 wrong attempts.",
-          ),
-        );
-      }
+      const exhausted = attempts >= LIMITS.attempts;
       await tx`update contact_change set attempts=${attempts} where id=${ch.id}`;
-      return new Committed(
-        new HttpError(
-          409,
-          `Wrong code${efootball ? " or eFootball details" : ""}. ${LIMITS.attempts - attempts} attempt${LIMITS.attempts - attempts === 1 ? "" : "s"} left.`,
-        ),
+      if (exhausted) await finish(tx, ch.id, "failed");
+      await writeAudit(
+        tx,
+        user,
+        exhausted ? "contact.change_failed" : "contact.change_code_rejected",
+        ch.id,
+        ch.tournament_id,
+        exhausted
+          ? "WhatsApp number change closed after 5 wrong attempts"
+          : "Rejected a WhatsApp verification attempt",
+        code,
+        { status: ch.status },
+        base({ change_id: ch.id, attempts }),
       );
+      return new Committed(wrongCode(attempts, efootball));
     }
     if (ch.route === "established_channel") {
-      if (
-        !player.contact_verified_at ||
-        player.contact_version !== ch.from_contact_version
-      )
-        throw new HttpError(409, CHANGED);
+      if (!player.contact_verified_at) throw new HttpError(409, CHANGED);
       const version = await complete(
         "organizer_attested_established_channel",
         null,
@@ -707,6 +859,7 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
       return { ok: true, changeId: ch.id, status: "completed" };
     }
     await tx`update contact_change set status='awaiting_second_admin', code_checked_at=now(), code_hash=null,
+        challenge_hash=${proof ? `v2:${proof.revision}` : null},
         approve_by=now() + make_interval(hours => ${LIMITS.approvalHours}),
         challenge_confirmed_at=${efootball ? new Date() : null},
         evidence_observed_at=coalesce(evidence_observed_at, ${efootball ? new Date() : null})
@@ -730,18 +883,38 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
   }
 
   /* ── Second admin approval (Route 2) ── */
-  if (ch.status !== "awaiting_second_admin")
+  if (
+    ch.route !== "independent_evidence" ||
+    ch.status !== "awaiting_second_admin"
+  )
     throw new HttpError(409, "This change isn't waiting for approval.");
-  if (ch.requested_by === user.id)
-    throw new HttpError(
-      403,
-      "A second, different main admin must approve this change.",
-    );
-  if (!adminIds().includes(ch.requested_by))
+  // Older open requests can have been resent or verified by the approving admin.
+  // Check the immutable event trail before honoring the awaiting state.
+  const [proof] = await tx<
+    { checked_by_requester: boolean; other_issuer: boolean }[]
+  >`
+    select
+      count(*) filter (where action='contact.change_code'
+        and after_value->>'outcome'='awaiting_second_admin')=1
+        and bool_and(coalesce(actor=${ch.requested_by} and actor_role='admin',false))
+          filter (where action='contact.change_code') as checked_by_requester,
+      coalesce(bool_or(actor<>${ch.requested_by})
+        filter (where action='contact.change_resend'),false) as other_issuer
+    from audit_event where entity=${ch.id} and tournament_id=${ch.tournament_id}
+      and action in ('contact.change_code','contact.change_resend')`;
+  if (!proof.checked_by_requester || proof.other_issuer)
     throw new HttpError(
       409,
-      "The admin who started this change is no longer a main admin. Cancel it and start again.",
+      `The verification steps were not completed by the requesting admin. ${RESTART_CHANGE}`,
     );
+  if (ch.evidence_type === "efootball_possession") {
+    efootballProof(ch, player.efootball_cipher);
+    if (!ch.challenge_confirmed_at)
+      throw new HttpError(
+        409,
+        `The eFootball evidence was not confirmed. ${RESTART_CHANGE}`,
+      );
+  }
   if (player.contact_version !== ch.from_contact_version)
     throw new HttpError(409, CHANGED);
   const version = await complete(
@@ -823,6 +996,7 @@ export async function contactSummary(playerId: string, viewer: Who) {
 /** GET /api/admin?contactChanges=1: open changes, for the second admin's review. */
 export async function contactChanges(resolve: Resolve = actor) {
   const user = await resolve("players", "*");
+  requireMainAdmin(user, false);
   const rows =
     await db()`select c.id,c.tournament_id,c.route,c.evidence_type,c.evidence_note,c.evidence_observed_at,
       c.challenge_confirmed_at,c.status,c.requested_by,c.created_at,c.code_checked_at,c.approve_by,c.expires_at,

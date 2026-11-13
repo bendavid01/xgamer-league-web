@@ -8,6 +8,7 @@ import { playerCode } from "./codes";
 import { tournamentLabel } from "./labels";
 import { teamDisplay } from "./team-display";
 import { contactSummary } from "./contact-change";
+import { lockAuditRequest } from "./audit-request";
 
 /**
  * OM "Edit player details" (approved design, 13 Nov 2026).
@@ -39,7 +40,7 @@ export const SOURCE_LABEL: Record<TeamSource, string> = {
 const uuid = z.string().uuid();
 const tid = z.string().regex(/^[a-z0-9-]{3,80}$/);
 const reason = z.string().trim().min(5).max(300);
-const requestId = z.string().uuid();
+const requestId = z.string().uuid().toLowerCase();
 // Same rules as registration: 2–40 letters, digits, spaces and _ . ' & -
 const playerName = registrationInput.shape.playerName;
 const teamName = registrationInput.shape.teamName;
@@ -153,7 +154,9 @@ export async function runEdit(user: Who, c: EditCommand) {
         : "This operation is not assigned to you.",
     );
   try {
-    return await db().begin((tx) => apply(tx, user, c));
+    return await db().begin("isolation level read committed", (tx) =>
+      apply(tx, user, c),
+    );
   } catch (error) {
     // Two players can't share an eFootball ID (unique index): a race ends here.
     if ((error as { code?: string }).code === "23505")
@@ -166,6 +169,8 @@ export async function runEdit(user: Who, c: EditCommand) {
 type Tx = any;
 
 async function apply(tx: Tx, user: Who, c: EditCommand) {
+  const requestId = c.requestId.toLowerCase();
+  await lockAuditRequest(tx, requestId);
   // 1. Locks, always in this order: tournament → player → application.
   const [t] =
     await tx`select id,name,competition,season from tournament where id=${c.tournament} and deleted_at is null for update`;
@@ -204,7 +209,7 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
   // 2. Idempotency: a retried request returns its first outcome and writes nothing.
   const entity = "applicationId" in c ? c.applicationId : playerId;
   const [prior] =
-    await tx`select action,entity from audit_event where after_value->>'request_id' = ${c.requestId} limit 1`;
+    await tx`select action,entity from audit_event where lower(after_value->>'request_id') = ${requestId} limit 1`;
   if (prior) {
     if (prior.action === c.action && prior.entity === entity)
       return { ok: true, repeated: true };
@@ -312,7 +317,7 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
   // 5. One immutable audit row, with the reason and the request ID.
   await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,before_value,after_value)
     values(${user.id},${user.name ?? null},${user.role},${c.action},${entity},${c.tournament},${summary},${code},
-      ${tx.json(before)},${tx.json({ ...after, reason: c.reason, request_id: c.requestId })})`;
+      ${tx.json(before)},${tx.json({ ...after, reason: c.reason, request_id: requestId })})`;
   return { ok: true };
 }
 

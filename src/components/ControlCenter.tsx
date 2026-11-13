@@ -162,6 +162,7 @@ const ACTION_LABEL: Record<string, string> = {
   "contact.disclose": "Viewed WhatsApp number",
   "contact.change_start": "Started WhatsApp number change",
   "contact.change_code": "Checked WhatsApp code",
+  "contact.change_code_rejected": "Rejected WhatsApp code attempt",
   "contact.change_approve": "Approved WhatsApp number change",
   "contact.change_cancel": "Cancelled WhatsApp number change",
 };
@@ -3752,9 +3753,9 @@ function ContactApprovals() {
                 }}
               >
                 <label className="flex gap-2 text-sm">
-                  <input type="checkbox" name="reviewed" required />I reviewed
-                  this evidence myself and I&apos;m satisfied it identifies the
-                  player.
+                  <input type="checkbox" name="reviewed" required />I
+                  independently reviewed the evidence that this is the same
+                  player and that they control the new WhatsApp number.
                 </label>
                 <div className="grid gap-2 md:grid-cols-[1fr_auto]">
                   <input

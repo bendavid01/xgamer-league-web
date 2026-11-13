@@ -43,7 +43,10 @@ if (base) {
 }
 
 type CC = typeof import("../src/lib/contact-change");
-type Who = Parameters<CC["runContact"]>[0];
+type Who = Parameters<CC["runContact"]>[0] &
+  Partial<
+    Pick<import("../src/lib/access").Actor, "operations" | "tournaments">
+  >;
 let cc: CC;
 let control: typeof import("../src/lib/control");
 let details: typeof import("../src/lib/player-details");
@@ -60,7 +63,11 @@ const coordAll: Who = {
   tournaments: ["*"],
 };
 let coordW: Who; // registrations, scoped to the Open Cup only
-const coordResults: Who = { ...coordAll, operations: ["results"] };
+const coordResults: Who = {
+  ...coordAll,
+  id: "222222222222222224",
+  operations: ["results"],
+};
 const strangerAdmin: Who = {
   id: "333333333333333333",
   role: "admin",
@@ -219,7 +226,7 @@ before(async () => {
   H = await create("Number Cup");
   W = await create("Open Cup");
   coordW = { ...coordAll, id: "222222222222222223", tournaments: [W] };
-  for (const coordinator of [coordAll, coordW])
+  for (const coordinator of [coordAll, coordW, coordResults])
     await sql`insert into coordinator(discord_id,operations,tournaments)
       values(${coordinator.id},${coordinator.operations!},${coordinator.tournaments!})`;
   await cmd({ action: "registration", tournament: H, open: true });
@@ -1191,7 +1198,10 @@ test(
       requestId,
     };
     const first = await send(coordW, disclosure);
-    assert.ok(first.phone === ply.w0.phone, "first reveal must return its target");
+    assert.ok(
+      first.phone === ply.w0.phone,
+      "first reveal must return its target",
+    );
     await assert.rejects(
       send(coordW, { ...disclosure, playerId: ply.w1.id }),
       status(409),
@@ -1220,7 +1230,10 @@ test(
       playerId: ply.w1.id,
       requestId: randomUUID(),
     });
-    assert.ok(fresh.phone === ply.w1.phone, "fresh reveal must return its target");
+    assert.ok(
+      fresh.phone === ply.w1.phone,
+      "fresh reveal must return its target",
+    );
     const [after] = await sql`select sum(hits)::int as hits from rate_limit`;
     assert.equal(after.hits, 4);
   },
@@ -1292,6 +1305,94 @@ test(
       await sql`update coordinator set active=true,tournaments=${[W]}
         where discord_id=${coordW.id}`;
     }
+  },
+);
+
+test(
+  "GC-D4: an edit and a disclosure cannot both consume the same UUID",
+  { skip },
+  async () => {
+    await resetLimits();
+    const requestId = randomUUID();
+    const player = ply.ann;
+    const [before] =
+      await sql`select gaming_name from player where id=${player.id}`;
+    try {
+      const results = await Promise.allSettled([
+        send(coordW, {
+          action: "contact.disclose",
+          tournament: W,
+          purpose: "registration_check",
+          playerId: ply.w0.id,
+          requestId,
+        }),
+        details.runEdit(A, {
+          action: "player.edit_name",
+          tournament: H,
+          playerId: player.id,
+          expected: before.gaming_name,
+          name: "Ann Backup",
+          reason: "Synthetic concurrent edit",
+          requestId: requestId.toUpperCase(),
+        }),
+      ]);
+      assert.equal(
+        results.filter((result) => result.status === "fulfilled").length,
+        1,
+      );
+      for (const result of results)
+        if (result.status === "rejected") status(409)(result.reason);
+      const [audit] = await sql`select count(*)::int n from audit_event
+        where lower(after_value->>'request_id')=${requestId}`;
+      assert.equal(audit.n, 1);
+    } finally {
+      await sql`update player set gaming_name=${before.gaming_name} where id=${player.id}`;
+    }
+  },
+);
+
+test(
+  "GC-D5: a disclosure returns no contact if the audit write fails",
+  { skip },
+  async () => {
+    await resetLimits();
+    const requestId = randomUUID();
+    const disclosure = {
+      action: "contact.disclose",
+      tournament: W,
+      playerId: ply.w0.id,
+      purpose: "registration_check",
+      requestId,
+    };
+    const n = await auditCount();
+    await sql.unsafe(`create function fail_disclose() returns trigger language plpgsql as $$
+      begin raise exception 'forced disclosure audit failure'; end $$;
+      create trigger fail_disclose before insert on audit_event for each row
+      when (new.action = 'contact.disclose') execute function fail_disclose();`);
+    try {
+      const { endpoint, response } = await import("../src/lib/api");
+      const refused = await endpoint(async () =>
+        response(await cc.executeContact(disclosure, as(coordW))),
+      );
+      assert.equal(refused.status, 503);
+      assert.equal(refused.headers.get("Cache-Control"), "no-store");
+      assert.ok(
+        !(await refused.text()).includes(ply.w0.phone),
+        "error body exposed the number",
+      );
+      assert.equal(await auditCount(), n);
+      assert.equal((await sql`select count(*)::int n from rate_limit`)[0].n, 0);
+    } finally {
+      await sql.unsafe(
+        "drop trigger fail_disclose on audit_event; drop function fail_disclose();",
+      );
+    }
+    const result = await send(coordW, disclosure);
+    assert.ok(
+      result.phone === ply.w0.phone,
+      "a fresh transaction can retry after rollback",
+    );
+    assert.equal(await auditCount(), n + 1);
   },
 );
 
@@ -1384,21 +1485,34 @@ test(
     try {
       await setProofId(player, "PROOF-TWO", true);
       await assert.rejects(
-        code(A, id, String(s.code), {
-          efootballId: "PROOF-TWO",
-          challenge: s.challenge,
-        }, W),
+        code(
+          A,
+          id,
+          String(s.code),
+          {
+            efootballId: "PROOF-TWO",
+            challenge: s.challenge,
+          },
+          W,
+        ),
         status(409, /eFootball.*changed/),
       );
       await setProofId(player, "PROOF-ONE", true);
       await assert.rejects(
-        code(A, id, String(s.code), {
-          efootballId: "PROOF-ONE",
-          challenge: s.challenge,
-        }, W),
+        code(
+          A,
+          id,
+          String(s.code),
+          {
+            efootballId: "PROOF-ONE",
+            challenge: s.challenge,
+          },
+          W,
+        ),
         status(409, /eFootball.*changed/),
       );
-      const [row] = await sql`select status,attempts from contact_change where id=${id}`;
+      const [row] =
+        await sql`select status,attempts from contact_change where id=${id}`;
       assert.equal(row.status, "pending_code");
       assert.equal(row.attempts, 0);
       assert.equal(await version(player), 1);
@@ -1420,10 +1534,18 @@ test(
     const id = String(s.changeId);
     try {
       assert.equal(
-        (await code(A, id, String(s.code), {
-          efootballId: oldId,
-          challenge: s.challenge,
-        }, W)).status,
+        (
+          await code(
+            A,
+            id,
+            String(s.code),
+            {
+              efootballId: oldId,
+              challenge: s.challenge,
+            },
+            W,
+          )
+        ).status,
         "awaiting_second_admin",
       );
       await setProofId(player, "PROOF-FOUR", true);
@@ -1450,7 +1572,8 @@ test(
     const requestId = randomUUID();
     const wrong = String((Number(s.code) + 1) % 1_000_000).padStart(6, "0");
     const attempts = async () =>
-      (await sql`select attempts from contact_change where id=${id}`)[0].attempts;
+      (await sql`select attempts from contact_change where id=${id}`)[0]
+        .attempts;
     try {
       const retries = await Promise.allSettled([
         code(A, id, wrong, { requestId }, W),
@@ -1496,16 +1619,72 @@ test(
           values(${issuer.id},'admin','contact.change_resend',${id},${W},'{}'::jsonb),
             (${verifier.id},'admin','contact.change_code',${id},${W},'{"outcome":"awaiting_second_admin"}'::jsonb)`;
       }
-      const results = await Promise.allSettled(changes.map((id) => approve(B, id, W)));
-      assert.equal(results.filter((result) => result.status === "rejected").length, 2);
+      const results = await Promise.allSettled(
+        changes.map((id) => approve(B, id, W)),
+      );
+      assert.equal(
+        results.filter((result) => result.status === "rejected").length,
+        2,
+      );
       for (const result of results)
         if (result.status === "rejected") status(409)(result.reason);
       for (const { player } of legacy) assert.equal(await version(player), 1);
     } finally {
       for (const id of changes) {
-        const [row] = await sql`select status from contact_change where id=${id}`;
+        const [row] =
+          await sql`select status from contact_change where id=${id}`;
         if (row.status === "awaiting_second_admin") await cancel(A, id, W);
       }
+    }
+  },
+);
+
+test(
+  "GC-A6: losing approval authorization while waiting for a lock blocks the write",
+  { skip },
+  async () => {
+    await resetLimits();
+    const player = ply.w6;
+    const s = await start(A, player, "+44 7911 123587", evidence(), W);
+    const id = String(s.changeId);
+    const requestId = randomUUID();
+    await code(A, id, String(s.code), {}, W);
+    let approval: Promise<unknown> | undefined;
+    try {
+      await sql.begin(async (tx) => {
+        await tx`select id from tournament where id=${W} for update`;
+        approval = send(B, {
+          action: "contact.change_approve",
+          tournament: W,
+          changeId: id,
+          reviewed: true,
+          reason: "Synthetic approval test",
+          requestId,
+        });
+        void approval.catch(() => {});
+        const deadline = Date.now() + 3000;
+        while (Date.now() < deadline) {
+          const [waiter] = await tx`select 1 from pg_stat_activity
+            where pid <> pg_backend_pid() and datname=current_database()
+              and wait_event_type='Lock' and query like 'select id from tournament%'`;
+          if (waiter) {
+            process.env.MAIN_ADMIN_DISCORD_IDS = `${A.id},759756138437804044`;
+            return;
+          }
+          await tx`select pg_stat_clear_snapshot()`;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.fail("Approval did not wait for the tournament lock.");
+      });
+      await assert.rejects(approval!, status(403));
+      assert.equal(await version(player), 1);
+      const [audit] = await sql`select count(*)::int n from audit_event
+        where after_value->>'request_id'=${requestId}`;
+      assert.equal(audit.n, 0);
+    } finally {
+      process.env.MAIN_ADMIN_DISCORD_IDS = ADMINS;
+      const [row] = await sql`select status from contact_change where id=${id}`;
+      if (row.status === "awaiting_second_admin") await cancel(A, id, W);
     }
   },
 );
@@ -1648,7 +1827,13 @@ test(
           /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
           "<uuid>",
         )
-        .replace(new RegExp(`${A.id}|${B.id}`, "g"), "<admin>")
+        .replace(
+          new RegExp(
+            [A.id, B.id, coordAll.id, coordW.id, coordResults.id].join("|"),
+            "g",
+          ),
+          "<organizer>",
+        )
         .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?/g, "<time>");
     const check = (label: string, text: string) => {
       const t = clean(text);
