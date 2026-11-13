@@ -4,7 +4,8 @@
       "feature/xg-009-champions": false,
       "chore/no-auto-migrations": false,
       "feature/team-names-007": false,
-      "ci/postgres-integration-tests": false
+      "ci/postgres-integration-tests": false,
+      "ci/team-names-007-integration": false
     }
   }
 }
