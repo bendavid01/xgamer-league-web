@@ -10,10 +10,10 @@ jobs:
     services:
       # Disposable database for the integration tests. It exists only inside this job,
       # is reachable only from the runner, and is destroyed when the job ends.
-      # PostgreSQL 16 provisionally: production's major version is not yet confirmed
-      # (the 007 test pack records it). Change this tag once it is.
+      # PostgreSQL 18, the same major version as production (PM, 13 Nov 2026).
+      # The check step below fails the job if the service is any other major version.
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ci-only-disposable
@@ -37,7 +37,10 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres:ci-only-disposable@127.0.0.1:5432/xgamer_ci
         run: >-
           node -e "const sql = require('postgres')(process.env.TEST_DATABASE_URL, { ssl: false, connect_timeout: 10 });
-          sql\`select version()\`.then(([r]) => { console.log('Disposable test database:', r.version); return sql.end(); })
+          sql\`select version() as v, current_setting('server_version_num')::int as n\`.then(([r]) => {
+          console.log('Disposable test database:', r.v);
+          if (r.n < 180000 || r.n >= 190000) { console.error('::error::CI must test on PostgreSQL 18; this service is ' + r.n + '.'); process.exitCode = 1; }
+          return sql.end(); })
           .catch((e) => { console.error('::error::The disposable PostgreSQL service is unreachable, so the database tests cannot run:', e.message); process.exit(1); });"
       - name: Unit and database integration tests
         shell: bash

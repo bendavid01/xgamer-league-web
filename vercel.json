@@ -5,7 +5,8 @@
       "chore/no-auto-migrations": false,
       "feature/team-names-007": false,
       "ci/postgres-integration-tests": false,
-      "ci/team-names-007-integration": false
+      "ci/team-names-007-integration": false,
+      "ci/postgres-18": false
     }
   }
 }
