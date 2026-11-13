@@ -2917,3 +2917,8 @@ a:hover .champ-chev, a:focus-visible .champ-chev { transform: translateX(3px); c
   .champ-tcard, .champ-chev, .champ-action, .champ-fame-row, .champ-roster-row, .champ-link-card, .champ-tab { transition: none; }
   .champ-tcard:hover, a:hover .champ-chev { transform: none; }
 }
+
+/* OM: Edit player details */
+.om-link { color: rgb(103 232 249); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; background: none; border: 0; padding: 0; cursor: pointer; }
+.om-link:disabled { opacity: .6; cursor: default; }
+.om-source { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid rgb(71 85 105); font-size: 11px; color: rgb(148 163 184); }

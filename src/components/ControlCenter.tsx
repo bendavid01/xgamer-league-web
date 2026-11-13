@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import {
@@ -62,6 +62,8 @@ type Application = {
   code: string;
   gaming_name: string;
   team_name: string | null;
+  team_name_source: TeamSource | null;
+  current_team: string | null;
   status: string;
   revision: number;
   phone?: string;
@@ -120,6 +122,11 @@ type Workspace = {
   }[];
 };
 type Act = (value: Record<string, unknown>, done?: string) => Promise<boolean>;
+type TeamSource =
+  | "registration"
+  | "registration_record"
+  | "organizer_attested"
+  | "organizer_corrected";
 
 /* ─────────────────────────── Labels ─────────────────────────── */
 
@@ -146,6 +153,18 @@ const ACTION_LABEL: Record<string, string> = {
   score: "Entered score",
   announce: "Published announcement",
   coordinator: "Coordinator access",
+  "player.edit_name": "Changed gaming name",
+  "player.edit_team": "Changed current team",
+  "player.edit_efootball": "Changed eFootball ID",
+  "application.team_attest": "Attested tournament team",
+  "application.team_correct": "Corrected tournament team",
+};
+/** OM only. The public site never shows where a team name came from. */
+const SOURCE_TAG: Record<TeamSource, string> = {
+  registration: "Registration",
+  registration_record: "Registration record",
+  organizer_attested: "Attested",
+  organizer_corrected: "Corrected",
 };
 const formatLabel = (t: {
   format: string;
@@ -477,7 +496,12 @@ function HomeView({
         <Coordinators data={data} act={act} />
       )}
       {tab === "log" && admin && <ActivityLog rows={data.audit} />}
-      {tab === "health" && admin && <DataHealth />}
+      {tab === "health" && admin && (
+        <>
+          <DataHealth />
+          <TeamReview />
+        </>
+      )}
     </>
   );
 }
@@ -967,7 +991,9 @@ function TournamentWorkspace({
         </div>
       )}
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
-      {tab === "players" && <PlayersTab data={data} act={act} />}
+      {tab === "players" && (
+        <PlayersTab data={data} act={act} reload={reload} />
+      )}
       {tab === "setup" && admin && <SetupTab data={data} act={act} />}
       {tab === "fixtures" && (
         <FixturesTab data={data} act={act} names={names} />
@@ -981,8 +1007,20 @@ function TournamentWorkspace({
   );
 }
 
-function PlayersTab({ data, act }: { data: Workspace; act: Act }) {
+function PlayersTab({
+  data,
+  act,
+  reload,
+}: {
+  data: Workspace;
+  act: Act;
+  reload: () => Promise<void>;
+}) {
   const [filter, setFilter] = useState<(typeof FILTERS)[number][0]>("pending");
+  const [details, setDetails] = useState<string | null>(null);
+  const canDetails =
+    data.user.role === "admin" ||
+    data.user.operations.includes("registrations");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const fieldOpen = ["draft", "open", "locked"].includes(
     data.tournament.status,
@@ -1021,6 +1059,15 @@ function PlayersTab({ data, act }: { data: Workspace; act: Act }) {
           Fixtures exist, so player changes are locked. Reset fixtures (before
           any score) to change players.
         </p>
+      )}
+      {details && (
+        <PlayerDetails
+          key={details}
+          tournament={data.tournament.id}
+          playerId={details}
+          close={() => setDetails(null)}
+          changed={reload}
+        />
       )}
       {fieldOpen && selected.size > 0 && (
         <div className="om-bulk">
@@ -1104,8 +1151,21 @@ function PlayersTab({ data, act }: { data: Workspace; act: Act }) {
                 <td>
                   <strong>{a.gaming_name}</strong>
                   <span className="block text-xs text-slate-400">
-                    {a.team_name ?? "—"} · {a.code}
+                    {a.team_name ?? "Team not recorded"} · {a.code}
+                    {a.team_name_source && (
+                      <span className="om-source">
+                        {SOURCE_TAG[a.team_name_source]}
+                      </span>
+                    )}
                   </span>
+                  {canDetails && (
+                    <button
+                      className="om-link"
+                      onClick={() => setDetails(a.player_id)}
+                    >
+                      Edit details
+                    </button>
+                  )}
                 </td>
                 <td>
                   {a.phone && (
@@ -1140,6 +1200,7 @@ function PlayersTab({ data, act }: { data: Workspace; act: Act }) {
                             action: "efootball",
                             playerId: a.player_id,
                             efootballId: v,
+                            hadId: !!a.efootballId,
                           },
                           `eFootball ID saved for ${a.gaming_name}.`,
                         );
@@ -2322,5 +2383,675 @@ function Choice(props: {
     <label className="om-choice">
       <input type="radio" {...input} /> {label}
     </label>
+  );
+}
+
+/* ─────────────────────────── Edit player details ─────────────────────────── */
+
+type EditResult = { ok: boolean; error?: string };
+
+/**
+ * Sends one edit. A form keeps the same request ID until it succeeds, so a retry
+ * after a dropped connection can never apply the change twice.
+ */
+function useEditSender() {
+  const ids = useRef<Record<string, string>>({});
+  return async (
+    form: string,
+    value: Record<string, unknown>,
+  ): Promise<EditResult> => {
+    ids.current[form] ??= crypto.randomUUID();
+    try {
+      const r = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...value, requestId: ids.current[form] }),
+      });
+      const result = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        // A refused change was never recorded, so a corrected resubmit is a new request.
+        if (r.status < 500) delete ids.current[form];
+        return { ok: false, error: result.error ?? "Something went wrong." };
+      }
+      delete ids.current[form];
+      return { ok: true };
+    } catch {
+      return {
+        ok: false,
+        error: "No connection. Nothing is lost; press the button again.",
+      };
+    }
+  };
+}
+
+type PlayerDetailsData = {
+  role: "admin" | "coordinator";
+  canEdit: {
+    name: boolean;
+    team: boolean;
+    tournamentTeams: boolean;
+    efootball: boolean;
+    whatsapp: boolean;
+  };
+  player: {
+    id: string;
+    code: string;
+    gaming_name: string;
+    team_name: string | null;
+    hasEfootballId: boolean;
+    efootballId?: string | null;
+    removed: boolean;
+  };
+  entries: {
+    id: string;
+    tournament: string;
+    label: string;
+    status: string;
+    removed: boolean;
+    tournamentDeleted: boolean;
+    team_name: string | null;
+    team_name_source: TeamSource | null;
+  }[];
+  history: {
+    id: number;
+    created_at: string;
+    actor_name: string | null;
+    action: string;
+    summary: string | null;
+  }[];
+};
+
+function PlayerDetails({
+  tournament,
+  playerId,
+  close,
+  changed,
+}: {
+  tournament: string;
+  playerId: string;
+  close: () => void;
+  changed: () => Promise<void>;
+}) {
+  const [d, setD] = useState<PlayerDetailsData | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const send = useEditSender();
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch(
+        `/api/admin?t=${encodeURIComponent(tournament)}&player=${encodeURIComponent(playerId)}`,
+        { cache: "no-store" },
+      );
+      const v = await r.json();
+      if (!r.ok) throw new Error(v.error);
+      setD(v);
+    } catch (e) {
+      setError((e as Error).message || "Could not load the player.");
+    }
+  }, [tournament, playerId]);
+  useEffect(() => {
+    const go = async () => {
+      await load();
+    };
+    void go();
+  }, [load]);
+
+  const submit = async (
+    form: string,
+    value: Record<string, unknown>,
+    done: string,
+  ) => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const r = await send(form, value);
+    if (r.ok) setNotice(done);
+    else setError(r.error!);
+    // Reload either way: after a conflict the organizer sees the current values.
+    await load();
+    if (r.ok) await changed();
+    setBusy(false);
+    return r.ok;
+  };
+
+  return (
+    <section
+      className="om-card space-y-5"
+      aria-labelledby="pd-title"
+      aria-busy={busy}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 id="pd-title" className="text-xl font-bold">
+          Edit player details
+          {d && (
+            <span className="text-slate-400 font-normal">
+              {" "}
+              · {d.player.code}
+            </span>
+          )}
+        </h3>
+        <button className="button-secondary om-small" onClick={close}>
+          Close
+        </button>
+      </div>
+      <p className="text-sm text-slate-400">
+        The XG ID, results, fixtures and standings never change here. Every save
+        needs a reason and is recorded in the activity log.
+      </p>
+      {error && (
+        <p role="alert" className="notice text-amber-200">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="notice text-cyan-200">
+          {notice}
+        </p>
+      )}
+      {!d && !error && <p className="text-slate-400">Loading…</p>}
+      {d && (
+        <fieldset disabled={busy} className="space-y-5">
+          {d.player.removed && (
+            <p className="notice">
+              This player record was removed, so it can&apos;t be edited.
+            </p>
+          )}
+          <EditField
+            label="Gaming name"
+            name="name"
+            current={d.player.gaming_name}
+            editable={d.canEdit.name}
+            note="Changes the name shown everywhere. Results stay with the same player."
+            onSave={(value, reason) =>
+              submit(
+                "name",
+                {
+                  action: "player.edit_name",
+                  tournament,
+                  playerId,
+                  expected: d.player.gaming_name,
+                  name: value,
+                  reason,
+                },
+                "Gaming name saved.",
+              )
+            }
+          />
+          <EditField
+            label="Current team"
+            name="team"
+            current={d.player.team_name}
+            editable={d.canEdit.team}
+            note="The player's team from now on. It never changes a tournament's team."
+            onSave={(value, reason) =>
+              submit(
+                "team",
+                {
+                  action: "player.edit_team",
+                  tournament,
+                  playerId,
+                  expected: d.player.team_name,
+                  team: value,
+                  reason,
+                },
+                "Current team saved.",
+              )
+            }
+          />
+          {"efootballId" in d.player && (
+            <EditField
+              label="eFootball ID"
+              name="efootball"
+              current={d.player.efootballId ?? null}
+              editable={d.canEdit.efootball}
+              mono
+              note="Must be unique. Stored encrypted; the log never shows it."
+              onSave={(value, reason) =>
+                submit(
+                  "efootball",
+                  {
+                    action: "player.edit_efootball",
+                    tournament,
+                    playerId,
+                    expectedHadId: d.player.hasEfootballId,
+                    efootballId: value,
+                    reason,
+                  },
+                  "eFootball ID saved.",
+                )
+              }
+            />
+          )}
+          {d.role === "admin" && (
+            <div>
+              <p className="font-semibold">WhatsApp number</p>
+              <p className="text-sm text-slate-400">
+                Editing WhatsApp numbers is switched off until it&apos;s
+                separately approved.
+              </p>
+            </div>
+          )}
+          {d.canEdit.tournamentTeams && (
+            <div>
+              <h4 className="font-semibold mb-2">Team in each tournament</h4>
+              <div className="overflow-x-auto">
+                <table className="control-table">
+                  <thead>
+                    <tr>
+                      <th>Tournament</th>
+                      <th>Team</th>
+                      <th>Source</th>
+                      <th className="sr-only">Correct</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.entries.map((e) => (
+                      <tr key={e.id}>
+                        <td>
+                          {e.label}
+                          <span className="block text-xs text-slate-500">
+                            {e.removed ? "removed entry" : e.status}
+                          </span>
+                        </td>
+                        <td>{e.team_name ?? "Not recorded"}</td>
+                        <td>
+                          {e.team_name_source
+                            ? SOURCE_TAG[e.team_name_source]
+                            : "—"}
+                        </td>
+                        <td>
+                          {!e.removed && !e.tournamentDeleted && (
+                            <CorrectTeam
+                              entry={e}
+                              onSave={(v) =>
+                                submit(
+                                  `correct-${e.id}`,
+                                  {
+                                    action: "application.team_correct",
+                                    tournament: e.tournament,
+                                    applicationId: e.id,
+                                    expectedTeam: e.team_name,
+                                    expectedSource: e.team_name_source,
+                                    ...v,
+                                  },
+                                  `Team saved for ${e.label}.`,
+                                )
+                              }
+                            />
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                Entries with no team can also be attested from Data health →
+                Team names per tournament.
+              </p>
+            </div>
+          )}
+          {d.history.length > 0 && (
+            <details>
+              <summary className="cursor-pointer text-sm">
+                Changes to this player ({d.history.length})
+              </summary>
+              <ul className="mt-2 text-sm text-slate-400 space-y-1">
+                {d.history.map((h) => (
+                  <li key={h.id}>
+                    {new Date(h.created_at).toLocaleString("en-IN")} ·{" "}
+                    {h.actor_name ?? "—"} · {h.summary ?? h.action}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </fieldset>
+      )}
+    </section>
+  );
+}
+
+function EditField({
+  label,
+  name,
+  current,
+  editable,
+  note,
+  mono,
+  onSave,
+}: {
+  label: string;
+  name: string;
+  current: string | null;
+  editable: boolean;
+  note: string;
+  mono?: boolean;
+  onSave: (value: string, reason: string) => Promise<boolean>;
+}) {
+  return (
+    <form
+      className="space-y-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const form = e.currentTarget;
+        const f = new FormData(form);
+        void onSave(
+          String(f.get("value") ?? ""),
+          String(f.get("reason") ?? ""),
+        ).then((ok) => {
+          if (ok) form.reset();
+        });
+      }}
+    >
+      <p className="font-semibold">{label}</p>
+      <p className={mono ? "font-mono" : ""}>{current ?? "—"}</p>
+      {editable && (
+        <div className="grid gap-2 md:grid-cols-[1fr_1.4fr_auto]">
+          <input
+            name="value"
+            required
+            minLength={name === "efootball" ? 6 : 2}
+            maxLength={name === "efootball" ? 32 : 40}
+            placeholder={`New ${label.toLowerCase()}`}
+            className={`control-input !mt-0 ${mono ? "font-mono uppercase" : ""}`}
+            aria-label={`New ${label.toLowerCase()}`}
+          />
+          <input
+            name="reason"
+            required
+            minLength={5}
+            maxLength={300}
+            placeholder="Reason (required)"
+            className="control-input !mt-0"
+            aria-label={`Reason for changing the ${label.toLowerCase()}`}
+          />
+          <button className="button-secondary">Save</button>
+        </div>
+      )}
+      <p className="text-xs text-slate-500">{note}</p>
+    </form>
+  );
+}
+
+/** Set or correct one tournament's team, with a written evidence note. */
+function CorrectTeam({
+  entry,
+  onSave,
+}: {
+  entry: { label: string; team_name: string | null };
+  onSave: (v: {
+    team: string;
+    evidence: string;
+    reason: string;
+    confirmOverwrite: boolean;
+  }) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!open)
+    return (
+      <button className="om-link" onClick={() => setOpen(true)}>
+        {entry.team_name ? "Correct" : "Set with evidence"}
+      </button>
+    );
+  return (
+    <form
+      className="space-y-2 min-w-[16rem]"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const f = new FormData(e.currentTarget);
+        void onSave({
+          team: String(f.get("team") ?? ""),
+          evidence: String(f.get("evidence") ?? ""),
+          reason: String(f.get("reason") ?? ""),
+          confirmOverwrite: f.get("overwrite") === "on",
+        }).then((ok) => ok && setOpen(false));
+      }}
+    >
+      <input
+        name="team"
+        required
+        minLength={2}
+        maxLength={40}
+        placeholder="Team in this tournament"
+        className="control-input !mt-0"
+        aria-label={`Team in ${entry.label}`}
+      />
+      <input
+        name="evidence"
+        required
+        minLength={5}
+        maxLength={300}
+        placeholder="Evidence (e.g. WhatsApp registration message, 29 Oct)"
+        className="control-input !mt-0"
+        aria-label="Evidence"
+      />
+      <input
+        name="reason"
+        required
+        minLength={5}
+        maxLength={300}
+        placeholder="Reason"
+        className="control-input !mt-0"
+        aria-label="Reason"
+      />
+      {entry.team_name && (
+        <label className="flex gap-2 text-sm">
+          <input type="checkbox" name="overwrite" required />
+          Replace the recorded team &ldquo;{entry.team_name}&rdquo;
+        </label>
+      )}
+      <div className="flex gap-2">
+        <button className="button-secondary om-small">Save</button>
+        <button
+          type="button"
+          className="om-link"
+          onClick={() => setOpen(false)}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+type ReviewEntry = {
+  applicationId: string;
+  tournament: string;
+  label: string;
+  status: string;
+  code: string;
+  gaming_name: string;
+  currentTeam: string | null;
+  evidence: {
+    entries: number;
+    registration_records: number;
+    registration_audit_id: number | null;
+    registration_at: string | null;
+    record_has_team: boolean;
+    team_edits: number;
+  };
+  eligible: boolean;
+  reasons: string[];
+};
+
+const ATTEST_REASON =
+  "Historical entry before 007; Owner attestation 13 Nov 2026";
+
+/**
+ * Data health → Team names per tournament → Review (main admins).
+ * Lists entries with no tournament team, with live evidence. Attesting copies the
+ * player's current team shown here; nothing can be typed in.
+ */
+function TeamReview() {
+  const [data, setData] = useState<{
+    display: string;
+    entries: ReviewEntry[];
+  } | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const send = useEditSender();
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/admin?teams=1", { cache: "no-store" });
+      const v = await r.json();
+      if (!r.ok) throw new Error(v.error);
+      setData(v);
+    } catch (e) {
+      setError((e as Error).message || "Could not load the review.");
+    }
+  }, []);
+  useEffect(() => {
+    const go = async () => {
+      await load();
+    };
+    void go();
+  }, [load]);
+  const submit = async (
+    form: string,
+    value: Record<string, unknown>,
+    done: string,
+  ) => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const r = await send(form, value);
+    if (r.ok) setNotice(done);
+    else setError(r.error!);
+    await load();
+    setBusy(false);
+    return r.ok;
+  };
+  return (
+    <section
+      className="panel p-4 md:p-7 space-y-5 mt-6"
+      aria-labelledby="tr-title"
+    >
+      <div>
+        <h2 id="tr-title" className="text-2xl font-bold">
+          Team names per tournament: review
+        </h2>
+        <p className="text-slate-400 mt-1 text-sm">
+          Entries with no team recorded for their tournament. The evidence is
+          computed from the database. Attesting copies the current team shown;
+          anything else needs &ldquo;Set with evidence&rdquo;. Each action is
+          recorded in the activity log.
+        </p>
+      </div>
+      {error && (
+        <p role="alert" className="notice text-amber-200">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="notice text-cyan-200">
+          {notice}
+        </p>
+      )}
+      {!data && !error && <p className="text-slate-400">Checking…</p>}
+      {data && !data.entries.length && (
+        <p className="text-slate-300">Every entry has a recorded team.</p>
+      )}
+      <fieldset disabled={busy} className="space-y-3">
+        {data?.entries.map((e) => (
+          <article key={e.applicationId} className="om-card space-y-2">
+            <p>
+              <strong>{e.gaming_name}</strong>{" "}
+              <span className="text-slate-400">
+                · {e.code} · {e.label} · {e.status}
+              </span>
+            </p>
+            <p>
+              Proposed team: <strong>{e.currentTeam ?? "—"}</strong>{" "}
+              <span className="text-xs text-slate-500">
+                (the player&apos;s current team, read-only)
+              </span>
+            </p>
+            <ul className="text-sm text-slate-400 list-disc pl-5">
+              <li>Tournament entries for this player: {e.evidence.entries}</li>
+              <li>
+                Registration records: {e.evidence.registration_records}
+                {e.evidence.registration_audit_id !== null &&
+                  ` (record #${e.evidence.registration_audit_id}${e.evidence.registration_at ? `, ${new Date(e.evidence.registration_at).toLocaleString("en-IN")}` : ""})`}
+                {e.evidence.record_has_team
+                  ? ", a record includes a team"
+                  : ", no team field"}
+              </li>
+              <li>
+                Current-team edits in OM since registration:{" "}
+                {e.evidence.team_edits}
+              </li>
+            </ul>
+            {e.eligible ? (
+              <form
+                className="space-y-2"
+                onSubmit={(ev) => {
+                  ev.preventDefault();
+                  const f = new FormData(ev.currentTarget);
+                  void submit(
+                    `attest-${e.applicationId}`,
+                    {
+                      action: "application.team_attest",
+                      tournament: e.tournament,
+                      applicationId: e.applicationId,
+                      expectedTeam: e.currentTeam,
+                      confirm: f.get("confirm") === "on",
+                      reason: String(f.get("reason") ?? ""),
+                    },
+                    `Attested ${e.currentTeam} for ${e.gaming_name} in ${e.label}.`,
+                  );
+                }}
+              >
+                <label className="flex gap-2 text-sm">
+                  <input type="checkbox" name="confirm" required />I confirm
+                  this player registered once through the website and the team
+                  shown is the team they registered with.
+                </label>
+                <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+                  <input
+                    name="reason"
+                    required
+                    minLength={5}
+                    maxLength={300}
+                    defaultValue={ATTEST_REASON}
+                    className="control-input !mt-0"
+                    aria-label="Reason"
+                  />
+                  <button className="button-primary">Attest</button>
+                </div>
+              </form>
+            ) : (
+              <p className="text-sm text-amber-200">
+                Can&apos;t be attested: {e.reasons.join("; ")}.
+              </p>
+            )}
+            <CorrectTeam
+              entry={{ label: e.label, team_name: null }}
+              onSave={(v) =>
+                submit(
+                  `correct-${e.applicationId}`,
+                  {
+                    action: "application.team_correct",
+                    tournament: e.tournament,
+                    applicationId: e.applicationId,
+                    expectedTeam: null,
+                    expectedSource: null,
+                    ...v,
+                  },
+                  `Team saved for ${e.gaming_name} in ${e.label}.`,
+                )
+              }
+            />
+          </article>
+        ))}
+      </fieldset>
+      {data && (
+        <p className="text-xs text-slate-500">
+          Website display: TEAM_DISPLAY={data.display}.
+        </p>
+      )}
+    </section>
   );
 }

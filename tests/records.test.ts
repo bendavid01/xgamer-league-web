@@ -115,7 +115,7 @@ test("records: nothing is invented when there are no results", () => {
   assert.equal(r.players[0].ranking, 0);
 });
 
-test("Hall of Fame shows the team used in that tournament, never a later one", () => {
+test('Hall of Fame: per-tournament team in entry mode ("Not recorded" when unknown); current team in current mode', () => {
   const e = (t: string, id: string, no: number, entry_team: string | null) => ({
     tournament_id: t,
     id,
@@ -124,26 +124,35 @@ test("Hall of Fame shows the team used in that tournament, never a later one", (
     team: id === "p1" ? "Arsenal" : "Chelsea",
     entry_team,
   });
-  const r = compute(
-    [T("t1"), T("t2")],
-    [
-      e("t1", "p1", 7, "Real Madrid"),
-      e("t1", "p2", 8, null),
-      e("t2", "p1", 7, "Arsenal"),
-      e("t2", "p2", 8, "Chelsea"),
-    ],
-    [],
-    [
-      { tournament_id: "t1", place: 1, player_id: "p1" },
-      { tournament_id: "t1", place: 2, player_id: "p2" },
-      { tournament_id: "t2", place: 1, player_id: "p1" },
-    ],
-    [],
-  );
+  const run = (mode: "current" | "entry") =>
+    compute(
+      [T("t1"), T("t2")],
+      [
+        e("t1", "p1", 7, "Real Madrid"),
+        e("t1", "p2", 8, null),
+        e("t2", "p1", 7, "Arsenal"),
+        e("t2", "p2", 8, "Chelsea"),
+      ],
+      [],
+      [
+        { tournament_id: "t1", place: 1, player_id: "p1" },
+        { tournament_id: "t1", place: 2, player_id: "p2" },
+        { tournament_id: "t2", place: 1, player_id: "p1" },
+      ],
+      [],
+      mode,
+    );
+  const r = run("entry");
   const hall = (id: string) => r.hall.find((h) => h.id === id)!;
   assert.equal(hall("t1").places[0]!.team, "Real Madrid");
-  assert.equal(hall("t1").places[1]!.team, null); // not recorded: no team shown
+  // Not recorded: says so, and never borrows the current team (Chelsea).
+  assert.equal(hall("t1").places[1]!.team, "Not recorded");
   assert.equal(hall("t2").places[0]!.team, "Arsenal");
   // All-time boards use the player's current team.
   assert.equal(r.players.find((p) => p.id === "p1")!.team, "Arsenal");
+  // Rollout default ("current"): every podium shows the current team, as before 007.
+  const current = run("current");
+  const hallNow = (id: string) => current.hall.find((h) => h.id === id)!;
+  assert.equal(hallNow("t1").places[0]!.team, "Arsenal");
+  assert.equal(hallNow("t1").places[1]!.team, "Chelsea");
 });

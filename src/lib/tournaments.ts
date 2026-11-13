@@ -3,6 +3,7 @@ import { db } from "./db";
 import { standings, type Result } from "./tournament";
 import { playerCode } from "./codes";
 import { tournamentLabel } from "./labels";
+import { tournamentTeam } from "./team-display";
 
 /**
  * Public view of OM tournaments. Explicit columns only — never phone numbers,
@@ -101,10 +102,20 @@ export const getTournament = cache(async (id: string) => {
     if (!tournament) return null;
     const players = (
       await sql<
-        { id: string; no: number; name: string; team: string | null }[]
-      >`select p.id,p.public_no as no,p.gaming_name as name,a.team_name as team from player p join application a on a.player_id=p.id
+        {
+          id: string;
+          no: number;
+          name: string;
+          current_team: string | null;
+          entry_team: string | null;
+        }[]
+      >`select p.id,p.public_no as no,p.gaming_name as name,p.team_name as current_team,a.team_name as entry_team from player p join application a on a.player_id=p.id
         where a.tournament_id=${id} and a.status='approved' and a.deleted_at is null and p.deleted_at is null order by p.gaming_name`
-    ).map(({ no, ...p }) => ({ ...p, code: playerCode(no) }));
+    ).map(({ no, current_team, entry_team, ...p }) => ({
+      ...p,
+      team: tournamentTeam(current_team, entry_team),
+      code: playerCode(no),
+    }));
     const fixtures = await sql<
       PublicFixture[]
     >`select id,round,slot,home,away,home_score,away_score from fixture where tournament_id=${id} and stage='league' and away is not null order by round,slot,id`;
@@ -168,10 +179,11 @@ export const getChampions = cache(async () => {
         place: number;
         no: number;
         player: string;
-        team: string | null;
+        current_team: string | null;
+        entry_team: string | null;
       })[]
     >`select t.id,t.name,t.competition,t.season,extract(epoch from ph.updated_at)::int as photo,
-        po.place,p.public_no as no,p.gaming_name as player,a.team_name as team
+        po.place,p.public_no as no,p.gaming_name as player,p.team_name as current_team,a.team_name as entry_team
       from tournament t join podium po on po.tournament_id=t.id join player p on p.id=po.player_id
       left join application a on a.tournament_id=t.id and a.player_id=p.id and a.deleted_at is null
       left join tournament_photo ph on ph.tournament_id=t.id
@@ -208,7 +220,7 @@ export const getChampions = cache(async () => {
         place: r.place,
         code: playerCode(r.no),
         name: r.player,
-        team: r.team,
+        team: tournamentTeam(r.current_team, r.entry_team),
       });
       out.set(r.id, entry);
     }

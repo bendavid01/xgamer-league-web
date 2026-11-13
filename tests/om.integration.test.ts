@@ -645,16 +645,27 @@ test(
         items: mine.map(({ id, revision }) => ({ id, revision })),
       });
     }
-    for (const [i, t] of ids.entries())
-      assert.equal(
-        (await getTournament(t))!.players.find((p) => p.code === done[0].code)!
-          .team,
-        teams[i],
-      );
-    const profile = (await getProfile(done[0].code))!;
+    const shown = async (t: string) =>
+      (await getTournament(t))!.players.find((p) => p.code === done[0].code)!
+        .team;
+    // Rollout default (TEAM_DISPLAY=current): the public site shows the current
+    // team everywhere, exactly as before 007.
+    for (const t of ids) assert.equal(await shown(t), "Arsenal");
+    let profile = (await getProfile(done[0].code))!;
     assert.equal(profile.player.team, "Arsenal"); // current team
-    for (const [i, t] of ids.entries())
-      assert.equal(profile.career.find((c) => c.id === t)!.team, teams[i]);
+    assert.ok(profile.career.every((c) => c.team === null));
+    // TEAM_DISPLAY=entry: each tournament shows its own stored team.
+    process.env.TEAM_DISPLAY = "entry";
+    try {
+      for (const [i, t] of ids.entries())
+        assert.equal(await shown(t), teams[i]);
+      profile = (await getProfile(done[0].code))!;
+      assert.equal(profile.player.team, "Arsenal");
+      for (const [i, t] of ids.entries())
+        assert.equal(profile.career.find((c) => c.id === t)!.team, teams[i]);
+    } finally {
+      delete process.env.TEAM_DISPLAY;
+    }
     const stored =
       await sql`select team_name_source from application where player_id=${done[0].playerId}`;
     assert.ok(

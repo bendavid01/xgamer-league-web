@@ -2,6 +2,7 @@ import { cache } from "react";
 import { db } from "./db";
 import { playerCode } from "./codes";
 import { tournamentLabel } from "./labels";
+import { teamDisplay, tournamentTeam, type TeamDisplay } from "./team-display";
 
 /**
  * All-time numbers for the Champions page, computed from real OM data only:
@@ -176,6 +177,7 @@ export function compute(
   }[],
   podium: { tournament_id: string; place: number; player_id: string }[],
   qualified: { tournament_id: string; player_id: string }[],
+  mode: TeamDisplay = teamDisplay(),
 ) {
   const order = new Map(tournaments.map((t, i) => [t.id, i]));
   const teamAt = new Map(
@@ -342,12 +344,17 @@ export function compute(
           (p) => p.tournament_id === t.id && p.place === n,
         )?.player_id;
         const p = id ? people.get(id) : null;
-        // The team they used in THAT tournament — never their current one.
+        // "entry" mode: the team they used in THAT tournament, never their
+        // current one ("Not recorded" when unknown). "current" mode: as before 007.
         return p
           ? {
               code: p.code,
               name: p.name,
-              team: teamAt.get(`${t.id}:${id}`) ?? null,
+              team: tournamentTeam(
+                p.team,
+                teamAt.get(`${t.id}:${id}`) ?? null,
+                mode,
+              ),
             }
           : null;
       }),

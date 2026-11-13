@@ -3,6 +3,7 @@ import { db } from "./db";
 import { standings } from "./tournament";
 import { codeNumber, playerCode } from "./codes";
 import { formatChoice, tournamentLabel, type FormatChoice } from "./labels";
+import { careerTeam } from "./team-display";
 
 /**
  * A player's whole X-Gamer career, by permanent ID (XG-0007).
@@ -126,7 +127,7 @@ export const getProfile = cache(async (code: string) => {
     return {
       id: t.id,
       label: labels.get(t.id)!,
-      team: t.team,
+      team: careerTeam(t.team),
       format,
       status: t.status,
       finished,

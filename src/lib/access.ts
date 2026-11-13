@@ -7,7 +7,9 @@ export type Operation =
   | "delete"
   | "roles"
   | "audit"
-  | "finals";
+  | "finals"
+  /** Editing player identity fields and tournament teams: main admins only. */
+  | "players";
 export type Actor = {
   id: string;
   name?: string;
@@ -37,8 +39,13 @@ export function allowed(
       actor.tournaments.includes(tournament)) &&
       (operation === "workspace"
         ? actor.operations.length > 0
-        : !["delete", "roles", "audit", "finals", "tournaments"].includes(
-            operation,
-          ) && actor.operations.includes(operation)))
+        : ![
+            "delete",
+            "roles",
+            "audit",
+            "finals",
+            "tournaments",
+            "players",
+          ].includes(operation) && actor.operations.includes(operation)))
   );
 }

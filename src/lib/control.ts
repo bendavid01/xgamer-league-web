@@ -89,6 +89,8 @@ const command = z.discriminatedUnion("action", [
     tournament: tid,
     playerId: uuid,
     efootballId: efootballIdInput,
+    /** Whether the organizer saw an existing ID (compare-and-set). Optional for old clients. */
+    hadId: z.boolean().optional(),
   }),
   z.object({
     action: z.literal("generate"),
@@ -227,7 +229,7 @@ export async function snapshot(tournament: string) {
   if (t.starts_on instanceof Date)
     t.starts_on = t.starts_on.toISOString().slice(0, 10);
   const applications =
-    await sql`select a.id,a.status,a.revision,a.created_at,p.id as player_id,p.public_no,p.gaming_name,a.team_name,p.contact_cipher,p.efootball_cipher
+    await sql`select a.id,a.status,a.revision,a.created_at,p.id as player_id,p.public_no,p.gaming_name,a.team_name,a.team_name_source,p.team_name as current_team,p.contact_cipher,p.efootball_cipher
       from application a join player p on p.id=a.player_id
       where a.tournament_id=${tournament} and a.deleted_at is null order by a.created_at`;
   const fixtures =
@@ -259,6 +261,8 @@ export async function snapshot(tournament: string) {
       code: playerCode(a.public_no),
       gaming_name: a.gaming_name,
       team_name: a.team_name,
+      team_name_source: a.team_name_source,
+      current_team: a.current_team,
       status: a.status,
       revision: a.revision,
       ...(privateAccess
@@ -593,6 +597,11 @@ export async function run(user: Who, c: Command) {
         throw new HttpError(
           404,
           "Approve the player before adding an eFootball ID.",
+        );
+      if (c.hadId !== undefined && !!p.efootball_cipher !== c.hadId)
+        throw new HttpError(
+          409,
+          "Changed by someone else. Reload and try again.",
         );
       const hash = fingerprint("ef:" + c.efootballId);
       const [taken] =
