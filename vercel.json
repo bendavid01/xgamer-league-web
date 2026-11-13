@@ -6,7 +6,8 @@
       "feature/team-names-007": false,
       "ci/postgres-integration-tests": false,
       "ci/team-names-007-integration": false,
-      "ci/postgres-18": false
+      "ci/postgres-18": false,
+      "feature/om-edit-player-details": false
     }
   }
 }
