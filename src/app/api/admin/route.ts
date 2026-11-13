@@ -7,6 +7,11 @@ import {
   playerDetails,
   teamReview,
 } from "@/lib/player-details";
+import {
+  contactChanges,
+  executeContact,
+  isContactCommand,
+} from "@/lib/contact-change";
 
 /**
  * GET /api/admin → OM home; GET /api/admin?t=<id> → that tournament's workspace;
@@ -17,6 +22,8 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     if (params.get("health") === "1") return response(await dataHealth());
     if (params.get("teams") === "1") return response(await teamReview());
+    if (params.get("contactChanges") === "1")
+      return response(await contactChanges());
     const t = params.get("t");
     const player = params.get("player");
     if (t && player) return response(await playerDetails(t, player));
@@ -27,7 +34,11 @@ export async function POST(request: Request) {
   return endpoint(async () => {
     const raw = await body(request);
     return response(
-      isEditCommand(raw) ? await executeEdit(raw) : await execute(raw),
+      isContactCommand(raw)
+        ? await executeContact(raw)
+        : isEditCommand(raw)
+          ? await executeEdit(raw)
+          : await execute(raw),
     );
   });
 }

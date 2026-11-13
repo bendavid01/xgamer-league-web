@@ -66,7 +66,8 @@ type Application = {
   current_team: string | null;
   status: string;
   revision: number;
-  phone?: string;
+  /** Masked on the server ("+91 ••••••••10"); full numbers only through disclosure. */
+  contact?: string;
   efootballId?: string | null;
 };
 type Match = {
@@ -158,6 +159,11 @@ const ACTION_LABEL: Record<string, string> = {
   "player.edit_efootball": "Changed eFootball ID",
   "application.team_attest": "Attested tournament team",
   "application.team_correct": "Corrected tournament team",
+  "contact.disclose": "Viewed WhatsApp number",
+  "contact.change_start": "Started WhatsApp number change",
+  "contact.change_code": "Checked WhatsApp code",
+  "contact.change_approve": "Approved WhatsApp number change",
+  "contact.change_cancel": "Cancelled WhatsApp number change",
 };
 /** OM only. The public site never shows where a team name came from. */
 const SOURCE_TAG: Record<TeamSource, string> = {
@@ -191,7 +197,6 @@ const competitionsOf = (rows: TournamentRow[]): Competitions => {
 };
 const nextSeason = (c?: { seasons: number[] }) =>
   c?.seasons.length ? Math.max(...c.seasons) + 1 : 1;
-const waLink = (phone: string) => `https://wa.me/${phone.replace(/\D/g, "")}`;
 
 /* ─────────────────────────── Root ─────────────────────────── */
 
@@ -500,6 +505,7 @@ function HomeView({
         <>
           <DataHealth />
           <TeamReview />
+          <ContactApprovals />
         </>
       )}
     </>
@@ -1168,15 +1174,15 @@ function PlayersTab({
                   )}
                 </td>
                 <td>
-                  {a.phone && (
-                    <a
-                      className="text-cyan-300 underline-offset-4 hover:underline whitespace-nowrap"
-                      href={waLink(a.phone)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {a.phone}
-                    </a>
+                  {a.contact && (
+                    <span className="whitespace-nowrap">
+                      <span className="font-mono">{a.contact}</span>{" "}
+                      <ContactButton
+                        tournament={data.tournament.id}
+                        playerId={a.player_id}
+                        purpose="registration_check"
+                      />
+                    </span>
                   )}
                 </td>
                 <td>
@@ -2388,7 +2394,11 @@ function Choice(props: {
 
 /* ─────────────────────────── Edit player details ─────────────────────────── */
 
-type EditResult = { ok: boolean; error?: string };
+type EditResult = {
+  ok: boolean;
+  error?: string;
+  data?: Record<string, unknown>;
+};
 
 /**
  * Sends one edit. A form keeps the same request ID until it succeeds, so a retry
@@ -2414,7 +2424,7 @@ function useEditSender() {
         return { ok: false, error: result.error ?? "Something went wrong." };
       }
       delete ids.current[form];
-      return { ok: true };
+      return { ok: true, data: result };
     } catch {
       return {
         ok: false,
@@ -2424,8 +2434,32 @@ function useEditSender() {
   };
 }
 
+type ContactInfo = {
+  masked: string;
+  version: number;
+  attestedAt: string | null;
+  method: string | null;
+  route1Available: boolean;
+  hasEfootballId: boolean;
+  editingOn: boolean;
+  canEdit: boolean;
+  openChange: {
+    id: string;
+    route: string;
+    evidenceType: string | null;
+    status: string;
+    requestedByMe: boolean;
+    requestedByName: string | null;
+    codeExpiresAt: string | null;
+    expiresAt: string;
+    approveBy: string | null;
+    attemptsLeft: number;
+    resendsLeft: number;
+  } | null;
+};
 type PlayerDetailsData = {
   role: "admin" | "coordinator";
+  contact: ContactInfo | null;
   canEdit: {
     name: boolean;
     team: boolean;
@@ -2623,14 +2657,18 @@ function PlayerDetails({
               }
             />
           )}
-          {d.role === "admin" && (
-            <div>
-              <p className="font-semibold">WhatsApp number</p>
-              <p className="text-sm text-slate-400">
-                Editing WhatsApp numbers is switched off until it&apos;s
-                separately approved.
-              </p>
-            </div>
+          {d.contact && (
+            <WhatsAppSection
+              tournament={tournament}
+              playerId={playerId}
+              contact={d.contact}
+              admin={d.role === "admin"}
+              removed={d.player.removed}
+              reload={async () => {
+                await load();
+                await changed();
+              }}
+            />
           )}
           {d.canEdit.tournamentTeams && (
             <div>
@@ -3052,6 +3090,708 @@ function TeamReview() {
           Website display: TEAM_DISPLAY={data.display}.
         </p>
       )}
+    </section>
+  );
+}
+
+/* ─────────────────────────── WhatsApp numbers ─────────────────────────── */
+
+const METHOD_LABEL: Record<string, string> = {
+  organizer_attested_established_channel:
+    "organizer-attested through the established channel",
+  organizer_attested_independent_evidence:
+    "organizer-attested with independent evidence and a second admin",
+};
+const EVIDENCE_LABEL: Record<string, string> = {
+  efootball_possession: "eFootball account possession (server challenge)",
+  known_person_live_video: "Live video with an admin who knows the player",
+  known_person_in_person: "In person with an admin who knows the player",
+};
+
+/** Asks the server for one number (audited, rate-limited). Nothing is kept afterwards. */
+async function disclose(
+  tournament: string,
+  playerId: string,
+  purpose: string,
+): Promise<{ phone: string; waUrl: string } | { error: string }> {
+  try {
+    const r = await fetch("/api/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "contact.disclose",
+        tournament,
+        playerId,
+        purpose,
+        requestId: crypto.randomUUID(),
+      }),
+    });
+    const v = await r.json().catch(() => ({}));
+    if (!r.ok) return { error: v.error ?? "Could not open the number." };
+    return { phone: v.phone, waUrl: v.waUrl };
+  } catch {
+    return { error: "No connection." };
+  }
+}
+
+/** "Contact on WhatsApp": opens the chat; the number is never placed in the page. */
+function ContactButton({
+  tournament,
+  playerId,
+  purpose,
+}: {
+  tournament: string;
+  playerId: string;
+  purpose: string;
+}) {
+  const [error, setError] = useState("");
+  return (
+    <>
+      <button
+        type="button"
+        className="om-link"
+        onClick={async () => {
+          setError("");
+          // Opened first, so the browser doesn't block it after the request.
+          const tab = window.open("about:blank", "_blank");
+          const r = await disclose(tournament, playerId, purpose);
+          if ("error" in r) {
+            tab?.close();
+            setError(r.error);
+            return;
+          }
+          if (tab) {
+            tab.opener = null;
+            tab.location.href = r.waUrl;
+          }
+        }}
+      >
+        Contact on WhatsApp
+      </button>
+      {error && (
+        <span role="alert" className="block text-xs text-amber-200">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+function WhatsAppSection({
+  tournament,
+  playerId,
+  contact,
+  admin,
+  removed,
+  reload,
+}: {
+  tournament: string;
+  playerId: string;
+  contact: ContactInfo;
+  admin: boolean;
+  removed: boolean;
+  reload: () => Promise<void>;
+}) {
+  const [shown, setShown] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [started, setStarted] = useState<{
+    code: string;
+    challenge: string | null;
+    sendUrl: string;
+    newNumber?: string;
+  } | null>(null);
+  const [route, setRoute] = useState(
+    contact.route1Available ? "established_channel" : "independent_evidence",
+  );
+  const [evidence, setEvidence] = useState(
+    contact.hasEfootballId ? "efootball_possession" : "known_person_live_video",
+  );
+  const send = useEditSender();
+  const open = contact.openChange;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+
+  const post = async (
+    form: string,
+    value: Record<string, unknown>,
+    done: string,
+  ) => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const r = await send(form, { tournament, ...value });
+    if (r.ok) setNotice(done);
+    else setError(r.error!);
+    await reload();
+    setBusy(false);
+    return r;
+  };
+
+  return (
+    <div className="space-y-3" aria-busy={busy}>
+      <p className="font-semibold">WhatsApp number</p>
+      <p>
+        <span className="font-mono">{shown ?? contact.masked}</span>{" "}
+        <ContactButton
+          tournament={tournament}
+          playerId={playerId}
+          purpose="tournament_coordination"
+        />
+        {admin && !shown && (
+          <button
+            type="button"
+            className="om-link ml-3"
+            onClick={async () => {
+              const r = await disclose(tournament, playerId, "admin_review");
+              if ("error" in r) return setError(r.error);
+              setShown(r.phone);
+              timer.current = setTimeout(() => setShown(null), 30_000);
+            }}
+          >
+            Show for 30 s
+          </button>
+        )}
+      </p>
+      <p className="text-xs text-slate-400">
+        {contact.attestedAt
+          ? `Organizer-attested on ${new Date(contact.attestedAt).toLocaleString("en-IN")} (${METHOD_LABEL[contact.method ?? ""] ?? contact.method}). This is a manual organizer record, not automated proof of ownership.`
+          : "Legacy number: never organizer-attested. A change needs independent evidence and a second admin."}{" "}
+        Every view of a full number is recorded in the activity log.
+      </p>
+      {error && (
+        <p role="alert" className="notice text-amber-200">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="notice text-cyan-200">
+          {notice}
+        </p>
+      )}
+      {admin && !contact.editingOn && (
+        <p className="text-sm text-slate-400">
+          Changing WhatsApp numbers is switched off until it&apos;s separately
+          approved.
+        </p>
+      )}
+      {started && (
+        <div className="om-card space-y-2">
+          <p>
+            Code for the new number:{" "}
+            <strong className="font-mono">{started.code}</strong>
+            {started.newNumber && <> ({started.newNumber})</>}. It&apos;s shown
+            only now.
+          </p>
+          <a
+            className="button-secondary om-small w-fit"
+            href={started.sendUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open WhatsApp chat with the code
+          </a>
+          {started.challenge && (
+            <p>
+              eFootball challenge:{" "}
+              <strong className="font-mono">{started.challenge}</strong>. Ask
+              the player to put it in the profile of their registered eFootball
+              account (or a friend-request message from it), then check it
+              yourself in the game.
+            </p>
+          )}
+          <button
+            type="button"
+            className="om-link"
+            onClick={() => setStarted(null)}
+          >
+            Hide
+          </button>
+        </div>
+      )}
+      {open && (
+        <div className="om-card space-y-3">
+          <p>
+            <strong>Open change</strong> ·{" "}
+            {open.route === "established_channel"
+              ? "established channel"
+              : `independent evidence: ${EVIDENCE_LABEL[open.evidenceType ?? ""] ?? open.evidenceType}`}{" "}
+            · started by {open.requestedByName ?? "an admin"} ·{" "}
+            {open.status === "pending_code"
+              ? `waiting for the code (${open.attemptsLeft} attempts, ${open.resendsLeft} resends left)`
+              : `waiting for a second admin until ${new Date(open.approveBy!).toLocaleString("en-IN")} (Data health → WhatsApp number changes)`}
+          </p>
+          {contact.canEdit &&
+            open.status === "pending_code" &&
+            open.requestedByMe && (
+              <form
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget);
+                  const efootball =
+                    open.evidenceType === "efootball_possession";
+                  void post(
+                    `code-${open.id}`,
+                    {
+                      action: "contact.change_code",
+                      changeId: open.id,
+                      code: String(f.get("code") ?? ""),
+                      attest: f.get("attest") === "on",
+                      ...(efootball
+                        ? {
+                            efootballId: String(f.get("efootballId") ?? ""),
+                            challenge: String(f.get("challenge") ?? ""),
+                          }
+                        : {}),
+                    },
+                    open.route === "established_channel"
+                      ? "WhatsApp number changed."
+                      : "Code accepted. A second main admin must now approve.",
+                  ).then((r) => r.ok && setStarted(null));
+                }}
+              >
+                <input
+                  name="code"
+                  required
+                  inputMode="numeric"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  placeholder="6-digit code"
+                  className="control-input !mt-0 font-mono w-40"
+                  aria-label="Code returned by the player"
+                />
+                {open.evidenceType === "efootball_possession" && (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <input
+                      name="efootballId"
+                      required
+                      placeholder="eFootball ID you checked"
+                      className="control-input !mt-0 font-mono uppercase"
+                      aria-label="eFootball ID you checked"
+                    />
+                    <input
+                      name="challenge"
+                      required
+                      maxLength={6}
+                      placeholder="Challenge you saw on it"
+                      className="control-input !mt-0 font-mono uppercase"
+                      aria-label="Challenge you saw on the eFootball account"
+                    />
+                  </div>
+                )}
+                <label className="flex gap-2 text-sm">
+                  <input type="checkbox" name="attest" required />
+                  {open.route === "established_channel"
+                    ? "I attest the code came back from the player's current, organizer-attested WhatsApp number."
+                    : "I attest the player sent this code back from the new number."}
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button className="button-primary om-small">
+                    Check code
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary om-small"
+                    onClick={async () => {
+                      const r = await post(
+                        `resend-${open.id}`,
+                        { action: "contact.change_resend", changeId: open.id },
+                        "New code ready. The old code no longer works.",
+                      );
+                      if (r.ok && r.data)
+                        setStarted({
+                          code: String(r.data.code),
+                          challenge: null,
+                          sendUrl: String(r.data.sendUrl),
+                        });
+                    }}
+                  >
+                    Send a new code
+                  </button>
+                </div>
+              </form>
+            )}
+          {contact.canEdit && (
+            <CancelChange
+              onCancel={(reason) =>
+                post(
+                  `cancel-${open.id}`,
+                  {
+                    action: "contact.change_cancel",
+                    changeId: open.id,
+                    reason,
+                  },
+                  "Number change cancelled.",
+                )
+              }
+            />
+          )}
+        </div>
+      )}
+      {contact.canEdit && !open && !removed && (
+        <details className="om-card">
+          <summary className="cursor-pointer">Change WhatsApp number</summary>
+          <form
+            className="space-y-3 mt-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              const independent = route === "independent_evidence";
+              const seen = String(f.get("observedAt") ?? "");
+              void post(
+                "start",
+                {
+                  action: "contact.change_start",
+                  playerId,
+                  expectedContactVersion: contact.version,
+                  newPhone: String(f.get("newPhone") ?? ""),
+                  route,
+                  ...(independent
+                    ? {
+                        evidenceType: evidence,
+                        evidenceNote: String(f.get("evidenceNote") ?? ""),
+                        ...(evidence !== "efootball_possession" && seen
+                          ? { evidenceObservedAt: new Date(seen).toISOString() }
+                          : {}),
+                      }
+                    : {}),
+                  reason: String(f.get("reason") ?? ""),
+                  confirm: f.get("confirm") === "on",
+                },
+                "Change started. Send the code to the new number.",
+              ).then((r) => {
+                if (r.ok && r.data)
+                  setStarted({
+                    code: String(r.data.code),
+                    challenge: (r.data.challenge as string | null) ?? null,
+                    sendUrl: String(r.data.sendUrl),
+                    newNumber: String(r.data.newNumber),
+                  });
+              });
+            }}
+          >
+            <fieldset className="space-y-1">
+              <legend className="text-sm font-semibold">
+                How is the player identified?
+              </legend>
+              <label className="flex gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="route"
+                  checked={route === "established_channel"}
+                  disabled={!contact.route1Available}
+                  onChange={() => setRoute("established_channel")}
+                />
+                Established channel (one admin): the code comes back from the
+                current, organizer-attested number
+                {!contact.route1Available && " (not available: legacy number)"}
+              </label>
+              <label className="flex gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="route"
+                  checked={route === "independent_evidence"}
+                  onChange={() => setRoute("independent_evidence")}
+                />
+                Independent evidence (needs a second main admin)
+              </label>
+            </fieldset>
+            <input
+              name="newPhone"
+              required
+              maxLength={32}
+              placeholder="New WhatsApp number (+44 7911 123456, or 10 digits for India)"
+              className="control-input !mt-0"
+              aria-label="New WhatsApp number"
+            />
+            {route === "independent_evidence" && (
+              <div className="space-y-2">
+                <select
+                  className="control-input !mt-0"
+                  value={evidence}
+                  onChange={(e) => setEvidence(e.target.value)}
+                  aria-label="Evidence type"
+                >
+                  {Object.entries(EVIDENCE_LABEL).map(([key, text]) => (
+                    <option
+                      key={key}
+                      value={key}
+                      disabled={
+                        key === "efootball_possession" &&
+                        !contact.hasEfootballId
+                      }
+                    >
+                      {text}
+                      {key === "efootball_possession" && !contact.hasEfootballId
+                        ? " (no eFootball ID on record)"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+                {evidence !== "efootball_possession" && (
+                  <input
+                    type="datetime-local"
+                    name="observedAt"
+                    required
+                    className="control-input !mt-0"
+                    aria-label="When you saw the player"
+                  />
+                )}
+                <textarea
+                  name="evidenceNote"
+                  required
+                  minLength={20}
+                  maxLength={500}
+                  placeholder="What you checked, when and who did it. No phone numbers."
+                  className="control-input !mt-0"
+                  aria-label="Evidence note"
+                />
+              </div>
+            )}
+            <input
+              name="reason"
+              required
+              minLength={5}
+              maxLength={300}
+              placeholder="Reason (required, no phone numbers)"
+              className="control-input !mt-0"
+              aria-label="Reason"
+            />
+            <label className="flex gap-2 text-sm">
+              <input type="checkbox" name="confirm" required />
+              {route === "established_channel"
+                ? "I'll send a code to the new number and ask the player to return it from their current attested number."
+                : "I identified the player as described, and I'll send a code to the new number for them to return from it."}
+            </label>
+            <button className="button-primary">Start change</button>
+          </form>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function CancelChange({
+  onCancel,
+}: {
+  onCancel: (reason: string) => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!open)
+    return (
+      <button type="button" className="om-link" onClick={() => setOpen(true)}>
+        Cancel this change
+      </button>
+    );
+  return (
+    <form
+      className="flex flex-wrap gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void onCancel(
+          String(new FormData(e.currentTarget).get("reason") ?? ""),
+        ).then(() => setOpen(false));
+      }}
+    >
+      <input
+        name="reason"
+        required
+        minLength={5}
+        maxLength={300}
+        placeholder="Why cancel?"
+        className="control-input !mt-0"
+        aria-label="Reason for cancelling"
+      />
+      <button className="button-secondary om-small">Cancel change</button>
+    </form>
+  );
+}
+
+type ContactChangeRow = {
+  id: string;
+  tournament: string;
+  code: string;
+  gaming_name: string;
+  route: string;
+  evidenceType: string | null;
+  evidenceNote: string | null;
+  evidenceObservedAt: string | null;
+  challengeConfirmedAt: string | null;
+  status: string;
+  requestedByName: string | null;
+  requestedByMe: boolean;
+  reason: string | null;
+  approveBy: string | null;
+  expiresAt: string;
+  newNumber: string;
+};
+
+/** Data health → WhatsApp number changes: the second admin's review (main admins). */
+function ContactApprovals() {
+  const [data, setData] = useState<{
+    editingOn: boolean;
+    changes: ContactChangeRow[];
+  } | null>(null);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const send = useEditSender();
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch("/api/admin?contactChanges=1", {
+        cache: "no-store",
+      });
+      const v = await r.json();
+      if (!r.ok) throw new Error(v.error);
+      setData(v);
+    } catch (e) {
+      setError((e as Error).message || "Could not load number changes.");
+    }
+  }, []);
+  useEffect(() => {
+    const go = async () => {
+      await load();
+    };
+    void go();
+  }, [load]);
+  const post = async (
+    form: string,
+    value: Record<string, unknown>,
+    done: string,
+  ) => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    const r = await send(form, value);
+    if (r.ok) setNotice(done);
+    else setError(r.error!);
+    await load();
+    setBusy(false);
+  };
+  return (
+    <section
+      className="panel p-4 md:p-7 space-y-5 mt-6"
+      aria-labelledby="wa-title"
+    >
+      <div>
+        <h2 id="wa-title" className="text-2xl font-bold">
+          WhatsApp number changes
+        </h2>
+        <p className="text-slate-400 mt-1 text-sm">
+          Open changes. Independent-evidence changes need a second, different
+          main admin. Approving records your own organizer attestation that you
+          reviewed the evidence; it isn&apos;t automated proof.
+          {data &&
+            !data.editingOn &&
+            " Number editing is currently switched off."}
+        </p>
+      </div>
+      {error && (
+        <p role="alert" className="notice text-amber-200">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="notice text-cyan-200">
+          {notice}
+        </p>
+      )}
+      {data && !data.changes.length && (
+        <p className="text-slate-300">No open number changes.</p>
+      )}
+      <fieldset disabled={busy || !data?.editingOn} className="space-y-3">
+        {data?.changes.map((c) => (
+          <article key={c.id} className="om-card space-y-2">
+            <p>
+              <strong>{c.gaming_name}</strong>{" "}
+              <span className="text-slate-400">
+                · {c.code} · new number {c.newNumber} · started by{" "}
+                {c.requestedByName ?? "an admin"}
+              </span>
+            </p>
+            <p className="text-sm">
+              {c.route === "established_channel"
+                ? "Established channel"
+                : `Evidence: ${EVIDENCE_LABEL[c.evidenceType ?? ""] ?? c.evidenceType}${c.evidenceObservedAt ? `, observed ${new Date(c.evidenceObservedAt).toLocaleString("en-IN")}` : ""}${c.challengeConfirmedAt ? " (challenge confirmed)" : ""}`}
+            </p>
+            {c.evidenceNote && (
+              <p className="text-sm text-slate-300">Note: {c.evidenceNote}</p>
+            )}
+            {c.reason && (
+              <p className="text-sm text-slate-400">Reason: {c.reason}</p>
+            )}
+            <p className="text-sm text-slate-400">
+              {c.status === "pending_code"
+                ? "Waiting for the code from the new number."
+                : `Waiting for a second admin until ${new Date(c.approveBy!).toLocaleString("en-IN")}.`}
+            </p>
+            {c.status === "awaiting_second_admin" && !c.requestedByMe && (
+              <form
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const f = new FormData(e.currentTarget);
+                  void post(
+                    `approve-${c.id}`,
+                    {
+                      action: "contact.change_approve",
+                      tournament: c.tournament,
+                      changeId: c.id,
+                      reviewed: f.get("reviewed") === "on",
+                      reason: String(f.get("reason") ?? ""),
+                    },
+                    `Number changed for ${c.gaming_name}.`,
+                  );
+                }}
+              >
+                <label className="flex gap-2 text-sm">
+                  <input type="checkbox" name="reviewed" required />I reviewed
+                  this evidence myself and I&apos;m satisfied it identifies the
+                  player.
+                </label>
+                <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+                  <input
+                    name="reason"
+                    required
+                    minLength={5}
+                    maxLength={300}
+                    placeholder="Your reason (no phone numbers)"
+                    className="control-input !mt-0"
+                    aria-label="Reason for approving"
+                  />
+                  <button className="button-primary">Approve</button>
+                </div>
+              </form>
+            )}
+            {c.status === "awaiting_second_admin" && c.requestedByMe && (
+              <p className="text-sm text-amber-200">
+                You started this change, so another main admin must approve it.
+              </p>
+            )}
+            <CancelChange
+              onCancel={(reason) =>
+                post(
+                  `cancel-${c.id}`,
+                  {
+                    action: "contact.change_cancel",
+                    tournament: c.tournament,
+                    changeId: c.id,
+                    reason,
+                  },
+                  "Number change cancelled.",
+                )
+              }
+            />
+          </article>
+        ))}
+      </fieldset>
     </section>
   );
 }

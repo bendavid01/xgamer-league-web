@@ -30,6 +30,7 @@ export const KNOWN_MIGRATIONS = [
   "005_announcement_dates",
   "007_application_team_name",
   "008_team_name_provenance",
+  "009_contact_change",
 ];
 
 const n = (v: unknown) => Number(v ?? 0);
@@ -189,6 +190,34 @@ export async function healthReport(): Promise<Section[]> {
       },
     ],
   });
+
+  /* ── WhatsApp numbers (009): counts only, never numbers ── */
+  const [contacts] = await sql`select
+      (select count(*)::int from player where deleted_at is null and contact_verified_at is not null) attested,
+      (select count(*)::int from player where deleted_at is null and contact_verified_at is null) legacy,
+      (select count(*)::int from contact_change where status='pending_code' and expires_at > now()) pending,
+      (select count(*)::int from contact_change where status='awaiting_second_admin' and approve_by > now()) awaiting,
+      (select count(*)::int from contact_change where (status='pending_code' and expires_at <= now())
+         or (status='awaiting_second_admin' and approve_by <= now())) overdue,
+      (select count(*)::int from contact_change where status='completed') completed`.catch(
+    () => [null],
+  );
+  if (contacts)
+    sections.push({
+      title: "WhatsApp numbers",
+      checks: [
+        {
+          title: "Organizer attestation",
+          level: "info",
+          detail: `${contacts.attested} numbers organizer-attested in OM; ${contacts.legacy} legacy numbers never attested. Attestation is a manual organizer record, not automated proof of ownership, and never authorization for login.`,
+        },
+        {
+          title: "Open number changes",
+          level: contacts.overdue ? "warn" : "info",
+          detail: `${contacts.pending} waiting for the code, ${contacts.awaiting} waiting for a second admin, ${contacts.overdue} past their deadline (closed on next action), ${contacts.completed} completed in total.`,
+        },
+      ],
+    });
 
   /* ── 3. Fixtures and official results ── */
   const [fx] = await sql`select count(*)::int total,

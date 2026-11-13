@@ -2,6 +2,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHmac,
+  hkdfSync,
   randomBytes,
 } from "node:crypto";
 function key() {
@@ -30,4 +31,9 @@ export function decrypt(value: string) {
     cipher.update(data.subarray(28)),
     cipher.final(),
   ]).toString("utf8");
+}
+
+/** A separate key for one purpose, derived from PRIVATE_DATA_KEY (HKDF-SHA256). */
+export function subkey(label: string) {
+  return Buffer.from(hkdfSync("sha256", key(), Buffer.alloc(0), label, 32));
 }

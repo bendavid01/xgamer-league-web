@@ -13,6 +13,7 @@ import { allowed, adminIds, type Actor } from "./access";
 import { efootballIdInput } from "./registration";
 import { playerCode } from "./codes";
 import { FORMAT_LABEL, storedFormat, tournamentLabel } from "./labels";
+import { maskPhone } from "./phone";
 
 /* ─────────────────────────── Commands ─────────────────────────── */
 
@@ -219,8 +220,9 @@ export async function home() {
   return { user: publicUser(user), tournaments, deleted, audit, coordinators };
 }
 
-export async function snapshot(tournament: string) {
-  const user = await actor("workspace", tournament),
+/** `resolve` is the signed-in organizer check (injectable for integration tests). */
+export async function snapshot(tournament: string, resolve = actor) {
+  const user = await resolve("workspace", tournament),
     sql = db();
   const [t] =
     await sql`select * from tournament where id=${tournament} and deleted_at is null`;
@@ -267,7 +269,8 @@ export async function snapshot(tournament: string) {
       revision: a.revision,
       ...(privateAccess
         ? {
-            phone: decrypt(a.contact_cipher),
+            // Masked here, on the server. Full numbers only through contact.disclose.
+            contact: maskPhone(decrypt(a.contact_cipher)),
             efootballId: a.efootball_cipher
               ? decrypt(a.efootball_cipher)
               : null,

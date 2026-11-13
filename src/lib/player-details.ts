@@ -7,6 +7,7 @@ import { efootballIdInput, registrationInput } from "./registration";
 import { playerCode } from "./codes";
 import { tournamentLabel } from "./labels";
 import { teamDisplay } from "./team-display";
+import { contactSummary } from "./contact-change";
 
 /**
  * OM "Edit player details" (approved design, 13 Nov 2026).
@@ -410,14 +411,17 @@ export async function playerDetails(
         from audit_event where entity=${playerId} or entity = any(${entries.map((e) => e.id as string)})
         order by id desc limit 50`
     : [];
+  const contact =
+    admin || registrations ? await contactSummary(playerId, user) : null;
   return {
     role: user.role,
+    contact,
     canEdit: {
       name: admin && !p.deleted_at,
       team: admin && !p.deleted_at,
       tournamentTeams: admin,
       efootball: (admin || registrations) && !p.deleted_at,
-      whatsapp: false,
+      whatsapp: !!contact?.canEdit && !p.deleted_at,
     },
     player: {
       id: p.id as string,

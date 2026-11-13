@@ -974,7 +974,7 @@ test(
 /* ─────────────────────────── Audit ─────────────────────────── */
 
 test(
-  "AU1–AU3: one complete audit row per edit; eFootball IDs redacted; older audit rows untouched and immutable",
+  "AU1, AU2 and AU3: one complete audit row per edit; eFootball IDs redacted; older audit rows untouched and immutable",
   { skip },
   async () => {
     const rows =
@@ -1051,7 +1051,7 @@ test(
 );
 
 test(
-  'D2–D4: TEAM_DISPLAY=entry shows each tournament\'s own team, "Not recorded" when unknown (never the current team); no public source badge',
+  'D2, D3 and D4: TEAM_DISPLAY=entry shows each tournament\'s own team, "Not recorded" when unknown (never the current team); no public source badge',
   { skip },
   async () => {
     process.env.TEAM_DISPLAY = "entry";
