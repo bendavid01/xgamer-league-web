@@ -11,6 +11,7 @@ const MIGRATIONS = [
   "005_announcement_dates.sql",
   "007_application_team_name.sql",
   "008_team_name_provenance.sql",
+  "009_contact_change.sql",
 ];
 async function migrated() {
   const pg = new PGlite();

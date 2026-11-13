@@ -81,9 +81,10 @@ test("G2: 008 only re-creates the provenance check, with exactly the 4 labels, a
 
 test("G3: a fresh database applies 001–008; the 4 labels are accepted, anything else rejected", async () => {
   const files = (await readdir(dir)).filter((f) => /^\d{3}_.*\.sql$/.test(f));
-  assert.deepEqual(files.sort().slice(-2), [
+  assert.deepEqual(files.sort().slice(-3), [
     "007_application_team_name.sql",
     "008_team_name_provenance.sql",
+    "009_contact_change.sql",
   ]);
   const pg = new PGlite();
   try {

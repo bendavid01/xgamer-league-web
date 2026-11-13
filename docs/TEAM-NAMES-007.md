@@ -1,5 +1,10 @@
 # Tournament-specific team names (migration 007)
 
+> **Corrections (13 Nov 2026):**
+> - **Recovery is 1 of 10, not 10 of 10.** The registration code live on 29 Oct before 18:21 UTC didn't record the team, so 007 recovers only XG-0010 (`registration_record`). The other entries are reviewed in OM: attested by a main admin, or set with evidence (`008_team_name_provenance`, design: OM Edit player details).
+> - **Release packet:** 007, 008 and 009 run together in one transaction (see `docs/MIGRATIONS.md`).
+> - **Public display:** stays on each player's current team (`TEAM_DISPLAY=current`) until Data health shows no unrecorded entries.
+
 Status: prepared on branch `feature/team-names-007`, brought up to date with `main` (`0a29071`) on 10 Nov 2026. Nothing is deployed and nothing has been applied to any shared database. The production migration needs separate approval.
 
 ## Requirement
@@ -29,7 +34,7 @@ No changes to player IDs, fixtures, results, standings, final positions or the a
 - **No invented names.** An entry without such a record stays empty and shows without a team. A player's current team is never copied onto an older tournament.
 - **Nothing overwritten.** Only empty team fields are filled. Players, IDs, names, current teams and audit records are untouched, and running 007 again changes nothing.
 - **Going forward.** From this release on, registration stores the team on the entry directly (`registration`).
-- **Expected on production.** Every current entry is recovered. Data health → "Team names per tournament" shows the counts by source.
+- **Expected on production.** One entry (XG-0010) is recovered; the rest are reviewed in OM (see the correction above). Data health → "Team names per tournament" shows the counts by source.
 
 ## Where it shows
 
