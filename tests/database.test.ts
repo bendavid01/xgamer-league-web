@@ -10,6 +10,7 @@ const MIGRATIONS = [
   "004_seasons_podium.sql",
   "005_announcement_dates.sql",
   "007_application_team_name.sql",
+  "008_team_name_provenance.sql",
 ];
 async function migrated() {
   const pg = new PGlite();
@@ -298,8 +299,7 @@ test("007: each tournament keeps its own team name; only recorded names are reco
       await readFile(new URL(`../migrations/${file}`, import.meta.url), "utf8"),
     );
   try {
-    for (const file of MIGRATIONS.filter((f) => !f.startsWith("007")))
-      await apply(file);
+    for (const file of MIGRATIONS.filter((f) => f < "007")) await apply(file);
     await pg.exec(
       `insert into tournament(id,name) values('cup-one','Cup One'),('cup-two','Cup Two'),('cup-three','Cup Three')`,
     );

@@ -4,6 +4,7 @@ import { getRecords, RANKING_POINTS } from "./records";
 import { getLeague } from "./league";
 import { playerCode } from "./codes";
 import { RECOGNIZED_OUTSIDE } from "./known-migrations";
+import { teamDisplay } from "./team-display";
 
 /**
  * Data health (XG-009) — a READ-ONLY integrity report for main admins.
@@ -28,6 +29,7 @@ export const KNOWN_MIGRATIONS = [
   "004_seasons_podium",
   "005_announcement_dates",
   "007_application_team_name",
+  "008_team_name_provenance",
 ];
 
 const n = (v: unknown) => Number(v ?? 0);
@@ -120,6 +122,15 @@ export async function healthReport(): Promise<Section[]> {
     () => [],
   );
   const unrecordedTeams = n(teamRows.find((r) => r.source === "unknown")?.c);
+  const display = teamDisplay();
+  // Every source on its own line, zeros included, so nothing is merged or hidden.
+  const SOURCES: [string, string][] = [
+    ["registration", "Stored at registration"],
+    ["registration_record", "Recovered from registration records"],
+    ["organizer_attested", "Attested by an organizer"],
+    ["organizer_corrected", "Corrected by an organizer"],
+    ["unknown", "Not recorded"],
+  ];
   sections.push({
     title: "Tournaments and participants",
     checks: [
@@ -154,18 +165,27 @@ export async function healthReport(): Promise<Section[]> {
         title: "Team names per tournament",
         level: unrecordedTeams ? "warn" : "ok",
         detail: unrecordedTeams
-          ? `${unrecordedTeams} entries have no recorded team name for their tournament. They show without a team; nothing is guessed.`
+          ? `${unrecordedTeams} entries have no recorded team name for their tournament. Review them below; nothing is guessed.`
           : "Every entry has the team name recorded for its tournament.",
-        items: teamRows.map(
-          (r) =>
-            `${
-              {
-                registration: "Stored at registration",
-                registration_record: "Recovered from registration records",
-                unknown: "Not recorded",
-              }[r.source] ?? r.source
-            }: ${r.c}`,
-        ),
+        items: [
+          ...SOURCES.map(
+            ([key, text]) =>
+              `${text}: ${n(teamRows.find((r) => r.source === key)?.c)}`,
+          ),
+          ...teamRows
+            .filter((r) => !SOURCES.some(([key]) => key === r.source))
+            .map((r) => `Unexpected label "${r.source}": ${r.c}`),
+        ],
+      },
+      {
+        title: "Public team display",
+        level: display === "entry" && unrecordedTeams ? "error" : "info",
+        detail:
+          display === "entry"
+            ? unrecordedTeams
+              ? `TEAM_DISPLAY=entry while ${unrecordedTeams} entries are unrecorded: those show "Not recorded" on the website.`
+              : "TEAM_DISPLAY=entry: each tournament shows the team stored for that entry."
+            : "TEAM_DISPLAY=current: the website shows each player's current team (as before 007). Switch to entry only once nothing is unrecorded.",
       },
     ],
   });
