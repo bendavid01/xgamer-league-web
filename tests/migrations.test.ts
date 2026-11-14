@@ -70,10 +70,10 @@ test("ledger check finds pending, edited and outside migrations", async () => {
     unknown: [],
   });
   // Production today: 001–005 plus 006_mcp_oauth from the MCP preview build.
-  // 006 is recognized; the check passes and never touches it.
+  // A known name with a different checksum fails the check.
   assert.deepEqual(
     compareLedger(files, [...ledger, { name: "006_mcp_oauth", hash: "h" }]),
-    { pending: [], changed: [], recognized: ["006_mcp_oauth"], unknown: [] },
+    { pending: [], changed: ["006_mcp_oauth"], recognized: [], unknown: [] },
   );
   // Anything else applied outside the code is reported as unknown (still untouched).
   assert.deepEqual(
@@ -130,4 +130,21 @@ test("G6: the release branch against production's ledger (001–006, then 007 + 
     recognized: ["006_mcp_oauth"],
     unknown: [],
   });
+  const drifted = after.map((m) =>
+    m.name === "006_mcp_oauth" ? { ...m, hash: "a".repeat(64) } : m,
+  );
+  // Even a local copy cannot override the independently pinned checksum.
+  assert.deepEqual(
+    compareLedger(
+      [
+        ...files,
+        {
+          ...drifted.find((m) => m.name === "006_mcp_oauth")!,
+          source: "select 1",
+        },
+      ],
+      drifted,
+    ),
+    { pending: [], changed: ["006_mcp_oauth"], recognized: [], unknown: [] },
+  );
 });

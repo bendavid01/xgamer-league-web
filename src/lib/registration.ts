@@ -2,6 +2,7 @@ import { z } from "zod";
 import { db } from "./db";
 import { encrypt, fingerprint } from "./private-data";
 import { HttpError } from "./api";
+import { auditRegistrationTeam, auditText } from "./audit-text";
 
 /**
  * Indian mobile numbers only. The form sends 10 digits; pasted "+91…" or "0…" forms are
@@ -47,6 +48,8 @@ export async function register(
   input: z.infer<typeof registrationInput>,
   ip: string,
 ) {
+  const phone = normalizePhone(input.phone);
+  if (!phone) throw new HttpError(400, "Check the mobile number and try again.");
   const sql = db();
   const [rate] =
     await sql`insert into rate_limit(key,hits,expires_at) values(${fingerprint("ip:" + ip)},1,now()+interval '1 hour')
@@ -59,31 +62,26 @@ export async function register(
       await tx`select * from tournament where id=${input.tournament} and deleted_at is null for update`;
     if (!t || t.status !== "open" || !t.published)
       throw new HttpError(409, "Registration for this tournament is closed.");
-    const phoneHash = fingerprint("whatsapp:" + input.phone);
-    let [player] =
-      await tx`select id,public_no from player where contact_hash=${phoneHash} and deleted_at is null for update`;
-    if (player) {
-      const [existing] =
-        await tx`select id from application where tournament_id=${t.id} and player_id=${player.id} and deleted_at is null`;
-      if (existing)
-        throw new HttpError(
-          409,
-          "This phone number is already registered for this tournament.",
-        );
-      // Returning player keeps their permanent player ID; refresh the public name and team.
-      await tx`update player set gaming_name=${input.playerName},team_name=${input.teamName} where id=${player.id}`;
-    } else {
-      [player] =
-        await tx`insert into player(gaming_name,team_name,contact_hash,contact_cipher,preference,consent_version)
-        values(${input.playerName},${input.teamName},${phoneHash},${encrypt(input.phone)},'whatsapp','2026-10-v3') returning id,public_no`;
-    }
+    const phoneHash = fingerprint("whatsapp:" + phone);
+    // A number on file is not proof of the person's identity. Retired records
+    // reserve their numbers too. Until verified linking exists, send both to review.
+    const needsReview = () =>
+      new HttpError(409, "Registration needs organizer review. Contact an organizer to continue.");
+    const [existing] =
+      await tx`select 1 from player where contact_hash=${phoneHash}`;
+    if (existing) throw needsReview();
+    const [player] =
+      await tx`insert into player(gaming_name,team_name,contact_hash,contact_cipher,preference,consent_version)
+        values(${input.playerName},${input.teamName},${phoneHash},${encrypt(phone)},'whatsapp','2026-10-v3')
+        on conflict (contact_hash) do nothing returning id,public_no`;
+    if (!player) throw needsReview();
     const [application] =
       // The team for THIS tournament; later registrations never change it.
       await tx`insert into application(tournament_id,player_id,status,team_name,team_name_source)
         values(${t.id},${player.id},'pending',${input.teamName},'registration') returning id,status`;
     const code = `XG-${String(player.public_no).padStart(4, "0")}`;
     await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,after_value)
-      values(${"player:" + player.id},${input.playerName},'player','application.create',${application.id},${t.id},'Registered',${code},${tx.json({ playerId: player.id, team: input.teamName, status: application.status })})`;
+      values(${"player:" + player.id},${auditText(input.playerName)},'player','application.create',${application.id},${t.id},'Registered',${code},${tx.json({ playerId: player.id, team: auditRegistrationTeam(input.teamName), status: application.status })})`;
     return {
       playerId: player.id as string,
       code,

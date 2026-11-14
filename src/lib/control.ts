@@ -2,7 +2,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import { z } from "zod";
 import { db } from "./db";
 import { actor, allowedOrigin, HttpError } from "./api";
-import { decrypt, encrypt, fingerprint } from "./private-data";
+import { decrypt } from "./private-data";
 import {
   buildLeague,
   qualifyTopN,
@@ -10,10 +10,11 @@ import {
   type Entrant,
 } from "./tournament";
 import { allowed, adminIds, type Actor } from "./access";
-import { efootballIdInput } from "./registration";
 import { playerCode } from "./codes";
 import { FORMAT_LABEL, storedFormat, tournamentLabel } from "./labels";
 import { maskPhone } from "./phone";
+import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
+import { tournamentParticipants } from "./tournament-participants";
 
 /* ─────────────────────────── Commands ─────────────────────────── */
 
@@ -26,7 +27,7 @@ const text = (max: number) =>
     .max(max)
     .transform((v) => v || null)
     .nullable();
-const tname = z.string().trim().min(2).max(80);
+const tname = auditNote(2, 80);
 const formatInput = z.enum(["league", "knockout", "league_knockout"]);
 /** null = one-off cup; a number = that season of the competition named `name`. */
 const seasonInput = z.number().int().min(1).max(999).nullable();
@@ -86,14 +87,6 @@ const command = z.discriminatedUnion("action", [
     revision: z.number().int(),
   }),
   z.object({
-    action: z.literal("efootball"),
-    tournament: tid,
-    playerId: uuid,
-    efootballId: efootballIdInput,
-    /** Whether the organizer saw an existing ID (compare-and-set). Optional for old clients. */
-    hadId: z.boolean().optional(),
-  }),
-  z.object({
     action: z.literal("generate"),
     tournament: tid,
     shuffle: z.boolean(),
@@ -111,7 +104,7 @@ const command = z.discriminatedUnion("action", [
     action: z.literal("qualify"),
     tournament: tid,
     playoffWinners: z.array(uuid).max(32).optional(),
-    evidence: z.string().trim().min(10).max(2000).optional(),
+    evidence: auditNote(10, 2000).optional(),
   }),
   z.object({ action: z.literal("start"), tournament: tid }),
   z.object({
@@ -170,7 +163,6 @@ const OPERATION: Record<Command["action"], Parameters<typeof actor>[0]> = {
   delete_tournament: "delete",
   restore_tournament: "delete",
   review: "registrations",
-  efootball: "registrations",
   remove: "delete",
   score: "results",
   announce: "announcements",
@@ -233,16 +225,13 @@ export async function snapshot(tournament: string, resolve = actor) {
   const applications =
     await sql`select a.id,a.status,a.revision,a.created_at,p.id as player_id,p.public_no,p.gaming_name,a.team_name,a.team_name_source,p.team_name as current_team,p.contact_cipher,p.efootball_cipher
       from application a join player p on p.id=a.player_id
-      where a.tournament_id=${tournament} and a.deleted_at is null order by a.created_at`;
+      where a.tournament_id=${tournament} and a.deleted_at is null and p.deleted_at is null order by a.created_at`;
   const fixtures =
     await sql`select id,stage,round,slot,home,away,home_score,away_score,revision from fixture where tournament_id=${tournament} and stage='league' order by round,slot`;
   const qualified =
     await sql`select player_id from qualification where tournament_id=${tournament} order by rank`;
-  const entrants = applications
-    .filter((a) => a.status === "approved")
-    .map((p) => ({ id: p.player_id as string, name: p.gaming_name as string }));
   const results = fixtures
-    .filter((f) => f.home_score !== null)
+    .filter((f) => f.away && f.home_score !== null)
     .map((f) => ({
       home: f.home,
       away: f.away,
@@ -252,6 +241,9 @@ export async function snapshot(tournament: string, resolve = actor) {
   const privateAccess = allowed(user, "registrations", tournament);
   const podium =
     await sql`select place,player_id from podium where tournament_id=${tournament} order by place`;
+  const participants = (await tournamentParticipants(sql, [tournament])).map(
+    ({ id, name }) => ({ id, name }),
+  );
   const [photo] =
     await sql`select extract(epoch from updated_at)::bigint as v from tournament_photo where tournament_id=${tournament}`;
   return {
@@ -278,7 +270,7 @@ export async function snapshot(tournament: string, resolve = actor) {
         : {}),
     })),
     fixtures,
-    standings: standings(entrants, results),
+    standings: standings(participants, results),
     qualified: qualified.map((q) => q.player_id as string),
     podium: [1, 2, 3].map(
       (place) =>
@@ -306,7 +298,12 @@ function recentAudit() {
 export async function execute(raw: unknown) {
   const parsed = command.safeParse(raw);
   if (!parsed.success)
-    throw new HttpError(400, "Check the details and try again.");
+    throw new HttpError(
+      400,
+      parsed.error.issues.some((issue) => issue.message === AUDIT_TEXT_ERROR)
+        ? AUDIT_TEXT_ERROR
+        : "Check the details and try again.",
+    );
   const c = parsed.data;
   const scope = "tournament" in c ? c.tournament : "*";
   const user = await actor(OPERATION[c.action], scope);
@@ -386,7 +383,7 @@ export async function run(user: Who, c: Command) {
         {},
         {
           id,
-          name: c.name,
+          name: auditText(c.name),
           season: c.season,
           format: c.format,
           published: c.published,
@@ -512,7 +509,7 @@ export async function run(user: Who, c: Command) {
           "Format settings are locked once fixtures exist. Reset fixtures to change them.",
         );
       before = {
-        name: tournamentLabel(T as never),
+        name: auditText(tournamentLabel(T as never)),
         published: T.published,
         format: T.format,
         knockout: T.knockout,
@@ -524,11 +521,9 @@ export async function run(user: Who, c: Command) {
         await tx`update tournament set name=${c.name},competition=${competition},season=${c.season},published=${c.published},format=${format},knockout=${knockout},qualifiers=${c.qualifiers},legs=${c.legs},opponents=${c.perPlayer},
           starts_on=${c.startsOn},registration_closes=${c.registrationCloses},entry_fee=${c.entryFee},prize=${c.prize},description=${c.description},revision=revision+1
           where id=${tournamentId} returning name,published,format,knockout,qualifiers,legs,opponents as "perPlayer"`;
-      after.name = tournamentLabel({
-        name: c.name,
-        competition,
-        season: c.season,
-      });
+      after.name = auditText(
+        tournamentLabel({ name: c.name, competition, season: c.season }),
+      );
       summary =
         T.published !== c.published
           ? c.published
@@ -592,35 +587,6 @@ export async function run(user: Who, c: Command) {
       before = { status: a.status };
       after = { status: "removed" };
       summary = "Removed player from tournament";
-    } else if (c.action === "efootball") {
-      const [p] =
-        await tx`select p.id,p.efootball_cipher from player p join application a on a.player_id=p.id
-          where p.id=${c.playerId} and a.tournament_id=${tournamentId} and a.status='approved' and a.deleted_at is null for update of p`;
-      if (!p)
-        throw new HttpError(
-          404,
-          "Approve the player before adding an eFootball ID.",
-        );
-      if (c.hadId !== undefined && !!p.efootball_cipher !== c.hadId)
-        throw new HttpError(
-          409,
-          "Changed by someone else. Reload and try again.",
-        );
-      const hash = fingerprint("ef:" + c.efootballId);
-      const [taken] =
-        await tx`select id from player where efootball_hash=${hash} and id<>${c.playerId}`;
-      if (taken)
-        throw new HttpError(
-          409,
-          "That eFootball ID belongs to another player.",
-        );
-      await tx`update player set efootball_hash=${hash},efootball_cipher=${encrypt(c.efootballId)} where id=${c.playerId}`;
-      affected = await names([c.playerId]);
-      before = { hadId: !!p.efootball_cipher };
-      after = { efootballId: "[REDACTED]" };
-      summary = p.efootball_cipher
-        ? "Changed eFootball ID"
-        : "Added eFootball ID";
     } else if (c.action === "generate") {
       if (T.format !== "league")
         throw new HttpError(
@@ -718,7 +684,10 @@ export async function run(user: Who, c: Command) {
       await tx`update tournament set status='knockout',revision=revision+1 where id=${tournamentId}`;
       affected = top.map((p) => p.name).join(", ");
       summary = `Confirmed Top ${T.qualifiers} for the knockout (eFootball app)`;
-      after = { qualified: top.map((p) => p.id), evidence: c.evidence ?? null };
+      after = {
+        qualified: top.map((p) => p.id),
+        evidence: auditText(c.evidence ?? null),
+      };
     } else if (c.action === "start") {
       if (T.format !== "knockout" || T.status !== "locked")
         throw new HttpError(
@@ -832,7 +801,8 @@ async function log(
   after: unknown,
 ) {
   await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,before_value,after_value)
-    values(${user.id},${user.name ?? null},${user.role},${action},${entity},${tournament},${summary},${affected},${tx.json(before)},${tx.json(after)})`;
+    values(${user.id},${auditText(user.name ?? null)},${user.role},${action},${entity},${tournament},
+      ${auditText(summary)},${action === "coordinator" ? affected : auditText(affected)},${tx.json(before)},${tx.json(after)})`;
 }
 
 /* ─────────────────────────── Champion photo ─────────────────────────── */

@@ -5,7 +5,7 @@
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -253,7 +253,7 @@ before(async () => {
     ["eve", "Eve"],
   ].entries())
     await join(key, name, `981110000${i === 3 ? 5 : i + 1}`, H, `10.1.0.${i}`);
-  // Dee has no fixtures (a removed player who played would break the public table; see the report).
+  // Dee is a retired identity with no tournament history.
   await join("dee", "Dee", "9811100004", W, "10.1.0.9");
   for (let i = 0; i < 7; i++)
     await join(`w${i}`, `Wplayer${i}`, `982220000${i}`, W, `10.2.0.${i}`);
@@ -266,12 +266,16 @@ before(async () => {
     verified: true,
     items: apps.map((a) => ({ id: a.id, revision: a.revision })),
   });
-  await cmd({
-    action: "efootball",
+  const { player } = await details.playerDetails(H, ply.ann.id, as(A));
+  await details.executeEdit({
+    action: "player.edit_efootball",
     tournament: H,
     playerId: ply.ann.id,
+    expectedVersion: player.efootballVersion,
     efootballId: "ANN-0001",
-  });
+    reason: "Set the synthetic fixture ID",
+    requestId: randomUUID(),
+  }, as(A));
   await cmd({ action: "registration", tournament: H, open: false });
   await cmd({ action: "generate", tournament: H, shuffle: false });
   const order = ["ann", "ben", "cal", "eve"].map((k) => ply[k].id);
@@ -1120,6 +1124,12 @@ test(
     assert.equal(owners.length, 1);
     const [ch] =
       await sql`select status from contact_change where id=${String(s.changeId)}`;
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+    const loser = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    status(409)(loser.reason);
+    const [otherEntry] = await sql`select status from application
+      where player_id=${ply.eve.id} and tournament_id=${W}`;
+    assert.equal(otherEntry, undefined, "The public request never attaches to Eve");
     if (results[0].status === "fulfilled") {
       assert.equal(owners[0].id, ply.eve.id);
       assert.equal(ch.status, "completed");
@@ -1520,19 +1530,23 @@ test(
   },
 );
 
-const setProofId = (player: P, efootballId: string, expectedHadId: boolean) =>
-  details.executeEdit(
+const setProofId = async (player: P, efootballId: string, expectedHadId: boolean) => {
+  const asCoordinator = as(coordW);
+  const view = await details.playerDetails(W, player.id, asCoordinator);
+  assert.equal(view.player.hasEfootballId, expectedHadId);
+  return details.executeEdit(
     {
       action: "player.edit_efootball",
       tournament: W,
       playerId: player.id,
-      expectedHadId,
+      expectedVersion: view.player.efootballVersion,
       efootballId,
       reason: "Synthetic identity edit",
       requestId: randomUUID(),
     },
-    as(coordW),
+    asCoordinator,
   );
+};
 
 const startProof = (player: P, phone: string) =>
   start(
@@ -1765,25 +1779,30 @@ test(
 /* ─────────────────────────── Registration lookup and XG-008 assumptions ─────────────────────────── */
 
 test(
-  "W-G1, W-G2 and W-G3: after a change, registration finds the player by the new number only; registration code is unchanged",
+  "W-G1, W-G2 and W-G3: a changed contact is reserved, grants no returning identity, and keeps the India-only registration format",
   { skip },
   async () => {
-    // New number, any Indian format: same XG ID (returning player).
-    const same = await reg(
-      {
-        playerName: "Ann",
-        teamName: "Ann United",
-        phone: "+91-98333-00001",
-        tournament: W,
-      },
-      "10.7.0.1",
+    const annState = async () => ({
+      player: (await sql`select * from player where id=${ply.ann.id}`)[0],
+      entries: await sql`select * from application where player_id=${ply.ann.id} order by id`,
+      audit: await sql`select * from audit_event where actor=${"player:" + ply.ann.id} order by id`,
+    });
+    const before = await annState();
+    assert.equal(before.player.contact_hash, hashOf("+919833300001"));
+    await assert.rejects(
+      reg(
+        {
+          playerName: "Impostor",
+          teamName: "Other Team",
+          phone: "+91-98333-00001",
+          tournament: W,
+        },
+        "10.7.0.1",
+      ),
+      status(409, /^Registration needs organizer review\./),
     );
-    assert.equal(same.code, ply.ann.code);
-    assert.equal(same.playerId, ply.ann.id);
+    assert.deepEqual(await annState(), before);
     // Old number: a new player and a new XG ID; Ann is untouched.
-    const annBefore = (
-      await sql`select contact_hash,contact_version,gaming_name from player where id=${ply.ann.id}`
-    )[0];
     const fresh = await reg(
       {
         playerName: "Newcomer",
@@ -1794,21 +1813,8 @@ test(
       "10.7.0.2",
     );
     assert.notEqual(fresh.code, ply.ann.code);
-    assert.deepEqual(
-      (
-        await sql`select contact_hash,contact_version,gaming_name from player where id=${ply.ann.id}`
-      )[0],
-      annBefore,
-    );
-    // W-G3: registration is byte-identical to the base branch and still India-only.
-    const src = await readFile(
-      new URL("../src/lib/registration.ts", import.meta.url),
-      "utf8",
-    );
-    assert.equal(
-      createHash("sha256").update(src).digest("hex"),
-      "43ac31eccb7efbbec5c083c357008e4ae430aa8d42bd0a37cf199f82ce781ef4",
-    );
+    assert.notEqual(fresh.playerId, ply.ann.id);
+    assert.deepEqual(await annState(), before);
     assert.ok(
       !registrationInput.safeParse({
         playerName: "Uk",

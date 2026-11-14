@@ -90,7 +90,7 @@ export function tournamentRecords(players: Who[], fixtures: Fixture[]) {
       [g.away, as, hs],
     ] as const) {
       const l = lines.get(id);
-      if (!l) continue; // not an approved participant: never credited
+      if (!l) continue;
       l.played++;
       l.gf += mine;
       l.ga += theirs;

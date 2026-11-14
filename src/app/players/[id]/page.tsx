@@ -55,10 +55,12 @@ export default async function PlayerProfile({
   const focusMatches = focus
     ? history.filter((m) => m.tournament === focus.id)
     : [];
-  const since = new Date(player.since).toLocaleDateString("en-IN", {
-    month: "long",
-    year: "numeric",
-  });
+  const since = player.since
+    ? new Date(player.since).toLocaleDateString("en-IN", {
+        month: "long",
+        year: "numeric",
+      })
+    : null;
 
   return (
     <div className="page-shell py-12 profile">
@@ -67,12 +69,14 @@ export default async function PlayerProfile({
           {player.name.slice(0, 2).toUpperCase()}
         </span>
         <div className="min-w-0">
-          <p className="eyebrow">PLAYER PROFILE</p>
+          <p className="eyebrow">
+            {player.retired ? "TOURNAMENT HISTORY" : "PLAYER PROFILE"}
+          </p>
           <h1 className="page-title">{player.name}</h1>
           <p className="text-slate-400 mt-2">
             {player.team && <>{player.team} · </>}
-            <span className="font-mono text-cyan-300">{player.code}</span> ·
-            Member since {since}
+            <span className="font-mono text-cyan-300">{player.code}</span>
+            {since && <> · Member since {since}</>}
           </p>
         </div>
       </header>

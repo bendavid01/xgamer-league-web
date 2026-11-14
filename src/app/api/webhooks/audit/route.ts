@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@sanity/client";
 import { isValidSignature, SIGNATURE_HEADER_NAME } from "@sanity/webhook";
 import { createHash } from "node:crypto";
+import { auditText } from "@/lib/audit-text";
 
 const auditClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || "aqtsgm5o",
@@ -357,7 +358,7 @@ export async function POST(req: NextRequest) {
       _type: "auditLog",
       eventType: event.eventType,
       title: event.title,
-      description: event.description,
+      description: auditText(event.description),
       match: buildRef(event.matchId),
       team: buildRef(event.teamId),
       timestamp: new Date().toISOString(),

@@ -962,7 +962,11 @@ function TournamentWorkspace({
       : []),
   ];
   const names = useMemo(
-    () => new Map(data.applications.map((a) => [a.player_id, a.gaming_name])),
+    () =>
+      new Map([
+        ...data.applications.map((a) => [a.player_id, a.gaming_name] as const),
+        ...data.standings.map(({ id, name }) => [id, name] as const),
+      ]),
     [data],
   );
   return (
@@ -1191,45 +1195,7 @@ function PlayersTab({
                   <span className={`om-status om-${a.status}`}>{a.status}</span>
                 </td>
                 <td>
-                  {a.status !== "approved" ? (
-                    <span className="text-xs text-slate-500">
-                      After approval
-                    </span>
-                  ) : (
-                    <form
-                      className="flex gap-2"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const v = new FormData(e.currentTarget).get(
-                          "efootballId",
-                        );
-                        void act(
-                          {
-                            action: "efootball",
-                            playerId: a.player_id,
-                            efootballId: v,
-                            hadId: !!a.efootballId,
-                          },
-                          `eFootball ID saved for ${a.gaming_name}.`,
-                        );
-                      }}
-                    >
-                      <input
-                        name="efootballId"
-                        defaultValue={a.efootballId ?? ""}
-                        placeholder="Optional"
-                        required
-                        minLength={6}
-                        maxLength={32}
-                        pattern="[A-Za-z0-9-]{6,32}"
-                        className="control-input !mt-0 font-mono uppercase min-w-[9rem]"
-                        aria-label={`eFootball ID for ${a.gaming_name}`}
-                      />
-                      <button className="button-secondary om-small">
-                        Apply
-                      </button>
-                    </form>
-                  )}
+                  <span className="font-mono">{a.efootballId ?? "—"}</span>
                 </td>
                 {admin && (
                   <td>
@@ -2476,6 +2442,7 @@ type PlayerDetailsData = {
     team_name: string | null;
     hasEfootballId: boolean;
     efootballId?: string | null;
+    efootballVersion?: string;
     removed: boolean;
   };
   entries: {
@@ -2542,7 +2509,13 @@ function PlayerDetails({
     setError("");
     setNotice("");
     const r = await send(form, value);
-    if (r.ok) setNotice(done);
+    if (r.ok) {
+      setNotice(
+        r.data?.repeated === true
+          ? "This request was already recorded. Review the current value below."
+          : done,
+      );
+    }
     else setError(r.error!);
     // Reload either way: after a conflict the organizer sees the current values.
     await load();
@@ -2594,6 +2567,7 @@ function PlayerDetails({
             </p>
           )}
           <EditField
+            key={JSON.stringify(["name", d.player.gaming_name])}
             label="Gaming name"
             name="name"
             current={d.player.gaming_name}
@@ -2615,6 +2589,7 @@ function PlayerDetails({
             }
           />
           <EditField
+            key={JSON.stringify(["team", d.player.team_name])}
             label="Current team"
             name="team"
             current={d.player.team_name}
@@ -2635,8 +2610,9 @@ function PlayerDetails({
               )
             }
           />
-          {"efootballId" in d.player && (
+          {d.player.efootballVersion && (
             <EditField
+              key={d.player.efootballVersion}
               label="eFootball ID"
               name="efootball"
               current={d.player.efootballId ?? null}
@@ -2645,12 +2621,12 @@ function PlayerDetails({
               note="Must be unique. Stored encrypted; the log never shows it."
               onSave={(value, reason) =>
                 submit(
-                  "efootball",
+                  `efootball:${d.player.efootballVersion}`,
                   {
                     action: "player.edit_efootball",
                     tournament,
                     playerId,
-                    expectedHadId: d.player.hasEfootballId,
+                    expectedVersion: d.player.efootballVersion,
                     efootballId: value,
                     reason,
                   },
@@ -2703,6 +2679,10 @@ function PlayerDetails({
                         <td>
                           {!e.removed && !e.tournamentDeleted && (
                             <CorrectTeam
+                              key={JSON.stringify([
+                                e.team_name,
+                                e.team_name_source,
+                              ])}
                               entry={e}
                               onSave={(v) =>
                                 submit(

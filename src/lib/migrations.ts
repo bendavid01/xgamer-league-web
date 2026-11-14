@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import type { db } from "./db";
-import { RECOGNIZED_OUTSIDE } from "./known-migrations";
+import { OUTSIDE_MIGRATIONS, outsideMigrationStatus } from "./known-migrations";
 
 /**
  * Database migrations: migrations/NNN_name.sql, applied once each, in order,
@@ -14,15 +14,13 @@ export type LedgerEntry = { name: string; hash: string };
 export type MigrationStatus = {
   /** In this code version but not applied to the database. */
   pending: string[];
-  /** Applied, but the file has been edited since. */
+  /** Applied, but the stored checksum differs from its expected value. */
   changed: string[];
-  /** Applied outside this code version, but known and accepted (see RECOGNIZED_OUTSIDE). */
+  /** Applied outside this code version, with a matching pinned checksum. */
   recognized: string[];
   /** Applied outside this code version and not recognized. Reported, never touched. */
   unknown: string[];
 };
-
-export { RECOGNIZED_OUTSIDE } from "./known-migrations";
 
 const FILE = /^\d{3}_[a-z0-9_]+\.sql$/;
 
@@ -42,24 +40,35 @@ export async function migrationFiles(
   );
 }
 
-const outside = (files: Migration[], applied: Map<string, string>) =>
-  [...applied.keys()]
-    .filter((name) => !files.some((f) => f.name === name))
-    .sort();
-
 /** Pure comparison of the migration files with the database ledger. */
 export function compareLedger(
   files: Migration[],
   ledger: LedgerEntry[],
 ): MigrationStatus {
   const applied = new Map(ledger.map((m) => [m.name, m.hash]));
+  const local = files.filter((f) => !OUTSIDE_MIGRATIONS.has(f.name));
+  const outside = [...applied]
+    .filter(([name]) => !local.some((f) => f.name === name))
+    .map(([name, hash]) => ({
+      name,
+      state: outsideMigrationStatus(name, hash),
+    }));
   return {
-    pending: files.filter((f) => !applied.has(f.name)).map((f) => f.name),
-    changed: files
-      .filter((f) => applied.has(f.name) && applied.get(f.name) !== f.hash)
-      .map((f) => f.name),
-    recognized: outside(files, applied).filter((n) => n in RECOGNIZED_OUTSIDE),
-    unknown: outside(files, applied).filter((n) => !(n in RECOGNIZED_OUTSIDE)),
+    pending: local.filter((f) => !applied.has(f.name)).map((f) => f.name),
+    changed: [
+      ...local
+        .filter((f) => applied.has(f.name) && applied.get(f.name) !== f.hash)
+        .map((f) => f.name),
+      ...outside.filter((m) => m.state === "changed").map((m) => m.name),
+    ].sort(),
+    recognized: outside
+      .filter((m) => m.state === "recognized")
+      .map((m) => m.name)
+      .sort(),
+    unknown: outside
+      .filter((m) => m.state === "unknown")
+      .map((m) => m.name)
+      .sort(),
   };
 }
 
@@ -85,16 +94,16 @@ export async function applyMigrations(
   await sql.begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(2026102401)`;
     await tx`create table if not exists xgamer_migration(name text primary key, hash text not null, applied_at timestamptz not null default now())`;
+    const ledger = await tx<
+      LedgerEntry[]
+    >`select name, hash from xgamer_migration`;
+    const { changed, pending } = compareLedger(files, ledger);
+    if (changed.length)
+      throw new Error(
+        `Applied migration checksum differs: ${changed.join(", ")}. Verify the ledger before applying migrations.`,
+      );
     for (const f of files) {
-      const [previous] =
-        await tx`select hash from xgamer_migration where name=${f.name}`;
-      if (previous) {
-        if (previous.hash !== f.hash)
-          throw new Error(
-            `Applied migration ${f.name} checksum differs. Create a new migration.`,
-          );
-        continue;
-      }
+      if (!pending.includes(f.name)) continue;
       await tx.unsafe(f.source);
       await tx`insert into xgamer_migration(name,hash) values(${f.name},${f.hash})`;
       log(`Applied ${f.name}.`);

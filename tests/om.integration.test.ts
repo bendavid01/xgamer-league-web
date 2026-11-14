@@ -6,6 +6,7 @@
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { createHash, randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { testDatabaseUrl } from "./helpers/test-database";
 
@@ -52,6 +53,18 @@ after(async () => {
 
 const cmd = (c: Record<string, unknown>) =>
   run(admin, c as Parameters<Control["run"]>[1]);
+const asAdmin = async () => ({ ...admin, operations: [], tournaments: [] });
+const newOpenCup = async (name: string) => {
+  const { id } = (await cmd({
+    action: "create",
+    name,
+    format: "league",
+    season: null,
+    published: true,
+  })) as { id: string };
+  await cmd({ action: "registration", tournament: id, open: true });
+  return id;
+};
 const tour = async (id: string) =>
   (await sql`select * from tournament where id=${id}`)[0];
 const apps = (t: string) =>
@@ -138,12 +151,13 @@ test(
     for (let i = 0; i < 7; i++) await join(cup.id, i);
     await assert.rejects(
       () => join(cup.id, 3, "10.9.9.9"),
-      /already registered/,
+      /Registration needs organizer review/,
     );
-    // Same phone can join a different tournament and keeps the same player ID.
-    const again = await join(night.id, 3, "10.9.9.8");
-    assert.equal(again.code, "XG-0004");
-    for (let i = 10; i < 14; i++) await join(night.id, i);
+    await assert.rejects(
+      () => join(night.id, 3, "10.9.9.8"),
+      /Registration needs organizer review/,
+    );
+    for (let i = 10; i < 15; i++) await join(night.id, i);
 
     const all = await apps(cup.id);
     await assert.rejects(
@@ -207,12 +221,22 @@ test(
       qualifiers: 4,
     }); // rename is fine
     // eFootball IDs can be added after fixtures exist.
-    await cmd({
-      action: "efootball",
-      tournament: cup.id,
-      playerId: p0.player_id,
-      efootballId: "XG-1000",
-    });
+    const { executeEdit, playerDetails } =
+      await import("../src/lib/player-details");
+    const { player } = await playerDetails(cup.id, p0.player_id, asAdmin);
+    assert.equal(player.code, "XG-0001");
+    await executeEdit(
+      {
+        action: "player.edit_efootball",
+        tournament: cup.id,
+        playerId: p0.player_id,
+        expectedVersion: player.efootballVersion,
+        efootballId: "XG-1000",
+        reason: "Added the verified game ID",
+        requestId: randomUUID(),
+      },
+      asAdmin,
+    );
 
     // Public data: no private fields, the other tournament's players are separate.
     const pub = await getTournament(cup.id);
@@ -314,7 +338,7 @@ test(
     );
     assert(
       log.some(
-        (l) => l.summary === "Added eFootball ID" && l.affected === "P0",
+        (l) => l.summary === "Added eFootball ID" && l.affected === player.code,
       ),
     );
     assert(!JSON.stringify(log).includes("+91"));
@@ -613,30 +637,41 @@ test(
       ids.push(t.id);
     }
     const teams = ["Real Madrid", "Barcelona", "Arsenal"];
-    const done: Awaited<ReturnType<typeof register>>[] = [];
-    for (const [i, t] of ids.entries())
-      done.push(
-        await register(
-          {
-            playerName: "Seven",
-            teamName: teams[i],
-            phone: "9811100077",
-            consent: true,
-            website: "",
-            tournament: t,
-          },
-          `10.77.${i}.1`,
-        ),
-      );
-    assert.ok(
-      done.every(
-        (d) => d.code === done[0].code && d.playerId === done[0].playerId,
-      ),
+    const { playerId, code } = await register(
+      {
+        playerName: "Seven",
+        teamName: teams[0],
+        phone: "9811100077",
+        consent: true,
+        website: "",
+        tournament: ids[0],
+      },
+      "10.77.0.1",
+    );
+    // Model the entries and audit records made by the earlier registration system.
+    for (let i = 1; i < ids.length; i++) {
+      const [entry] = await sql`
+        insert into application(tournament_id,player_id,status,team_name,team_name_source)
+        values(${ids[i]},${playerId},'pending',${teams[i]},'registration') returning id`;
+      await sql`insert into audit_event(actor,action,entity,tournament_id,after_value)
+        values(${"player:" + playerId},'application.create',${entry.id},${ids[i]},
+          ${sql.json({ playerId, team: teams[i], status: "pending" })})`;
+    }
+    const { executeEdit } = await import("../src/lib/player-details");
+    await executeEdit(
+      {
+        action: "player.edit_team",
+        tournament: ids[0],
+        playerId,
+        expected: teams[0],
+        team: teams[2],
+        reason: "Club confirmed in the latest entry",
+        requestId: randomUUID(),
+      },
+      asAdmin,
     );
     for (const t of ids) {
-      const mine = (await apps(t)).filter(
-        (a) => a.player_id === done[0].playerId,
-      );
+      const mine = (await apps(t)).filter((a) => a.player_id === playerId);
       await cmd({
         action: "review",
         tournament: t,
@@ -646,12 +681,11 @@ test(
       });
     }
     const shown = async (t: string) =>
-      (await getTournament(t))!.players.find((p) => p.code === done[0].code)!
-        .team;
+      (await getTournament(t))!.players.find((p) => p.code === code)!.team;
     // Rollout default (TEAM_DISPLAY=current): the public site shows the current
     // team everywhere, exactly as before 007.
     for (const t of ids) assert.equal(await shown(t), "Arsenal");
-    let profile = (await getProfile(done[0].code))!;
+    let profile = (await getProfile(code))!;
     assert.equal(profile.player.team, "Arsenal"); // current team
     assert.ok(profile.career.every((c) => c.team === null));
     // TEAM_DISPLAY=entry: each tournament shows its own stored team.
@@ -659,7 +693,7 @@ test(
     try {
       for (const [i, t] of ids.entries())
         assert.equal(await shown(t), teams[i]);
-      profile = (await getProfile(done[0].code))!;
+      profile = (await getProfile(code))!;
       assert.equal(profile.player.team, "Arsenal");
       for (const [i, t] of ids.entries())
         assert.equal(profile.career.find((c) => c.id === t)!.team, teams[i]);
@@ -667,10 +701,301 @@ test(
       delete process.env.TEAM_DISPLAY;
     }
     const stored =
-      await sql`select team_name_source from application where player_id=${done[0].playerId}`;
+      await sql`select player_id,team_name_source from application where player_id=${playerId}`;
     assert.ok(
       stored.length === 3 &&
-        stored.every((r) => r.team_name_source === "registration"),
+        stored.every(
+          (r) =>
+            r.player_id === playerId && r.team_name_source === "registration",
+        ),
     );
+  },
+);
+
+test(
+  "public registration protects active and retired identities with the same generic response",
+  { skip },
+  async () => {
+    const { POST } = await import("../src/app/api/registrations/route");
+    const originalCup = await newOpenCup("Registration Security");
+    const otherCup = await newOpenCup("Registration Test Cup");
+    const current = await join(originalCup, 86);
+    const retired = await join(originalCup, 87);
+    await sql`update player set deleted_at=now() where id=${retired.playerId}`;
+    const readState = async () => ({
+      players: await sql`select * from player order by id`,
+      entries: await sql`select * from application order by id`,
+      audit: await sql`select * from audit_event order by id`,
+      seq: await sql`select last_value from player_public_no_seq`,
+    });
+    const previous = await readState();
+    const send = (phone: string, tournament = otherCup) =>
+      POST(
+        new Request("http://localhost:3000/api/registrations", {
+          method: "POST",
+          headers: {
+            origin: "http://localhost:3000",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            phone,
+            tournament,
+            consent: true,
+            website: "",
+            playerName: "Impostor",
+            teamName: "Other Team",
+          }),
+        }),
+      );
+    for (const [phone, tournament] of [
+      ["09800000086", otherCup],
+      ["+91 9800000086", originalCup],
+      ["980-000-0087", otherCup],
+    ]) {
+      const response = await send(phone, tournament);
+      assert.equal(response.status, 409);
+      assert.deepEqual(await response.json(), {
+        error:
+          "Registration needs organizer review. Contact an organizer to continue.",
+      });
+    }
+    assert.deepEqual(await readState(), previous);
+
+    process.env.REGISTRATION_ENABLED = "false";
+    try {
+      const closed = await send("9800000088");
+      assert.equal(closed.status, 503);
+      assert.deepEqual(await readState(), previous);
+    } finally {
+      process.env.REGISTRATION_ENABLED = "true";
+    }
+    assert.notEqual(current.code, retired.code);
+  },
+);
+
+test(
+  "simultaneous public registrations create one identity, entry, and audit row",
+  { skip },
+  async () => {
+    const cups = [
+      await newOpenCup("Concurrent Cup A"),
+      await newOpenCup("Concurrent Cup B"),
+    ];
+    const input = {
+      phone: "9800000088",
+      consent: true as const,
+      website: "",
+      playerName: "New Player １２３４５６",
+      teamName: "Team 98000_00088",
+    };
+    const results = await Promise.allSettled(
+      cups.map((tournament, i) =>
+        register({ ...input, tournament }, `10.88.0.${i + 1}`),
+      ),
+    );
+    const passed = results.filter((r) => r.status === "fulfilled");
+    assert.equal(passed.length, 1);
+    const failed = results.find(
+      (r) => r.status === "rejected",
+    ) as PromiseRejectedResult;
+    assert.equal(failed.reason.status, 409);
+    assert.match(failed.reason.message, /^Registration needs organizer review/);
+    const player = passed[0].value;
+    const players =
+      await sql`select id from player where gaming_name=${input.playerName}`;
+    const entries =
+      await sql`select * from application where tournament_id=any(${cups})`;
+    assert.deepEqual([...players], [{ id: player.playerId }]);
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].player_id, player.playerId);
+    assert.equal(entries[0].status, "pending");
+    assert.equal(entries[0].team_name, input.teamName);
+    const registered =
+      await sql`select actor_name, affected, after_value from audit_event
+    where tournament_id=any(${cups}) and action='application.create'`;
+    assert.deepEqual(
+      [...registered],
+      [
+        {
+          actor_name: "[REDACTED]",
+          affected: player.code,
+          after_value: {
+            status: "pending",
+            playerId: player.playerId,
+            team: null,
+          },
+        },
+      ],
+    );
+  },
+);
+
+test(
+  "tournament history stays intact when a player is retired or a recorded entry is withdrawn",
+  { skip },
+  async () => {
+    const { getChampionsTournament } = await import("../src/lib/champions");
+    const { snapshot } = await import("../src/lib/control");
+    const { getRecords } = await import("../src/lib/records");
+    const tournament = await newOpenCup("Historical Results Test");
+    const [retired, withdrawn, active, rejected, absent] = await Promise.all(
+      [90, 91, 92, 93, 94].map((i) => join(tournament, i)),
+    );
+    const ids = [
+      retired.playerId,
+      withdrawn.playerId,
+      active.playerId,
+      absent.playerId,
+    ];
+    await sql`update application set status='approved' where player_id=any(${ids})`;
+    await sql`update application set status='rejected' where player_id=${rejected.playerId}`;
+    await sql`update player set deleted_at=now() where id=${absent.playerId}`;
+    await sql`update tournament set status='completed' where id=${tournament}`;
+    await sql`insert into fixture(tournament_id,stage,round,slot,home,away,home_score,away_score)
+    values(${tournament},'league',1,1,${retired.playerId},${withdrawn.playerId},3,1),
+      (${tournament},'league',2,1,${withdrawn.playerId},${active.playerId},2,0),
+      (${tournament},'league',3,1,${active.playerId},${retired.playerId},null,null)`;
+    await sql`insert into qualification(tournament_id,player_id,rank)
+    values(${tournament},${retired.playerId},1)`;
+    await sql`insert into podium(tournament_id,player_id,place)
+    values(${tournament},${withdrawn.playerId},1)`;
+    const history = async () => ({
+      ids: await sql`select id, public_no from player order by id`,
+      entries:
+        await sql`select id, player_id, team_name, team_name_source from application
+      where tournament_id=${tournament} order by id`,
+      matches:
+        await sql`select * from fixture where tournament_id=${tournament} order by round`,
+      qualifications:
+        await sql`select * from qualification where tournament_id=${tournament}`,
+      podium: await sql`select * from podium where tournament_id=${tournament}`,
+      audit: await sql`select * from audit_event order by id`,
+    });
+    const publicHistory = async () => ({
+      tournament: await getTournament(tournament),
+      championsDetail: await getChampionsTournament(tournament),
+      championsShelf: (await getChampions()).find(
+        (item) => item.id === tournament,
+      ),
+      records: await getRecords(),
+    });
+    process.env.TEAM_DISPLAY = "entry";
+    try {
+      const originalRows = await history();
+      const before = await publicHistory();
+      assert.equal(before.tournament?.fixtures.length, 3);
+      assert.equal(before.championsDetail?.records.matches, 2);
+      assert.equal(
+        before.championsDetail?.records.lines[retired.playerId].gf,
+        3,
+      );
+      assert.equal(before.championsShelf?.places[0]?.team, "Team 91");
+      assert.equal(
+        before.records?.players.find((p) => p.id === retired.playerId)?.ranking,
+        4,
+      );
+      assert.equal(
+        before.records?.players.find((p) => p.id === withdrawn.playerId)
+          ?.ranking,
+        11,
+      );
+      const careerBefore = await getProfile(withdrawn.code);
+      const opponentsBefore = (await getProfile(active.code))?.history;
+
+      await sql`update player set deleted_at=now() where id=${retired.playerId}`;
+      await sql`update application set status='withdrawn',deleted_at=now()
+      where tournament_id=${tournament} and player_id=${withdrawn.playerId}`;
+      const after = await publicHistory();
+      assert.deepEqual(after, before);
+      assert.deepEqual(await history(), originalRows);
+      assert.deepEqual(await getProfile(withdrawn.code), careerBefore);
+      assert.deepEqual(
+        (await getProfile(active.code))?.history,
+        opponentsBefore,
+      );
+      const retiredCareer = await getProfile(retired.code);
+      assert.equal(retiredCareer?.player.code, retired.code);
+      assert.equal(retiredCareer?.player.team, null);
+      assert.equal(retiredCareer?.player.since, null);
+      assert.equal(retiredCareer?.history[0]?.opponent.code, withdrawn.code);
+      assert.equal(await getProfile(absent.code), null);
+      assert.ok(
+        !after.tournament?.players.some((p) =>
+          [absent.code, rejected.code].includes(p.code),
+        ),
+      );
+      const organizer = await snapshot(tournament, asAdmin);
+      assert.deepEqual(
+        organizer.standings.map((r) => [r.id, r.pts]),
+        [
+          [retired.playerId, 3],
+          [withdrawn.playerId, 3],
+          [active.playerId, 0],
+        ],
+      );
+      assert.deepEqual(
+        organizer.applications.map((a) => a.player_id).sort(),
+        [active.playerId, rejected.playerId].sort(),
+      );
+    } finally {
+      delete process.env.TEAM_DISPLAY;
+    }
+  },
+);
+
+test(
+  "a wrong migration 006 checksum blocks the runner before any pending SQL and fails Data health",
+  { skip },
+  async () => {
+    const { applyMigrations, readLedger } =
+      await import("../src/lib/migrations");
+    const { healthReport } = await import("../src/lib/health");
+    const name = "006_mcp_oauth";
+    await sql`create table xgamer_migration(name text primary key, hash text not null, applied_at timestamptz not null default now())`;
+    await sql`insert into xgamer_migration(name,hash) values(${name},${"a".repeat(64)})`;
+    const source = "create table gate_d_probe(id integer primary key)";
+    const pending = {
+      name: "099_test_probe",
+      source,
+      hash: createHash("sha256").update(source).digest("hex"),
+    };
+    const logs: string[] = [];
+    const before = await readLedger(sql);
+    const check = async () =>
+      (await healthReport()).find((s) => s.title === "Database migrations")!
+        .checks[0];
+
+    await assert.rejects(
+      applyMigrations(sql, [pending], (line) => logs.push(line)),
+      /checksum differs: 006_mcp_oauth/,
+    );
+    assert.equal(logs.length, 0);
+    assert.equal(
+      (await sql`select to_regclass('public.gate_d_probe') as probe`)[0].probe,
+      null,
+    );
+    assert.deepEqual(await readLedger(sql), before);
+    const mismatch = await check();
+    assert.equal(mismatch.level, "error");
+    assert.match(mismatch.detail, /checksum differs: 006_mcp_oauth/);
+
+    // Restore the verified value in the disposable ledger and verify the runner
+    // handles an external migration without running its (deliberately invalid) file.
+    const hash =
+      "ae5529b1a747ca3ba6fe30da75ed1d3b368bbb57462a9917c3162468cddde2d1";
+    await sql`update xgamer_migration set hash=${hash} where name=${name}`;
+    const matched = await check();
+    assert.equal(matched.level, "ok");
+    assert.match(matched.detail, /1 recognized from another branch/);
+    await applyMigrations(
+      sql,
+      [{ name, hash, source: "not valid sql" }, pending],
+      (line) => logs.push(line),
+    );
+    assert.deepEqual(logs, [`Applied ${pending.name}.`]);
+    assert.deepEqual(await readLedger(sql), [
+      { name, hash },
+      { name: pending.name, hash: pending.hash },
+    ]);
   },
 );

@@ -4,6 +4,7 @@ import { standings } from "./tournament";
 import { codeNumber, playerCode } from "./codes";
 import { formatChoice, tournamentLabel, type FormatChoice } from "./labels";
 import { careerTeam } from "./team-display";
+import { participantIds, tournamentParticipants } from "./tournament-participants";
 
 /**
  * A player's whole X-Gamer career, by permanent ID (XG-0007).
@@ -51,10 +52,13 @@ export const getProfile = cache(async (code: string) => {
       id: string;
       name: string;
       team: string | null;
-      since: string;
+      since: string | null;
+      retired: boolean;
     }[]
-  >`select id,gaming_name as name,team_name as team,to_char(consent_at,'YYYY-MM-DD') as since
-    from player where public_no=${no} and deleted_at is null`;
+  >`select id,gaming_name as name,deleted_at is not null as retired,
+      case when deleted_at is null then team_name end as team,
+      case when deleted_at is null then to_char(consent_at,'YYYY-MM-DD') end as since
+    from player where public_no=${no}`;
   if (!player) return null;
 
   const tournaments = await sql<
@@ -67,19 +71,21 @@ export const getProfile = cache(async (code: string) => {
       knockout: boolean;
       status: string;
       team: string | null;
+      active_entry: boolean;
     }[]
-  >`select t.id,t.name,t.competition,t.season,t.format,t.knockout,t.status,a.team_name as team
-    from tournament t join application a on a.tournament_id=t.id
-    where a.player_id=${player.id} and a.status='approved' and a.deleted_at is null
+  >`select t.id,t.name,t.competition,t.season,t.format,t.knockout,t.status,a.team_name as team,
+      coalesce(a.status='approved' and a.deleted_at is null,false) as active_entry
+    from tournament t join (${participantIds(sql)}) h on h.tournament_id=t.id
+    left join application a on a.tournament_id=t.id and a.player_id=h.player_id
+    where h.player_id=${player.id}
       and t.published and t.deleted_at is null
     order by t.created_at`;
+  // Keep the history links working for published participants. A retired test
+  // identity with no public tournament history still has no public profile.
+  if (player.retired && !tournaments.length) return null;
   const ids = tournaments.map((t) => t.id);
-  const [entrants, fixtures, podium, qualified] = ids.length
+  const [fixtures, podium, qualified] = ids.length
     ? await Promise.all([
-        sql<
-          { tournament_id: string; id: string; name: string; no: number }[]
-        >`select a.tournament_id,p.id,p.gaming_name as name,p.public_no as no from application a join player p on p.id=a.player_id
-          where a.tournament_id = any(${ids}) and a.status='approved' and a.deleted_at is null`,
         sql<
           {
             id: string;
@@ -100,7 +106,8 @@ export const getProfile = cache(async (code: string) => {
           { tournament_id: string }[]
         >`select tournament_id from qualification where tournament_id = any(${ids}) and player_id=${player.id}`,
       ])
-    : [[], [], [], []];
+    : [[], [], []];
+  const entrants = ids.length ? await tournamentParticipants(sql, ids) : [];
 
   const people = new Map(
     entrants.map((e) => [e.id, { code: playerCode(e.no), name: e.name }]),
@@ -186,7 +193,7 @@ export const getProfile = cache(async (code: string) => {
     });
   const playedMatches = mine.filter((m) => m.outcome);
   const live = new Set(
-    tournaments.filter((t) => t.status === "league").map((t) => t.id),
+    tournaments.filter((t) => t.status === "league" && t.active_entry).map((t) => t.id),
   );
   const count = (o: string) =>
     playedMatches.filter((m) => m.outcome === o).length;
@@ -253,7 +260,9 @@ export const getProfile = cache(async (code: string) => {
     career: [...career].reverse(),
     form: playedMatches.slice(-5).map((m) => m.outcome!),
     history: [...playedMatches].reverse(),
-    next: mine.filter((m) => !m.outcome && live.has(m.tournament)).slice(0, 5),
+    next: player.retired
+      ? []
+      : mine.filter((m) => !m.outcome && live.has(m.tournament)).slice(0, 5),
     headToHead: [...h2h.values()].sort(
       (a, b) => b.p - a.p || a.name.localeCompare(b.name),
     ),

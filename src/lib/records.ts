@@ -3,10 +3,11 @@ import { db } from "./db";
 import { playerCode } from "./codes";
 import { tournamentLabel } from "./labels";
 import { teamDisplay, tournamentTeam, type TeamDisplay } from "./team-display";
+import { tournamentParticipants } from "./tournament-participants";
 
 /**
  * All-time numbers for the Champions page, computed from real OM data only:
- * published tournaments, approved players, recorded league scores and
+ * published tournaments, tournament participants, recorded league scores and
  * organizer-confirmed final positions. Public fields only.
  *
  * "Goals" are the goals a player's eFootball team scored in their matches.
@@ -95,19 +96,7 @@ export const getRecords = cache(async () => {
       where t.published and t.deleted_at is null order by t.created_at`;
     const ids = tournaments.map((t) => t.id);
     if (!ids.length) return empty();
-    const [entries, fixtures, podium, qualified] = await Promise.all([
-      sql<
-        {
-          tournament_id: string;
-          id: string;
-          no: number;
-          name: string;
-          team: string | null;
-          entry_team: string | null;
-        }[]
-      >`select a.tournament_id,p.id,p.public_no as no,p.gaming_name as name,p.team_name as team,a.team_name as entry_team
-        from application a join player p on p.id=a.player_id
-        where a.tournament_id = any(${ids}) and a.status='approved' and a.deleted_at is null and p.deleted_at is null`,
+    const [fixtures, podium, qualified] = await Promise.all([
       sql<
         {
           tournament_id: string;
@@ -127,6 +116,7 @@ export const getRecords = cache(async () => {
         { tournament_id: string; player_id: string }[]
       >`select tournament_id,player_id from qualification where tournament_id = any(${ids})`,
     ]);
+    const entries = await tournamentParticipants(sql, ids);
     return compute(tournaments, entries, fixtures, podium, qualified);
   } catch {
     console.error("Records unavailable");

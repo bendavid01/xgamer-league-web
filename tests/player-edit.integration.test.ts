@@ -56,12 +56,15 @@ const coordinator: Who = {
 const resultsOnly: Who = { ...coordinator, operations: ["results"] };
 
 /** The real request path (strict schema, field permission) with a given signed-in user. */
+const as = (user: Who) => async () => ({
+  operations: [],
+  tournaments: [],
+  ...user,
+});
 const send = (user: Who, c: Record<string, unknown>) =>
-  edits.executeEdit({ requestId: randomUUID(), ...c }, async () => ({
-    operations: [],
-    tournaments: [],
-    ...user,
-  }));
+  edits.executeEdit({ requestId: randomUUID(), ...c }, as(user));
+const readEfootball = async (playerId: string, user = admin) =>
+  (await edits.playerDetails(H, playerId, as(user))).player;
 const status = (code: number, message?: RegExp) => (e: unknown) => {
   const err = e as { status?: number; message: string };
   assert.equal(err.status, code, err.message);
@@ -283,7 +286,7 @@ test(
       action: "player.edit_efootball",
       tournament: H,
       playerId: P.ace.player,
-      expectedHadId: false,
+      expectedVersion: (await readEfootball(P.ace.player)).efootballVersion,
       efootballId: "ACE-1001",
       reason: "Added from the player's message",
     };
@@ -336,7 +339,7 @@ test(
           action: "player.edit_efootball",
           tournament: H,
           playerId: P.ace.player,
-          expectedHadId: true,
+          expectedVersion: (await readEfootball(P.ace.player)).efootballVersion,
           efootballId: "ACE-1002",
           reason: "Session check",
           requestId: randomUUID(),
@@ -900,11 +903,12 @@ test(
   "U1: an eFootball ID owned by another player → 409 without showing it; coordinators never see contacts",
   { skip },
   async () => {
+    const initial = await readEfootball(P.bolt.player);
     await send(admin, {
       action: "player.edit_efootball",
       tournament: H,
       playerId: P.bolt.player,
-      expectedHadId: false,
+      expectedVersion: initial.efootballVersion,
       efootballId: "BOLT-2002",
       reason: "From the player's message",
     });
@@ -914,7 +918,7 @@ test(
         action: "player.edit_efootball",
         tournament: H,
         playerId: P.cruz.player,
-        expectedHadId: false,
+        expectedVersion: (await readEfootball(P.cruz.player)).efootballVersion,
         efootballId: "bolt-2002",
         reason: "Duplicate check",
       }).catch((e) => {
@@ -923,13 +927,13 @@ test(
       }),
       status(409, /another player/),
     );
-    // Stale "had no ID" → 409.
+    // A version from before the ID was assigned is stale.
     await assert.rejects(
       send(admin, {
         action: "player.edit_efootball",
         tournament: H,
         playerId: P.bolt.player,
-        expectedHadId: false,
+        expectedVersion: initial.efootballVersion,
         efootballId: "BOLT-3003",
         reason: "Stale page",
       }),
@@ -937,11 +941,6 @@ test(
     );
     assert.equal(await auditCount(), n);
 
-    const as = (user: Who) => async () => ({
-      operations: [],
-      tournaments: [],
-      ...user,
-    });
     await assert.rejects(
       edits.playerDetails(H, P.bolt.player, as(resultsOnly)),
       status(403),
@@ -972,6 +971,101 @@ test(
 );
 
 /* ─────────────────────────── Audit ─────────────────────────── */
+
+test(
+  "eFootball replacements from the same view cannot overwrite each other or reuse an old version",
+  { skip },
+  async () => {
+    const playerId = P.bolt.player;
+    const firstView = await readEfootball(playerId);
+    const secondView = await readEfootball(playerId, admin2);
+    assert.equal(firstView.efootballId, "BOLT-2002");
+    assert.equal(firstView.efootballVersion, secondView.efootballVersion);
+    const command = {
+      action: "player.edit_efootball",
+      tournament: H,
+      playerId,
+      expectedVersion: firstView.efootballVersion,
+      reason: "Confirmed game ID correction",
+    };
+    const n = await auditCount();
+    const requests = ["BOLT-NEW-A", "BOLT-NEW-B"].map((id) => ({
+      ...command,
+      efootballId: id,
+      requestId: randomUUID(),
+    }));
+    const actors = [admin, admin2];
+    const results = await Promise.allSettled(
+      requests.map((r, i) => send(actors[i], r)),
+    );
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+    const winner = results.findIndex((r) => r.status === "fulfilled");
+    status(
+      409,
+      /someone else/,
+    )((results[1 - winner] as PromiseRejectedResult).reason);
+    assert.deepEqual(await send(actors[winner], requests[winner]), {
+      ok: true,
+      repeated: true,
+    });
+    await assert.rejects(
+      send(actors[1 - winner], requests[winner]),
+      status(409, /already used/),
+    );
+    const current = await readEfootball(playerId);
+    assert.equal(current.efootballId, requests[winner].efootballId);
+    assert.notEqual(current.efootballVersion, firstView.efootballVersion);
+    assert.equal(await auditCount(), n + 1);
+    const [audit] = await sql`select actor, after_value from audit_event
+      where after_value->>'request_id'=${requests[winner].requestId}`;
+    assert.equal(audit.actor, actors[winner].id);
+    assert.equal(audit.after_value.efootballId, "[REDACTED]");
+    assert.doesNotMatch(
+      JSON.stringify(audit),
+      /BOLT-NEW|expectedVersion|efootballVersion/,
+    );
+
+    const { POST } = await import("../src/app/api/admin/route");
+    const response = await POST(
+      new Request("http://localhost:3000/api/admin", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:3000",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          ...command,
+          action: "efootball",
+          efootballId: "BYPASS-01",
+        }),
+      }),
+    );
+    assert.equal(response.status, 400);
+    await assert.rejects(
+      send(admin, {
+        ...command,
+        expectedVersion: undefined,
+        efootballId: "BYPASS-01",
+      }),
+      status(400),
+    );
+    assert.equal(await auditCount(), n + 1);
+
+    await send(admin, {
+      ...command,
+      expectedVersion: current.efootballVersion,
+      efootballId: firstView.efootballId,
+    });
+    const restored = await readEfootball(playerId);
+    assert.equal(restored.efootballId, firstView.efootballId);
+    assert.notEqual(restored.efootballVersion, firstView.efootballVersion);
+    await assert.rejects(
+      send(admin2, { ...command, efootballId: "BOLT-STALE" }),
+      status(409, /someone else/),
+    );
+    assert.equal(await auditCount(), n + 2);
+  },
+);
 
 test(
   "AU1, AU2 and AU3: one complete audit row per edit; eFootball IDs redacted; older audit rows untouched and immutable",
@@ -1119,5 +1213,64 @@ test(
   { skip },
   async () => {
     assert.deepEqual(await fingerprints(), baseline);
+  },
+);
+
+test(
+  "sensitive reasons and evidence are rejected before writing; new audit rows redact copied text",
+  { skip },
+  async () => {
+    // The correction under test is for a legacy entry. Seed sensitive old data to
+    // test a new audit record without touching the existing audit history.
+    const oldTeam = "Support ９８１１１ ０１２３４";
+    const entry = await historic(W, "Audit Fixture", oldTeam, {
+      recordTeam: true,
+    });
+    await sql`update application set team_name=${oldTeam},team_name_source='registration_record' where id=${entry.app}`;
+    const audit = () =>
+      sql`select * from audit_event where entity=${entry.app} order by id`;
+    const stored = () => sql`select * from application where id=${entry.app}`;
+    const originalRows = await audit();
+    const originalEntry = await stored();
+    const correction = {
+      action: "application.team_correct",
+      tournament: W,
+      applicationId: entry.app,
+      expectedTeam: oldTeam,
+      expectedSource: "registration_record",
+      confirmOverwrite: true,
+      team: "United",
+      reason: "Corrected the recorded team",
+      evidence: "Original registration message, 13 Nov",
+    };
+    for (const [field, text] of [
+      ["reason", "Phone (981) 110–1234"],
+      ["evidence", "Code is １２３​４５６"],
+      ["reason", "OTP 1234"],
+      ["evidence", "Password is exampleSecret"],
+      ["evidence", "postgres://example:dummy@db.example.invalid"],
+      ["reason", "Email player@example.invalid"],
+    ]) {
+      await assert.rejects(
+        send(admin, { ...correction, [field]: text }),
+        (error: unknown) => {
+          status(400, /Don't include phone numbers/)(error);
+          assert.ok(!(error as Error).message.includes(text));
+          return true;
+        },
+      );
+    }
+    assert.deepEqual(await audit(), originalRows);
+    assert.deepEqual(await stored(), originalEntry);
+
+    await send({ ...admin, name: "Organizer 9811101234" }, correction);
+    const rows = await audit();
+    assert.deepEqual(rows.slice(0, -1), [...originalRows]);
+    const record = rows.at(-1)!;
+    assert.equal(record.actor_name, "[REDACTED]");
+    assert.equal(record.before_value.team_name, "[REDACTED]");
+    assert.equal(record.after_value.reason, correction.reason);
+    assert.equal(record.after_value.evidence, correction.evidence);
+    assert.equal((await stored())[0].team_name, correction.team);
   },
 );

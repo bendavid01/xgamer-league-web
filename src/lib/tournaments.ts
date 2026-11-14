@@ -4,6 +4,7 @@ import { standings, type Result } from "./tournament";
 import { playerCode } from "./codes";
 import { tournamentLabel } from "./labels";
 import { tournamentTeam } from "./team-display";
+import { tournamentParticipants } from "./tournament-participants";
 
 /**
  * Public view of OM tournaments. Explicit columns only — never phone numbers,
@@ -100,22 +101,6 @@ export const getTournament = cache(async (id: string) => {
     const sql = db();
     const [tournament] = await rows(id);
     if (!tournament) return null;
-    const players = (
-      await sql<
-        {
-          id: string;
-          no: number;
-          name: string;
-          current_team: string | null;
-          entry_team: string | null;
-        }[]
-      >`select p.id,p.public_no as no,p.gaming_name as name,p.team_name as current_team,a.team_name as entry_team from player p join application a on a.player_id=p.id
-        where a.tournament_id=${id} and a.status='approved' and a.deleted_at is null and p.deleted_at is null order by p.gaming_name`
-    ).map(({ no, current_team, entry_team, ...p }) => ({
-      ...p,
-      team: tournamentTeam(current_team, entry_team),
-      code: playerCode(no),
-    }));
     const fixtures = await sql<
       PublicFixture[]
     >`select id,round,slot,home,away,home_score,away_score from fixture where tournament_id=${id} and stage='league' and away is not null order by round,slot,id`;
@@ -129,6 +114,14 @@ export const getTournament = cache(async (id: string) => {
     >`select place,player_id from podium where tournament_id=${id}`;
     const podium = [1, 2, 3].map(
       (n) => podiumRows.find((r) => r.place === n)?.player_id ?? null,
+    );
+    const players: PublicPlayer[] = (await tournamentParticipants(sql, [id])).map(
+      ({ id, name, no, team, entry_team }) => ({
+        id,
+        name,
+        code: playerCode(no),
+        team: tournamentTeam(team, entry_team),
+      }),
     );
     const updates = await sql<
       { id: string; title: string; message: string; created_at: string }[]
@@ -185,7 +178,7 @@ export const getChampions = cache(async () => {
     >`select t.id,t.name,t.competition,t.season,extract(epoch from ph.updated_at)::int as photo,
         po.place,p.public_no as no,p.gaming_name as player,p.team_name as current_team,a.team_name as entry_team
       from tournament t join podium po on po.tournament_id=t.id join player p on p.id=po.player_id
-      left join application a on a.tournament_id=t.id and a.player_id=p.id and a.deleted_at is null
+      left join application a on a.tournament_id=t.id and a.player_id=p.id
       left join tournament_photo ph on ph.tournament_id=t.id
       where t.published and t.deleted_at is null and t.status='completed'
       order by t.created_at desc, po.place`;

@@ -16,8 +16,8 @@ import {
   compareLedger,
   migrationFiles,
   readLedger,
-  RECOGNIZED_OUTSIDE,
 } from "../src/lib/migrations";
+import { OUTSIDE_MIGRATIONS } from "../src/lib/known-migrations";
 
 const mode = buildMode(process.env);
 let failure = "";
@@ -42,14 +42,14 @@ if (mode === "skip") {
     const status = compareLedger(files, await readLedger(sql));
     for (const name of status.recognized)
       console.log(
-        `[migrate] Recognized, applied outside this code version (left untouched): ${name} — ${RECOGNIZED_OUTSIDE[name]}.`,
+        `[migrate] Recognized, applied outside this code version (left untouched): ${name} — ${OUTSIDE_MIGRATIONS.get(name)?.description}.`,
       );
     if (status.unknown.length)
       console.log(
         `[migrate] WARNING: applied outside this code version and not recognized (left untouched): ${status.unknown.join(", ")}.`,
       );
     if (status.changed.length)
-      failure = `[migrate] Applied migration file(s) were edited: ${status.changed.join(", ")}. Never edit an applied migration; add a new one.`;
+      failure = `[migrate] Applied migration checksum differs: ${status.changed.join(", ")}. Verify the ledger before proceeding.`;
     else if (status.pending.length)
       failure = `[migrate] The database is missing migration(s) ${status.pending.join(", ")}. Ordinary builds don't change the database. After approval, set MIGRATE_ON_BUILD=true for one production deploy, then remove it.`;
     else

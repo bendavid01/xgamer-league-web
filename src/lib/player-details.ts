@@ -9,6 +9,7 @@ import { tournamentLabel } from "./labels";
 import { teamDisplay } from "./team-display";
 import { contactSummary } from "./contact-change";
 import { lockAuditRequest } from "./audit-request";
+import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
 
 /**
  * OM "Edit player details" (approved design, 13 Nov 2026).
@@ -39,7 +40,7 @@ export const SOURCE_LABEL: Record<TeamSource, string> = {
 
 const uuid = z.string().uuid();
 const tid = z.string().regex(/^[a-z0-9-]{3,80}$/);
-const reason = z.string().trim().min(5).max(300);
+const reason = auditNote(5, 300);
 const requestId = z.string().uuid().toLowerCase();
 // Same rules as registration: 2–40 letters, digits, spaces and _ . ' & -
 const playerName = registrationInput.shape.playerName;
@@ -81,7 +82,7 @@ const editCommand = z.discriminatedUnion("action", [
     expectedSource: z.enum(TEAM_SOURCES).nullable(),
     team: teamName,
     reason,
-    evidence: z.string().trim().min(5).max(300),
+    evidence: auditNote(5, 300),
     confirmOverwrite: z.boolean(),
     requestId,
   }),
@@ -89,7 +90,7 @@ const editCommand = z.discriminatedUnion("action", [
     action: z.literal("player.edit_efootball"),
     tournament: tid,
     playerId: uuid,
-    expectedHadId: z.boolean(),
+    expectedVersion: z.string().regex(/^[a-f0-9]{64}$/),
     efootballId: efootballIdInput,
     reason,
     requestId,
@@ -122,11 +123,20 @@ type Who = Pick<Actor, "id" | "role"> &
 
 const CHANGED = "Changed by someone else. Reload and try again.";
 
+// The IV changes on each save, including a change back to a previously used ID.
+const efootballVersion = (playerId: string, cipher: string | null) =>
+  fingerprint("xg-efootball-edit-v1:" + JSON.stringify([playerId, cipher]));
+
 /** POST /api/admin with an edit action. `resolve` is the signed-in organizer check. */
 export async function executeEdit(raw: unknown, resolve: Resolve = actor) {
   const parsed = editCommand.safeParse(raw);
   if (!parsed.success)
-    throw new HttpError(400, "Check the details and try again.");
+    throw new HttpError(
+      400,
+      parsed.error.issues.some((issue) => issue.message === AUDIT_TEXT_ERROR)
+        ? AUDIT_TEXT_ERROR
+        : "Check the details and try again.",
+    );
   const c = parsed.data;
   const user = await resolve(EDIT_OPERATION[c.action], c.tournament);
   return runEdit(user, c);
@@ -207,11 +217,18 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
     throw new HttpError(409, "This player record was removed.");
 
   // 2. Idempotency: a retried request returns its first outcome and writes nothing.
-  const entity = "applicationId" in c ? c.applicationId : playerId;
-  const [prior] =
-    await tx`select action,entity from audit_event where lower(after_value->>'request_id') = ${requestId} limit 1`;
+  const entity = "applicationId" in c ? app!.id : player.id;
+  const [prior, duplicate] = await tx`
+    select actor,action,entity,tournament_id from audit_event
+    where lower(after_value->>'request_id') = ${requestId} limit 2`;
   if (prior) {
-    if (prior.action === c.action && prior.entity === entity)
+    if (
+      !duplicate &&
+      prior.actor === user.id &&
+      prior.action === c.action &&
+      prior.entity === entity &&
+      prior.tournament_id === c.tournament
+    )
       return { ok: true, repeated: true };
     throw new HttpError(
       409,
@@ -231,8 +248,8 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
       throw new HttpError(400, "That is already the gaming name.");
     await tx`update player set gaming_name=${c.name} where id=${playerId}`;
     summary = "Changed gaming name";
-    before = { gaming_name: player.gaming_name };
-    after = { gaming_name: c.name };
+    before = { gaming_name: auditText(player.gaming_name) };
+    after = { gaming_name: auditText(c.name) };
   } else if (c.action === "player.edit_team") {
     if ((player.team_name ?? null) !== c.expected)
       throw new HttpError(409, CHANGED);
@@ -241,8 +258,8 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
     // The CURRENT team only. Tournament teams are never touched here.
     await tx`update player set team_name=${c.team} where id=${playerId}`;
     summary = "Changed current team";
-    before = { team_name: player.team_name ?? null };
-    after = { team_name: c.team };
+    before = { team_name: auditText(player.team_name) };
+    after = { team_name: auditText(c.team) };
   } else if (c.action === "application.team_attest") {
     if (app!.team_name !== null || app!.team_name_source !== null)
       throw new HttpError(409, "This entry already has a tournament team.");
@@ -259,7 +276,7 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
     summary = "Attested tournament team";
     before = { team_name: null, team_name_source: null };
     after = {
-      team_name: player.team_name,
+      team_name: auditText(player.team_name),
       team_name_source: "organizer_attested",
       evidence: {
         entries: ev.entries,
@@ -267,7 +284,7 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
         registration_audit_id: ev.registration_audit_id,
         record_has_team_field: ev.record_has_team,
         current_team_edits: ev.team_edits,
-        current_team_at_attestation: player.team_name,
+        current_team_at_attestation: auditText(player.team_name),
       },
     };
   } else if (c.action === "application.team_correct") {
@@ -288,16 +305,18 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
       ? "Corrected tournament team"
       : "Set tournament team";
     before = {
-      team_name: app!.team_name ?? null,
+      team_name: auditText(app!.team_name as string | null),
       team_name_source: app!.team_name_source ?? null,
     };
     after = {
-      team_name: c.team,
+      team_name: auditText(c.team),
       team_name_source: "organizer_corrected",
-      evidence: c.evidence,
+      evidence: auditText(c.evidence),
     };
   } else {
-    if (!!player.efootball_cipher !== c.expectedHadId)
+    if (
+      efootballVersion(player.id, player.efootball_cipher) !== c.expectedVersion
+    )
       throw new HttpError(409, CHANGED);
     const hash = fingerprint("ef:" + c.efootballId);
     if (hash === player.efootball_hash)
@@ -316,8 +335,8 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
 
   // 5. One immutable audit row, with the reason and the request ID.
   await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,before_value,after_value)
-    values(${user.id},${user.name ?? null},${user.role},${c.action},${entity},${c.tournament},${summary},${code},
-      ${tx.json(before)},${tx.json({ ...after, reason: c.reason, request_id: requestId })})`;
+    values(${user.id},${auditText(user.name ?? null)},${user.role},${c.action},${entity},${c.tournament},${summary},${code},
+      ${tx.json(before)},${tx.json({ ...after, reason: auditText(c.reason), request_id: requestId })})`;
   return { ok: true };
 }
 
@@ -439,6 +458,7 @@ export async function playerDetails(
             efootballId: p.efootball_cipher
               ? decrypt(p.efootball_cipher)
               : null,
+            efootballVersion: efootballVersion(p.id, p.efootball_cipher),
           }
         : {}),
       removed: !!p.deleted_at,

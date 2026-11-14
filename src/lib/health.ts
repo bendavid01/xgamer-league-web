@@ -3,7 +3,7 @@ import { actor } from "./api";
 import { getRecords, RANKING_POINTS } from "./records";
 import { getLeague } from "./league";
 import { playerCode } from "./codes";
-import { RECOGNIZED_OUTSIDE } from "./known-migrations";
+import { OUTSIDE_MIGRATIONS, outsideMigrationStatus } from "./known-migrations";
 import { teamDisplay } from "./team-display";
 
 /**
@@ -387,28 +387,42 @@ export async function healthReport(): Promise<Section[]> {
   });
 
   /* ── 6. Database migrations ── */
-  const ledger =
-    await sql`select name, applied_at from xgamer_migration order by name`.catch(
-      () => [],
-    );
-  const unknown = ledger.filter(
-    (m) =>
-      !KNOWN_MIGRATIONS.includes(m.name) && !(m.name in RECOGNIZED_OUTSIDE),
-  );
-  const recognized = ledger.filter((m) => m.name in RECOGNIZED_OUTSIDE);
+  const ledger = (
+    await sql<{ name: string; hash: string; applied_at: Date }[]>`
+      select name, hash, applied_at from xgamer_migration order by name
+    `.catch((error: { code?: string }) => {
+      if (error.code === "42P01") return []; // Fresh database without a ledger yet.
+      throw error;
+    })
+  ).map((m) => ({
+    ...m,
+    state: KNOWN_MIGRATIONS.includes(m.name)
+      ? "local"
+      : outsideMigrationStatus(m.name, m.hash),
+  }));
+  const unknown = ledger.some((m) => m.state === "unknown");
+  const changed = ledger.filter((m) => m.state === "changed");
+  const recognized = ledger.filter((m) => m.state === "recognized").length;
   sections.push({
     title: "Database migrations",
     checks: [
       {
         title: "Applied migrations",
-        level: unknown.length ? "warn" : "ok",
-        detail: unknown.length
-          ? "Some applied migrations are not part of this code version (for example applied by a preview build). They are left untouched; their files must never be edited."
-          : `${ledger.length} applied: ${ledger.length - recognized.length} in this code version${recognized.length ? `, ${recognized.length} recognized from another branch (left untouched)` : ""}.`,
-        items: ledger.map(
-          (m) =>
-            `${m.name} — ${new Date(m.applied_at).toISOString().slice(0, 16).replace("T", " ")} UTC${KNOWN_MIGRATIONS.includes(m.name) ? "" : m.name in RECOGNIZED_OUTSIDE ? ` (recognized: ${RECOGNIZED_OUTSIDE[m.name]})` : " (not in this code version)"}`,
-        ),
+        level: changed.length ? "error" : unknown ? "warn" : "ok",
+        detail: changed.length
+          ? `Applied migration checksum differs: ${changed.map((m) => m.name).join(", ")}. Verify the ledger before proceeding.`
+          : unknown
+            ? "Some applied migrations are outside this code version and unrecognized."
+            : `${ledger.length} applied: ${ledger.length - recognized} in this code version${recognized ? `, ${recognized} recognized from another branch (left untouched)` : ""}.`,
+        items: ledger.map((m) => {
+          const status = {
+            local: "",
+            recognized: ` (recognized: ${OUTSIDE_MIGRATIONS.get(m.name)?.description})`,
+            changed: " (checksum mismatch)",
+            unknown: " (not in this code version)",
+          }[m.state];
+          return `${m.name} — ${new Date(m.applied_at).toISOString().slice(0, 16).replace("T", " ")} UTC${status}`;
+        }),
       },
       process.env.MIGRATE_ON_BUILD === "true"
         ? {

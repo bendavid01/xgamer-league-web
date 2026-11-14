@@ -14,6 +14,7 @@ import { canonicalPhone, maskPhone, waUrl } from "./phone";
 import { efootballIdInput } from "./registration";
 import { playerCode } from "./codes";
 import { lockAuditRequest } from "./audit-request";
+import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
 
 /**
  * WhatsApp number changes and disclosure in OM (plan revision 2, 13 Nov 2026).
@@ -52,19 +53,6 @@ export const contactEditingOn = (
   env: Record<string, string | undefined> = process.env,
 ) => env.CONTACT_EDITING?.trim() === "on";
 
-/** Free text may never carry a phone number: 6+ digits in a row (separators ignored) or "+digit". */
-export const PHONE_LIKE = /\+\s*\d|\d(?:[\s.()/-]*\d){5,}/;
-const safeText = (min: number, max: number) =>
-  z
-    .string()
-    .trim()
-    .min(min)
-    .max(max)
-    .refine((v) => !PHONE_LIKE.test(v), {
-      message:
-        "Don't include phone numbers or long digit sequences (write dates like 13 Nov).",
-    });
-
 const uuid = z.string().uuid().toLowerCase();
 const tid = z.string().regex(/^[a-z0-9-]{3,80}$/);
 const requestId = uuid;
@@ -91,10 +79,10 @@ const contactCommand = z.discriminatedUnion("action", [
     newPhone: z.string().max(32),
     route: z.enum(ROUTES),
     evidenceType: z.enum(EVIDENCE).optional(),
-    evidenceNote: safeText(20, 500).optional(),
+    evidenceNote: auditNote(20, 500).optional(),
     evidenceObservedAt: z.string().datetime({ offset: true }).optional(),
     confirm: z.literal(true),
-    reason: safeText(5, 300),
+    reason: auditNote(5, 300),
     requestId,
   }),
   z.strictObject({
@@ -123,21 +111,21 @@ const contactCommand = z.discriminatedUnion("action", [
     tournament: tid,
     changeId: uuid,
     reviewed: z.literal(true),
-    reason: safeText(5, 300),
+    reason: auditNote(5, 300),
     requestId,
   }),
   z.strictObject({
     action: z.literal("contact.change_cancel"),
     tournament: tid,
     changeId: uuid,
-    reason: safeText(5, 300),
+    reason: auditNote(5, 300),
     requestId,
   }),
   z.strictObject({
     action: z.literal("contact.change_reject"),
     tournament: tid,
     changeId: uuid,
-    reason: safeText(5, 300),
+    reason: auditNote(5, 300),
     requestId,
   }),
   z.strictObject({
@@ -166,10 +154,12 @@ type Who = Pick<Actor, "id" | "role" | "name">;
 export async function executeContact(raw: unknown, resolve: Resolve = actor) {
   const parsed = contactCommand.safeParse(raw);
   if (!parsed.success) {
-    const message = parsed.error.issues.find((i) =>
-      i.message.startsWith("Don't include"),
-    )?.message;
-    throw new HttpError(400, message ?? "Check the details and try again.");
+    throw new HttpError(
+      400,
+      parsed.error.issues.some((issue) => issue.message === AUDIT_TEXT_ERROR)
+        ? AUDIT_TEXT_ERROR
+        : "Check the details and try again.",
+    );
   }
   const c = parsed.data;
   const user = await resolve(
@@ -288,7 +278,7 @@ const keyed = (label: string, value: string) =>
   createHmac("sha256", subkey(label)).update(value).digest("hex");
 const codeHash = (changeId: string, code: string) =>
   keyed("xg-contact-code-v1", `${changeId}:${code}`);
-// Both eFootball edit paths re-encrypt the ID with a fresh IV on every write,
+// The eFootball editor re-encrypts the ID with a fresh IV on every write,
 // so this revision changes even when an ID is changed back to its old value.
 const efootballRevision = (changeId: string, ciphertext: string) =>
   keyed(
@@ -370,7 +360,7 @@ async function writeAudit(
   after: Record<string, JSONValue>,
 ) {
   await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,before_value,after_value)
-    values(${user?.id ?? "system:contact-change"},${user?.name ?? null},${user?.role ?? "system"},${action},${entity},${tournament},
+    values(${user?.id ?? "system:contact-change"},${auditText(user?.name ?? null)},${user?.role ?? "system"},${action},${entity},${tournament},
       ${summary},${affected},${tx.json(before)},${tx.json(after)})`;
 }
 
@@ -672,8 +662,8 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
         change_id: id,
         route: c.route,
         evidence_type: c.evidenceType ?? null,
-        evidence_note: c.evidenceNote ?? null,
-        reason: c.reason,
+        evidence_note: auditText(c.evidenceNote ?? null),
+        reason: auditText(c.reason),
       }),
     );
     return {
@@ -751,7 +741,7 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
       { status: ch.status },
       base({
         change_id: ch.id,
-        reason: c.reason,
+        reason: auditText(c.reason),
         ...(rejected && { outcome: "rejected", requested_by: ch.requested_by }),
       }),
     );
@@ -971,7 +961,7 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
       method: "organizer_attested_independent_evidence",
       requested_by: ch.requested_by,
       reviewed_verification_record: c.reviewed,
-      reason: c.reason,
+      reason: auditText(c.reason),
     }),
   );
   return { ok: true, changeId: ch.id, status: "completed" };
