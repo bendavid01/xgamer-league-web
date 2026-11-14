@@ -7,7 +7,8 @@
       "ci/postgres-integration-tests": false,
       "ci/team-names-007-integration": false,
       "ci/postgres-18": false,
-      "feature/om-edit-player-details": false
+      "feature/om-edit-player-details": false,
+      "security/gate-c-contact": false
     }
   }
 }

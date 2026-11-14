@@ -7,6 +7,8 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
+import { join, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { isLocalTestDatabase, testDatabaseUrl } from "./helpers/test-database";
 
@@ -783,7 +785,7 @@ test(
 );
 
 test(
-  "W-R3: either admin can cancel; the new number is erased and the player is untouched",
+  "W-R3: admins can cancel; the second admin can reject with an audit record and no player change",
   { skip },
   async () => {
     const s = await start(A, ply.cal, "+44 7911 123458", evidence());
@@ -795,6 +797,65 @@ test(
       { status: "cancelled", new_contact_cipher: "erased", code_hash: null },
     );
     assert.equal(await version(ply.cal), 1);
+
+    const before = (
+      await sql`select to_jsonb(player) as row from player where id=${ply.cal.id}`
+    )[0].row;
+    const review = await start(A, ply.cal, "+44 7911 123588", evidence());
+    const changeId = String(review.changeId);
+    const rejection = {
+      action: "contact.change_reject",
+      tournament: H,
+      changeId,
+      requestId: randomUUID(),
+      reason: "Supporting evidence was insufficient",
+    };
+    await assert.rejects(send(B, rejection), status(409, /waiting for review/));
+    await code(A, changeId, String(review.code));
+    await assert.rejects(send(A, rejection), status(403));
+    await assert.rejects(send(coordAll, rejection), status(403));
+    await assert.rejects(send(strangerAdmin, rejection), status(403));
+    await assert.rejects(send(B, { ...rejection, reason: "No" }), status(400));
+    try {
+      process.env.MAIN_ADMIN_DISCORD_IDS = `${B.id},759756138437804044`;
+      await assert.rejects(
+        send(B, rejection),
+        status(409, /no longer a main admin/),
+      );
+    } finally {
+      process.env.MAIN_ADMIN_DISCORD_IDS = ADMINS;
+    }
+    assert.equal((await send(B, rejection)).status, "rejected");
+    assert.equal((await send(B, rejection)).repeated, true);
+    await assert.rejects(approve(B, changeId), status(409, /already ended/));
+    assert.deepEqual(
+      (
+        await sql`select to_jsonb(player) as row from player where id=${ply.cal.id}`
+      )[0].row,
+      before,
+    );
+    const [closed] =
+      await sql`select status,new_contact_hash,new_contact_cipher,
+      code_hash,challenge_hash,approved_by,finished_at from contact_change where id=${changeId}`;
+    assert.equal(closed.status, "cancelled");
+    assert.equal(closed.new_contact_hash, `erased:${changeId}`);
+    assert.equal(closed.new_contact_cipher, "erased");
+    assert.equal(closed.code_hash, null);
+    assert.equal(closed.challenge_hash, null);
+    assert.equal(closed.approved_by, null);
+    assert.ok(closed.finished_at);
+    const decisions = await sql`select action,actor,after_value from audit_event
+      where entity=${changeId} and action in ('contact.change_approve','contact.change_reject')`;
+    assert.equal(decisions.length, 1);
+    assert.equal(decisions[0].action, "contact.change_reject");
+    assert.equal(decisions[0].actor, B.id);
+    assert.deepEqual(decisions[0].after_value, {
+      request_id: rejection.requestId,
+      change_id: changeId,
+      outcome: "rejected",
+      requested_by: A.id,
+      reason: rejection.reason,
+    });
   },
 );
 
@@ -1426,9 +1487,20 @@ test(
       );
       assert.equal(await version(player), 1);
       await assert.rejects(approve(A, id, W), status(403));
+      await assert.rejects(
+        send(B, {
+          action: "contact.change_approve",
+          tournament: W,
+          changeId: id,
+          reviewed: false,
+          reason: "Review is incomplete",
+        }),
+        status(400),
+      );
       assert.equal((await approve(B, id, W)).status, "completed");
       assert.equal(await version(player), 2);
-      const approvers = await sql`select actor,action from audit_event
+      const approvers =
+        await sql`select actor,action,after_value from audit_event
         where entity=${id} and action in ('contact.change_code','contact.change_approve')
         order by id`;
       assert.deepEqual(
@@ -1438,6 +1510,7 @@ test(
           [B.id, "contact.change_approve"],
         ],
       );
+      assert.equal(approvers[1].after_value.reviewed_verification_record, true);
     } finally {
       const [change] =
         await sql`select status from contact_change where id=${id}`;
@@ -1753,18 +1826,17 @@ test(
   "W-X3: attestation fields grant nothing: only the contact module and Data health read them; the column says so",
   { skip },
   async () => {
-    const files: string[] = [];
-    const root = new URL("../src/", import.meta.url);
-    for (const f of await readdir(root, { recursive: true }))
-      if (/\.(t|j)sx?$/.test(f)) files.push(f);
-    const readers = [];
-    for (const f of files)
+    const root = fileURLToPath(new URL("../src/", import.meta.url));
+    const readers: string[] = [];
+    for (const file of await readdir(root, { recursive: true })) {
+      if (!/\.(t|j)sx?$/.test(file)) continue;
       if (
         /contact_verified_at|contact_verification_method/.test(
-          await readFile(new URL(f, root), "utf8"),
+          await readFile(join(root, file), "utf8"),
         )
       )
-        readers.push(f);
+        readers.push(file.split(sep).join("/"));
+    }
     assert.deepEqual(readers.sort(), [
       "lib/contact-change.ts",
       "lib/health.ts",

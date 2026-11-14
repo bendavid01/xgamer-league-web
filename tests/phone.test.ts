@@ -5,6 +5,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parsePhoneNumberWithError } from "libphonenumber-js/max";
 
 process.env.PRIVATE_DATA_KEY ??= "ef".repeat(32);
@@ -175,16 +177,18 @@ test("N5: libphonenumber-js is pinned to 1.13.15 and stays out of client code", 
   assert.equal(lock.packages[""].dependencies["libphonenumber-js"], "1.13.15");
   // No client component imports the phone module or the library.
   const dirs = ["../src/components/", "../src/app/"];
-  const files: string[] = [];
-  for (const d of dirs)
-    for (const f of await readdir(new URL(d, import.meta.url), {
-      recursive: true,
-    }))
-      if (/\.(t|j)sx?$/.test(f))
-        files.push(new URL(d + f, import.meta.url).pathname);
-  for (const f of files) {
-    const src = await readFile(f, "utf8");
-    if (!src.startsWith('"use client"')) continue;
-    assert.doesNotMatch(src, /libphonenumber|@\/lib\/phone|lib\/phone"/, f);
+  for (const dir of dirs) {
+    const root = fileURLToPath(new URL(dir, import.meta.url));
+    for (const file of await readdir(root, { recursive: true })) {
+      if (!/\.(t|j)sx?$/.test(file)) continue;
+      const path = join(root, file);
+      const src = await readFile(path, "utf8");
+      if (!src.startsWith('"use client"')) continue;
+      assert.doesNotMatch(
+        src,
+        /libphonenumber|@\/lib\/phone|lib\/phone"/,
+        path,
+      );
+    }
   }
 });

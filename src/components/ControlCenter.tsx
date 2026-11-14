@@ -164,6 +164,7 @@ const ACTION_LABEL: Record<string, string> = {
   "contact.change_code": "Checked WhatsApp code",
   "contact.change_code_rejected": "Rejected WhatsApp code attempt",
   "contact.change_approve": "Approved WhatsApp number change",
+  "contact.change_reject": "Rejected WhatsApp number change",
   "contact.change_cancel": "Cancelled WhatsApp number change",
 };
 /** OM only. The public site never shows where a team name came from. */
@@ -3420,8 +3421,8 @@ function WhatsAppSection({
               </form>
             )}
           {contact.canEdit && (
-            <CancelChange
-              onCancel={(reason) =>
+            <CloseContactChange
+              onClose={(reason) =>
                 post(
                   `cancel-${open.id}`,
                   {
@@ -3579,16 +3580,18 @@ function WhatsAppSection({
   );
 }
 
-function CancelChange({
-  onCancel,
+function CloseContactChange({
+  onClose,
+  reject = false,
 }: {
-  onCancel: (reason: string) => Promise<unknown>;
+  onClose: (reason: string) => Promise<EditResult>;
+  reject?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   if (!open)
     return (
       <button type="button" className="om-link" onClick={() => setOpen(true)}>
-        Cancel this change
+        {reject ? "Reject this change" : "Cancel this change"}
       </button>
     );
   return (
@@ -3596,9 +3599,11 @@ function CancelChange({
       className="flex flex-wrap gap-2"
       onSubmit={(e) => {
         e.preventDefault();
-        void onCancel(
+        void onClose(
           String(new FormData(e.currentTarget).get("reason") ?? ""),
-        ).then(() => setOpen(false));
+        ).then((r) => {
+          if (r.ok) setOpen(false);
+        });
       }}
     >
       <input
@@ -3606,11 +3611,13 @@ function CancelChange({
         required
         minLength={5}
         maxLength={300}
-        placeholder="Why cancel?"
+        placeholder={reject ? "Why reject? (no phone numbers)" : "Why cancel?"}
         className="control-input !mt-0"
-        aria-label="Reason for cancelling"
+        aria-label={reject ? "Reason for rejecting" : "Reason for cancelling"}
       />
-      <button className="button-secondary om-small">Cancel change</button>
+      <button className="button-secondary om-small">
+        {reject ? "Reject change" : "Cancel change"}
+      </button>
     </form>
   );
 }
@@ -3625,6 +3632,7 @@ type ContactChangeRow = {
   evidenceNote: string | null;
   evidenceObservedAt: string | null;
   challengeConfirmedAt: string | null;
+  codeCheckedAt: string | null;
   status: string;
   requestedByName: string | null;
   requestedByMe: boolean;
@@ -3675,6 +3683,7 @@ function ContactApprovals() {
     else setError(r.error!);
     await load();
     setBusy(false);
+    return r;
   };
   return (
     <section
@@ -3686,9 +3695,9 @@ function ContactApprovals() {
           WhatsApp number changes
         </h2>
         <p className="text-slate-400 mt-1 text-sm">
-          Open changes. Independent-evidence changes need a second, different
-          main admin. Approving records your own organizer attestation that you
-          reviewed the evidence; it isn&apos;t automated proof.
+          The requesting admin conducts and records the verification. A
+          different main admin reviews that record and the supporting evidence,
+          then approves or rejects the request.
           {data &&
             !data.editingOn &&
             " Number editing is currently switched off."}
@@ -3723,7 +3732,15 @@ function ContactApprovals() {
                 : `Evidence: ${EVIDENCE_LABEL[c.evidenceType ?? ""] ?? c.evidenceType}${c.evidenceObservedAt ? `, observed ${new Date(c.evidenceObservedAt).toLocaleString("en-IN")}` : ""}${c.challengeConfirmedAt ? " (challenge confirmed)" : ""}`}
             </p>
             {c.evidenceNote && (
-              <p className="text-sm text-slate-300">Note: {c.evidenceNote}</p>
+              <p className="text-sm text-slate-300">
+                Verification record: {c.evidenceNote}
+              </p>
+            )}
+            {c.route === "independent_evidence" && c.codeCheckedAt && (
+              <p className="text-sm text-slate-300">
+                Verification code check recorded on{" "}
+                {new Date(c.codeCheckedAt).toLocaleString("en-IN")}.
+              </p>
             )}
             {c.reason && (
               <p className="text-sm text-slate-400">Reason: {c.reason}</p>
@@ -3734,62 +3751,83 @@ function ContactApprovals() {
                 : `Waiting for a second admin until ${new Date(c.approveBy!).toLocaleString("en-IN")}.`}
             </p>
             {c.status === "awaiting_second_admin" && !c.requestedByMe && (
-              <form
-                className="space-y-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const f = new FormData(e.currentTarget);
-                  void post(
-                    `approve-${c.id}`,
-                    {
-                      action: "contact.change_approve",
-                      tournament: c.tournament,
-                      changeId: c.id,
-                      reviewed: f.get("reviewed") === "on",
-                      reason: String(f.get("reason") ?? ""),
-                    },
-                    `Number changed for ${c.gaming_name}.`,
-                  );
-                }}
-              >
-                <label className="flex gap-2 text-sm">
-                  <input type="checkbox" name="reviewed" required />I
-                  independently reviewed the evidence that this is the same
-                  player and that they control the new WhatsApp number.
-                </label>
-                <div className="grid gap-2 md:grid-cols-[1fr_auto]">
-                  <input
-                    name="reason"
-                    required
-                    minLength={5}
-                    maxLength={300}
-                    placeholder="Your reason (no phone numbers)"
-                    className="control-input !mt-0"
-                    aria-label="Reason for approving"
-                  />
-                  <button className="button-primary">Approve</button>
-                </div>
-              </form>
+              <>
+                <form
+                  className="space-y-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const f = new FormData(e.currentTarget);
+                    void post(
+                      `approve-${c.id}`,
+                      {
+                        action: "contact.change_approve",
+                        tournament: c.tournament,
+                        changeId: c.id,
+                        reviewed: f.get("reviewed") === "on",
+                        reason: String(f.get("reason") ?? ""),
+                      },
+                      `Number changed for ${c.gaming_name}.`,
+                    );
+                  }}
+                >
+                  <label className="flex gap-2 text-sm">
+                    <input type="checkbox" name="reviewed" required />I have
+                    independently reviewed the requesting administrator&apos;s
+                    verification record and supporting evidence. Based on the
+                    documented checks, I confirm that the required verification
+                    procedure was completed and approve this contact change.
+                  </label>
+                  <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+                    <input
+                      name="reason"
+                      required
+                      minLength={5}
+                      maxLength={300}
+                      placeholder="Your reason (no phone numbers)"
+                      className="control-input !mt-0"
+                      aria-label="Reason for approving"
+                    />
+                    <button className="button-primary">Approve</button>
+                  </div>
+                </form>
+                <CloseContactChange
+                  reject
+                  onClose={(reason) =>
+                    post(
+                      `reject-${c.id}`,
+                      {
+                        action: "contact.change_reject",
+                        tournament: c.tournament,
+                        changeId: c.id,
+                        reason,
+                      },
+                      "Number change rejected.",
+                    )
+                  }
+                />
+              </>
             )}
             {c.status === "awaiting_second_admin" && c.requestedByMe && (
               <p className="text-sm text-amber-200">
-                You started this change, so another main admin must approve it.
+                You started this change, so another main admin must review it.
               </p>
             )}
-            <CancelChange
-              onCancel={(reason) =>
-                post(
-                  `cancel-${c.id}`,
-                  {
-                    action: "contact.change_cancel",
-                    tournament: c.tournament,
-                    changeId: c.id,
-                    reason,
-                  },
-                  "Number change cancelled.",
-                )
-              }
-            />
+            {(c.status !== "awaiting_second_admin" || c.requestedByMe) && (
+              <CloseContactChange
+                onClose={(reason) =>
+                  post(
+                    `cancel-${c.id}`,
+                    {
+                      action: "contact.change_cancel",
+                      tournament: c.tournament,
+                      changeId: c.id,
+                      reason,
+                    },
+                    "Number change cancelled.",
+                  )
+                }
+              />
+            )}
           </article>
         ))}
       </fieldset>

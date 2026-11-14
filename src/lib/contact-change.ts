@@ -27,8 +27,8 @@ import { lockAuditRequest } from "./audit-request";
  * Route 2, independent evidence (two different main admins): every legacy number.
  *   Evidence first (eFootball possession with a server-issued challenge, or a person
  *   who knows the player, live or on video), the code comes back from the new number,
- *   the requesting admin checks the code, then a different main admin approves
- *   within 72 hours.
+ *   the requesting admin checks the code, then a different main admin reviews
+ *   the documented verification and approves or rejects within 72 hours.
  *
  * Never stored or logged: full numbers outside their ciphertexts, codes, challenges.
  * The audit holds no digits of any number, no hashes and no ciphertexts.
@@ -128,6 +128,13 @@ const contactCommand = z.discriminatedUnion("action", [
   }),
   z.strictObject({
     action: z.literal("contact.change_cancel"),
+    tournament: tid,
+    changeId: uuid,
+    reason: safeText(5, 300),
+    requestId,
+  }),
+  z.strictObject({
+    action: z.literal("contact.change_reject"),
     tournament: tid,
     changeId: uuid,
     reason: safeText(5, 300),
@@ -268,7 +275,7 @@ function requireSecondAdmin(user: Who, change: Change) {
   if (change.requested_by === user.id)
     throw new HttpError(
       403,
-      "A second, different main admin must approve this change.",
+      "A second, different main admin must review this change.",
     );
   if (!adminIds().includes(change.requested_by))
     throw new HttpError(
@@ -436,7 +443,11 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
         403,
         "Only the requesting main admin can resend or check the code.",
       );
-    if (c.action === "contact.change_approve") requireSecondAdmin(user, change);
+    if (
+      c.action === "contact.change_approve" ||
+      c.action === "contact.change_reject"
+    )
+      requireSecondAdmin(user, change);
   }
 
   const prior = await tx<
@@ -709,8 +720,23 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
     );
   }
 
-  /* ── Cancel ── */
-  if (c.action === "contact.change_cancel") {
+  /* ── Cancel or reject ── */
+  if (
+    c.action === "contact.change_cancel" ||
+    c.action === "contact.change_reject"
+  ) {
+    const rejected = c.action === "contact.change_reject";
+    if (rejected) {
+      if (
+        ch.route !== "independent_evidence" ||
+        ch.status !== "awaiting_second_admin"
+      )
+        throw new HttpError(409, "This change isn't waiting for review.");
+      requireMainAdmin(user, true);
+      requireSecondAdmin(user, ch);
+    }
+    // Rejection and cancellation both close the request and erase its secrets.
+    // The immutable action records which decision was made.
     await finish(tx, ch.id, "cancelled");
     await writeAudit(
       tx,
@@ -718,12 +744,20 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
       c.action,
       ch.id,
       ch.tournament_id,
-      "Cancelled WhatsApp number change",
+      rejected
+        ? "Rejected WhatsApp number change (second-admin review)"
+        : "Cancelled WhatsApp number change",
       code,
       { status: ch.status },
-      base({ change_id: ch.id, reason: c.reason }),
+      base({
+        change_id: ch.id,
+        reason: c.reason,
+        ...(rejected && { outcome: "rejected", requested_by: ch.requested_by }),
+      }),
     );
-    return { ok: true, changeId: ch.id };
+    return rejected
+      ? { ok: true, changeId: ch.id, status: "rejected" }
+      : { ok: true, changeId: ch.id };
   }
 
   /* ── Resend: new code, same attempt count, same overall deadline ── */
@@ -936,6 +970,7 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
       contact_version: version,
       method: "organizer_attested_independent_evidence",
       requested_by: ch.requested_by,
+      reviewed_verification_record: c.reviewed,
       reason: c.reason,
     }),
   );
