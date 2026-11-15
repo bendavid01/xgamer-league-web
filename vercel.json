@@ -11,7 +11,8 @@
       "security/gate-c-contact": false,
       "security/gate-d-coding-fixes": false,
       "feature/returning-player-registration": false,
-      "feature/new-player-registration-approval": false
+      "feature/new-player-registration-approval": false,
+      "security/registration-remediation": false
     }
   }
 }
