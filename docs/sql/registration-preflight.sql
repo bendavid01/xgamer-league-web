@@ -148,10 +148,10 @@ checks(ord, check_name, status, detail) as (
       select 1 from ledger l join expected later on later.name = l.name
       where later.name > e.name
     ) then 'fail' else 'pass' end,
-    'missing while ' || coalesce((
+    coalesce('missing while ' || (
       select string_agg(l.name, ', ' order by l.name) from ledger l join expected later
         on later.name = l.name where later.name > e.name
-    ), 'no later migration') || ' is recorded'
+    ) || ' is recorded', 'not applied yet, and no later migration is recorded')
   from expected e
   where not exists (select 1 from ledger l where l.name = e.name)
 )
