@@ -1,11 +1,9 @@
-import { timingSafeEqual } from "node:crypto";
 import type { TransactionSql } from "postgres";
 import { z } from "zod";
 import { actor, HttpError } from "./api";
-import { adminIds, type Actor } from "./access";
+import type { Actor } from "./access";
 import {
   AUDIT_TEXT_ERROR,
-  auditNote,
   auditRegistrationTeam,
   auditText,
 } from "./audit-text";
@@ -18,6 +16,14 @@ import {
   lockOpenRegistration,
   registrationInput,
 } from "./registration";
+import {
+  canReviewRegistration,
+  lockRegistrationReviewTournament,
+  registrationProofMatches,
+  registrationReviewReason,
+  registrationVerification,
+  requireRegistrationReviewer,
+} from "./registration-review";
 
 const { tournament, teamName, consent, website } = registrationInput.shape;
 const xgId = z
@@ -75,11 +81,8 @@ export type PendingReturningRegistration = {
   createdAt: string;
 };
 
-const canReview = (user: Actor) =>
-  user.role === "admin" && adminIds().includes(user.id);
-
 export async function pendingReturningRegistrations(user: Actor, t: string) {
-  if (!canReview(user)) return undefined;
+  if (!canReviewRegistration(user)) return undefined;
   const rows = await db()<
     {
       id: string;
@@ -106,33 +109,27 @@ export async function pendingReturningRegistrations(user: Actor, t: string) {
   );
 }
 
-const reason = auditNote(10, 300);
 const requestId = z.string().uuid();
-const verification = {
-  identityVerified: z.literal(true),
-  contactVerified: z.literal(true),
-  reason,
-};
 const command = z.discriminatedUnion("action", [
   z.strictObject({
     action: z.literal("returning.approve"),
     tournament,
     requestId,
     verifiedPhone: phone,
-    ...verification,
+    ...registrationVerification,
   }),
   z.strictObject({
     action: z.literal("returning.reject"),
     tournament,
     requestId,
-    reason,
+    reason: registrationReviewReason,
   }),
   z.strictObject({
     action: z.literal("returning.add"),
     tournament,
     xgId,
     teamName,
-    ...verification,
+    ...registrationVerification,
   }),
 ]);
 
@@ -145,11 +142,6 @@ export function isReturningRegistrationAction(raw: unknown) {
       raw.action === "returning.reject" ||
       raw.action === "returning.add")
   );
-}
-
-function requireReviewer(user: Actor) {
-  if (!canReview(user))
-    throw new HttpError(403, "Only main admins can review returning players.");
 }
 
 /** Both public requests and manual additions use the existing verified identity. */
@@ -170,17 +162,9 @@ export async function executeReturningRegistration(
   // Linking a global player also makes their details available to this tournament's
   // staff. Keep that decision with the existing player-identity permission.
   const organizer = await resolve("players", t);
-  requireReviewer(organizer);
+  requireRegistrationReviewer(organizer);
   return db().begin(async (tx) => {
-    const [cup] = await tx<{ status: string }[]>`
-      select status from tournament where id=${t} and deleted_at is null for update`;
-    if (!cup) throw new HttpError(404, "Tournament not found.");
-    if (c.action !== "returning.reject") {
-      const [fixture] =
-        await tx`select 1 from fixture where tournament_id=${t} limit 1`;
-      if (fixture || !["draft", "open", "locked"].includes(cup.status))
-        throw new HttpError(409, "Players are locked once fixtures exist.");
-    }
+    await lockRegistrationReviewTournament(tx, t, c.action !== "returning.reject");
     if (c.action === "returning.add")
       return addVerifiedEntry(tx, organizer, t, c.xgId, c.teamName, c.reason);
 
@@ -200,7 +184,7 @@ export async function executeReturningRegistration(
         409,
         "This request is no longer pending in this tournament.",
       );
-    requireReviewer(organizer);
+    requireRegistrationReviewer(organizer);
     if (c.action === "returning.reject") {
       await tx`update returning_registration_request set
         status='rejected',decided_at=now(),team_name=null,contact_proof=null where id=${request.id}`;
@@ -217,12 +201,7 @@ export async function executeReturningRegistration(
       request.team_name,
       c.verifiedPhone,
     );
-    if (
-      !timingSafeEqual(
-        Buffer.from(verifiedProof, "hex"),
-        Buffer.from(request.contact_proof, "hex"),
-      )
-    )
+    if (!registrationProofMatches(verifiedProof, request.contact_proof))
       throw new HttpError(
         409,
         "The verified WhatsApp number does not match this request.",
@@ -251,7 +230,7 @@ async function addVerifiedEntry(
   const [player] = await tx<{ id: string }[]>`
     select id from player where public_no=${publicNo} and deleted_at is null for update`;
   if (!player) throw new HttpError(404, "No active player has that XG ID.");
-  requireReviewer(organizer);
+  requireRegistrationReviewer(organizer);
   // Keep the existing unique pair, including withdrawn and rejected history.
   const [application] = await tx<{ id: string }[]>`
     insert into application(tournament_id,player_id,status,verified_at,team_name,team_name_source)

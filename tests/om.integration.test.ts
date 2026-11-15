@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { testDatabaseUrl } from "./helpers/test-database";
+import { approveNewPlayer } from "./helpers/approve-new-player";
 
 // WHY: this test wipes its database. Refuse anything that is not a local server.
 const url = testDatabaseUrl();
@@ -36,6 +37,7 @@ const admin = {
 
 before(async () => {
   if (!url) return;
+  process.env.MAIN_ADMIN_DISCORD_IDS = `${admin.id},759756138437804043`;
   ({ run } = await import("../src/lib/control"));
   ({ register, openTournaments } = await import("../src/lib/registration"));
   ({ getTournament, listTournaments, getChampions } =
@@ -69,18 +71,18 @@ const tour = async (id: string) =>
   (await sql`select * from tournament where id=${id}`)[0];
 const apps = (t: string) =>
   sql`select a.id,a.revision,a.status,p.id as player_id,p.gaming_name from application a join player p on p.id=a.player_id where a.tournament_id=${t} and a.deleted_at is null order by p.gaming_name`;
-const join = (t: string, i: number, ip = `10.0.${i}.1`) =>
-  register(
-    {
-      playerName: `P${i}`,
-      teamName: `Team ${i}`,
-      phone: `98000000${String(i).padStart(2, "0")}`,
-      consent: true,
-      website: "",
-      tournament: t,
-    },
-    ip,
-  );
+const join = async (t: string, i: number, ip = `10.0.${i}.1`) => {
+  const input = {
+    playerName: `P${i}`,
+    teamName: `Team ${i}`,
+    phone: `98000000${String(i).padStart(2, "0")}`,
+    consent: true as const,
+    website: "",
+    tournament: t,
+  };
+  const { reference } = await register(input, ip);
+  return approveNewPlayer(reference, input, asAdmin);
+};
 async function configure(t: string, patch: Record<string, unknown>) {
   const row = await tour(t);
   return cmd({
@@ -151,11 +153,11 @@ test(
     for (let i = 0; i < 7; i++) await join(cup.id, i);
     await assert.rejects(
       () => join(cup.id, 3, "10.9.9.9"),
-      /Registration needs organizer review/,
+      { status: 409, message: /WhatsApp number is already reserved/ },
     );
     await assert.rejects(
       () => join(night.id, 3, "10.9.9.8"),
-      /Registration needs organizer review/,
+      { status: 409, message: /WhatsApp number is already reserved/ },
     );
     for (let i = 10; i < 15; i++) await join(night.id, i);
 
@@ -318,8 +320,9 @@ test(
     // Activity log is readable: names, roles, plain summaries, affected players; no phone numbers.
     const log =
       await sql`select actor_name,actor_role,summary,affected,tournament_id from audit_event order by id`;
-    const reg = log.find((l) => l.summary === "Registered")!;
-    assert.equal(reg.actor_role, "player");
+    const reg = log.find((l) => l.summary === "Approved new-player application")!;
+    assert.equal(reg.actor_role, "admin");
+    assert.equal(reg.actor_name, "David");
     assert.match(reg.affected, /^XG-\d{4}$/);
     const approve = log.find((l) => l.summary === "Approved")!;
     assert.equal(approve.actor_name, "David");
@@ -637,17 +640,16 @@ test(
       ids.push(t.id);
     }
     const teams = ["Real Madrid", "Barcelona", "Arsenal"];
-    const { playerId, code } = await register(
-      {
-        playerName: "Seven",
-        teamName: teams[0],
-        phone: "9811100077",
-        consent: true,
-        website: "",
-        tournament: ids[0],
-      },
-      "10.77.0.1",
-    );
+    const input = {
+      playerName: "Seven",
+      teamName: teams[0],
+      phone: "9811100077",
+      consent: true as const,
+      website: "",
+      tournament: ids[0],
+    };
+    const { reference } = await register(input, "10.77.0.1");
+    const { playerId, code } = await approveNewPlayer(reference, input, asAdmin);
     // Model the entries and audit records made by the earlier registration system.
     for (let i = 1; i < ids.length; i++) {
       const [entry] = await sql`
@@ -713,7 +715,7 @@ test(
 );
 
 test(
-  "public registration protects active and retired identities with the same generic response",
+  "public intake keeps stored contacts private and approval cannot reuse active or retired identities",
   { skip },
   async () => {
     const { POST } = await import("../src/app/api/registrations/route");
@@ -747,17 +749,22 @@ test(
           }),
         }),
       );
-    for (const [phone, tournament] of [
-      ["09800000086", otherCup],
-      ["+91 9800000086", originalCup],
-      ["980-000-0087", otherCup],
-    ]) {
+    for (const [phone, tournament, reserved] of [
+      ["09800000086", otherCup, true],
+      ["+91 9800000086", originalCup, true],
+      ["980-000-0087", otherCup, true],
+      ["9800000089", otherCup, false],
+    ] as const) {
       const response = await send(phone, tournament);
-      assert.equal(response.status, 409);
-      assert.deepEqual(await response.json(), {
-        error:
-          "Registration needs organizer review. Contact an organizer to continue.",
-      });
+      assert.equal(response.status, 202);
+      const receipt = await response.json();
+      assert.deepEqual(Object.keys(receipt), ["reference"]);
+      assert.match(receipt.reference, /^[a-f0-9-]{36}$/);
+      if (reserved)
+        await assert.rejects(
+          approveNewPlayer(receipt.reference, { tournament, phone }, asAdmin),
+          { status: 409, message: /WhatsApp number is already reserved/ },
+        );
     }
     assert.deepEqual(await readState(), previous);
 
@@ -774,7 +781,7 @@ test(
 );
 
 test(
-  "simultaneous public registrations create one identity, entry, and audit row",
+  "simultaneous approvals of public applications create one identity, entry, and redacted audit row",
   { skip },
   async () => {
     const cups = [
@@ -788,9 +795,16 @@ test(
       playerName: "New Player １２３４５６",
       teamName: "Team 98000_00088",
     };
+    const pending = await Promise.all(cups.map(async (tournament, i) => ({
+      tournament,
+      ...(await register({ ...input, tournament }, `10.88.0.${i + 1}`)),
+    })));
+    assert.notEqual(pending[0].reference, pending[1].reference);
     const results = await Promise.allSettled(
-      cups.map((tournament, i) =>
-        register({ ...input, tournament }, `10.88.0.${i + 1}`),
+      pending.map(({ reference, tournament }) =>
+        approveNewPlayer(reference, { tournament, phone: input.phone }, async () => ({
+          ...(await asAdmin()), name: "Reviewer １２３４５６",
+        })),
       ),
     );
     const passed = results.filter((r) => r.status === "fulfilled");
@@ -799,7 +813,7 @@ test(
       (r) => r.status === "rejected",
     ) as PromiseRejectedResult;
     assert.equal(failed.reason.status, 409);
-    assert.match(failed.reason.message, /^Registration needs organizer review/);
+    assert.match(failed.reason.message, /WhatsApp number is already reserved/);
     const player = passed[0].value;
     const players =
       await sql`select id from player where gaming_name=${input.playerName}`;
@@ -808,25 +822,17 @@ test(
     assert.deepEqual([...players], [{ id: player.playerId }]);
     assert.equal(entries.length, 1);
     assert.equal(entries[0].player_id, player.playerId);
-    assert.equal(entries[0].status, "pending");
+    assert.equal(entries[0].status, "approved");
     assert.equal(entries[0].team_name, input.teamName);
     const registered =
       await sql`select actor_name, affected, after_value from audit_event
     where tournament_id=any(${cups}) and action='application.create'`;
-    assert.deepEqual(
-      [...registered],
-      [
-        {
-          actor_name: "[REDACTED]",
-          affected: player.code,
-          after_value: {
-            status: "pending",
-            playerId: player.playerId,
-            team: null,
-          },
-        },
-      ],
-    );
+    assert.equal(registered.length, 1);
+    assert.equal(registered[0].actor_name, "[REDACTED]");
+    assert.equal(registered[0].affected, player.code);
+    assert.equal(registered[0].after_value.status, "approved");
+    assert.equal(registered[0].after_value.playerId, player.playerId);
+    assert.equal(registered[0].after_value.team, null);
   },
 );
 

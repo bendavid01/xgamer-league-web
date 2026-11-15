@@ -123,8 +123,8 @@ export default async function Register({
               <li>
                 <strong>Get confirmed</strong>
                 <span>
-                  If you already have an XG ID, message an organizer privately
-                  on Discord to verify your request.
+                  Share your application reference or existing XG ID privately
+                  with an organizer on Discord to verify your request.
                 </span>
               </li>
               <li>

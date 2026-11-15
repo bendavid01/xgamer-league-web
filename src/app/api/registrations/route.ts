@@ -37,6 +37,6 @@ export async function POST(request: Request) {
         400,
         "Check your player name, team name, phone number and the consent box.",
       );
-    return response(await register(parsed.data, ip), 201);
+    return response(await register(parsed.data, ip), 202);
   });
 }

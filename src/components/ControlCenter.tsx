@@ -2,7 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
-import ReturningPlayers from "@/components/ReturningPlayers";
+import ReturningPlayers, {
+  NewPlayerApplications,
+} from "@/components/RegistrationRequests";
+import type { PendingNewPlayerRegistration } from "@/lib/new-player-registration";
 import type { PendingReturningRegistration } from "@/lib/returning-registration";
 import {
   FORMAT_CHOICES,
@@ -103,6 +106,7 @@ type Workspace = {
     description: string | null;
   };
   applications: Application[];
+  newPlayerRequests?: PendingNewPlayerRegistration[];
   returningRequests?: PendingReturningRegistration[];
   fixtures: Match[];
   standings: {
@@ -291,7 +295,9 @@ export default function ControlCenter() {
       } else {
         await Promise.all([load(null), open ? load(open) : Promise.resolve()]);
       }
-      if (done) setNotice(done);
+      if (value.action === "newPlayer.approve" && typeof result.code === "string")
+        setNotice(`New player approved with permanent ID ${result.code}.`);
+      else if (done) setNotice(done);
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -936,6 +942,8 @@ function TournamentWorkspace({
   const can = (op: string) =>
     data.user.role === "admin" || data.user.operations.includes(op);
   const admin = data.user.role === "admin";
+  const rosterOpen =
+    ["draft", "open", "locked"].includes(t.status) && !data.fixtures.length;
   const [tab, setTab] = useState<string>(
     can("registrations")
       ? "players"
@@ -946,6 +954,9 @@ function TournamentWorkspace({
   const tabs: [string, string][] = [
     ...(can("registrations")
       ? [["players", "Players"] as [string, string]]
+      : []),
+    ...(data.newPlayerRequests
+      ? [["new-applications", "New applications"] as [string, string]]
       : []),
     ...(data.returningRequests
       ? [["returning", "Returning players"] as [string, string]]
@@ -1012,10 +1023,17 @@ function TournamentWorkspace({
       {tab === "players" && (
         <PlayersTab data={data} act={act} reload={reload} />
       )}
+      {tab === "new-applications" && data.newPlayerRequests && (
+        <NewPlayerApplications
+          requests={data.newPlayerRequests}
+          rosterOpen={rosterOpen}
+          act={act}
+        />
+      )}
       {tab === "returning" && data.returningRequests && (
         <ReturningPlayers
           requests={data.returningRequests}
-          rosterOpen={["draft", "open", "locked"].includes(t.status) && !data.fixtures.length}
+          rosterOpen={rosterOpen}
           act={act}
         />
       )}

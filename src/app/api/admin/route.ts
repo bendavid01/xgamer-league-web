@@ -16,6 +16,10 @@ import {
   executeReturningRegistration,
   isReturningRegistrationAction,
 } from "@/lib/returning-registration";
+import {
+  executeNewPlayerRegistration,
+  isNewPlayerRegistrationAction,
+} from "@/lib/new-player-registration";
 
 /**
  * GET /api/admin → OM home; GET /api/admin?t=<id> → that tournament's workspace;
@@ -44,7 +48,9 @@ export async function POST(request: Request) {
           ? await executeEdit(raw)
           : isReturningRegistrationAction(raw)
             ? await executeReturningRegistration(raw)
-            : await execute(raw),
+            : isNewPlayerRegistrationAction(raw)
+              ? await executeNewPlayerRegistration(raw)
+              : await execute(raw),
     );
   });
 }

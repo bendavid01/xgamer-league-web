@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import postgres from "postgres";
 import { isLocalTestDatabase, testDatabaseUrl } from "./helpers/test-database";
+import { approveNewPlayer } from "./helpers/approve-new-player";
 
 const base = testDatabaseUrl();
 const skip = !base && "TEST_DATABASE_URL not set";
@@ -195,27 +196,22 @@ before(async () => {
   await cmd({ action: "complete", tournament: H, podium: order.slice(0, 3) });
 
   await cmd({ action: "registration", tournament: W, open: true });
-  const gus = await register(
-    {
-      playerName: "Gus",
-      teamName: "Bears",
-      phone: "9822200011",
-      consent: true,
-      website: "",
-      tournament: W,
-    },
-    "10.20.0.1",
-  );
-  const [gusApp] =
-    await sql`select id,revision from application where player_id=${gus.playerId}`;
-  await cmd({
-    action: "review",
+  const gusInput = {
+    playerName: "Gus",
+    teamName: "Bears",
+    phone: "9822200011",
+    consent: true as const,
+    website: "",
     tournament: W,
-    status: "approved",
-    verified: true,
-    items: [{ id: gusApp.id, revision: gusApp.revision }],
-  });
-  P.gus = { player: gus.playerId, app: gusApp.id, code: gus.code };
+  };
+  const { reference } = await register(gusInput, "10.20.0.1");
+  process.env.MAIN_ADMIN_DISCORD_IDS = `${admin.id},${admin2.id}`;
+  try {
+    const gus = await approveNewPlayer(reference, gusInput, as(admin));
+    P.gus = { player: gus.playerId, app: gus.applicationId, code: gus.code };
+  } finally {
+    delete process.env.MAIN_ADMIN_DISCORD_IDS;
+  }
 
   baseline = await fingerprints();
   firstEditAudit =

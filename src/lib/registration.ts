@@ -1,9 +1,8 @@
 import { z } from "zod";
 import type { TransactionSql } from "postgres";
 import { db } from "./db";
-import { encrypt, fingerprint } from "./private-data";
+import { fingerprint } from "./private-data";
 import { HttpError } from "./api";
-import { auditRegistrationTeam, auditText } from "./audit-text";
 
 /**
  * Indian mobile numbers only. The form sends 10 digits; pasted "+91…" or "0…" forms are
@@ -65,6 +64,9 @@ export async function lockOpenRegistration(tx: TransactionSql, tournament: strin
   return t.id;
 }
 
+export const newPlayerContactProof = (tournament: string, phone: string) =>
+  fingerprint("xg:new-player-registration:v1:" + JSON.stringify([tournament, phone]));
+
 export async function register(
   input: z.infer<typeof registrationInput>,
   ip: string,
@@ -74,31 +76,20 @@ export async function register(
   await checkRegistrationLimit(ip);
   return db().begin(async (tx) => {
     const tournament = await lockOpenRegistration(tx, input.tournament);
-    const phoneHash = fingerprint("whatsapp:" + phone);
-    // A number on file is not proof of the person's identity. Retired records
-    // reserve their numbers too. The existing-player form uses a separate review.
-    const needsReview = () =>
-      new HttpError(409, "Registration needs organizer review. Contact an organizer to continue.");
-    const [existing] =
-      await tx`select 1 from player where contact_hash=${phoneHash}`;
-    if (existing) throw needsReview();
-    const [player] =
-      await tx`insert into player(gaming_name,team_name,contact_hash,contact_cipher,preference,consent_version)
-        values(${input.playerName},${input.teamName},${phoneHash},${encrypt(phone)},'whatsapp','2026-10-v3')
-        on conflict (contact_hash) do nothing returning id,public_no`;
-    if (!player) throw needsReview();
-    const [application] =
-      // The team for THIS tournament; later registrations never change it.
-      await tx`insert into application(tournament_id,player_id,status,team_name,team_name_source)
-        values(${tournament},${player.id},'pending',${input.teamName},'registration') returning id,status`;
-    const code = `XG-${String(player.public_no).padStart(4, "0")}`;
-    await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,after_value)
-      values(${"player:" + player.id},${auditText(input.playerName)},'player','application.create',${application.id},${tournament},'Registered',${code},${tx.json({ playerId: player.id, team: auditRegistrationTeam(input.teamName), status: application.status })})`;
-    return {
-      playerId: player.id as string,
-      code,
-      status: application.status as string,
-    };
+    // Intake records a claim without revealing whether the number is on file.
+    const proof = newPlayerContactProof(tournament, phone);
+    const [created] = await tx<{ id: string }[]>`
+      insert into new_player_registration_request(tournament_id,gaming_name,team_name,contact_proof,consent_version)
+      values(${tournament},${input.playerName},${input.teamName},${proof},'2026-10-v3')
+      on conflict(tournament_id,contact_proof,gaming_name,team_name) where status='pending'
+      do nothing returning id`;
+    if (created) return { reference: created.id };
+
+    const [pending] = await tx<{ id: string }[]>`
+      select id from new_player_registration_request
+      where tournament_id=${tournament} and contact_proof=${proof} and gaming_name=${input.playerName}
+        and team_name=${input.teamName} and status='pending'`;
+    return { reference: pending.id };
   });
 }
 

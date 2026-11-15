@@ -113,6 +113,7 @@ test("G6: the release ledger includes the returning-player migration and verifie
       "008_team_name_provenance",
       "009_contact_change",
       "011_returning_player_registration",
+      "012_new_player_registration_approval",
     ],
     changed: [],
     recognized: ["006_mcp_oauth"],

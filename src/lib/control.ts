@@ -16,6 +16,7 @@ import { maskPhone } from "./phone";
 import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
 import { tournamentParticipants } from "./tournament-participants";
 import { pendingReturningRegistrations } from "./returning-registration";
+import { pendingNewPlayerRegistrations } from "./new-player-registration";
 
 /* ─────────────────────────── Commands ─────────────────────────── */
 
@@ -247,11 +248,15 @@ export async function snapshot(tournament: string, resolve = actor) {
   );
   const [photo] =
     await sql`select extract(epoch from updated_at)::bigint as v from tournament_photo where tournament_id=${tournament}`;
-  const returningRequests = await pendingReturningRegistrations(user, tournament);
+  const [returningRequests, newPlayerRequests] = await Promise.all([
+    pendingReturningRegistrations(user, tournament),
+    pendingNewPlayerRegistrations(user, tournament),
+  ]);
   return {
     user: publicUser(user),
     tournament: t,
     returningRequests,
+    newPlayerRequests,
     applications: applications.map((a) => ({
       id: a.id,
       player_id: a.player_id,

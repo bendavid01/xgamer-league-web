@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import type { PendingNewPlayerRegistration } from "@/lib/new-player-registration";
 import type { PendingReturningRegistration } from "@/lib/returning-registration";
 
 type Submit = (
@@ -9,7 +10,7 @@ type Submit = (
   message: string,
 ) => Promise<boolean>;
 
-function VerificationFields() {
+function VerificationFields({ returning = true }: { returning?: boolean }) {
   return (
     <div className="space-y-2">
       <label className="flex items-start gap-2">
@@ -19,7 +20,9 @@ function VerificationFields() {
           required
           className="mt-1"
         />
-        I independently verified that this person owns the existing XG identity.
+        {returning
+          ? "I independently verified that this person owns the existing XG identity."
+          : "I independently verified the player's identity and checked their application details."}
       </label>
       <label className="flex items-start gap-2">
         <input
@@ -66,16 +69,18 @@ function ReviewRequest({
   rosterOpen,
   act,
 }: {
-  request: PendingReturningRegistration;
+  request: PendingReturningRegistration | PendingNewPlayerRegistration;
   rosterOpen: boolean;
   act: Submit;
 }) {
   const [rejecting, setRejecting] = useState(false);
   const reject = rejecting || !rosterOpen;
+  const returning = "code" in request;
   return (
     <details className="om-card">
       <summary className="cursor-pointer">
-        <strong>{request.code}</strong> · {request.team} ·{" "}
+        <strong>{returning ? request.code : request.name}</strong> ·{" "}
+        {request.team} ·{" "}
         <time dateTime={request.createdAt} className="text-slate-400">
           {new Date(request.createdAt).toLocaleString("en-IN", {
             timeZone: "Asia/Kolkata",
@@ -88,35 +93,51 @@ function ReviewRequest({
           event.preventDefault();
           const data = new FormData(event.currentTarget);
           const decision = {
-            requestId: request.id,
+            ...(returning
+              ? { requestId: request.id }
+              : { reference: request.reference }),
             reason: data.get("reason"),
           };
           if (reject) {
             void act(
-              { action: "returning.reject", ...decision },
-              "Returning-player request rejected.",
+              {
+                action: returning ? "returning.reject" : "newPlayer.reject",
+                ...decision,
+              },
+              returning
+                ? "Returning-player request rejected."
+                : "New-player application rejected.",
             );
           } else {
             void act(
               {
-                action: "returning.approve",
+                action: returning ? "returning.approve" : "newPlayer.approve",
                 ...decision,
                 ...verification(data),
                 verifiedPhone: data.get("verifiedPhone"),
               },
-              "Returning player approved under their existing XG ID.",
+              returning
+                ? "Returning player approved under their existing XG ID."
+                : "New player approved.",
             );
           }
         }}
       >
-        <Link
-          href={`/players/${request.code}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="om-link"
-        >
-          View player history for {request.code} ↗
-        </Link>
+        {returning ? (
+          <Link
+            href={`/players/${request.code}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="om-link"
+          >
+            View player history for {request.code} ↗
+          </Link>
+        ) : (
+          <p className="text-sm">
+            Application reference{" "}
+            <code className="break-all">{request.reference}</code>
+          </p>
+        )}
         {rosterOpen && (
           <label className="block">
             Decision
@@ -149,7 +170,7 @@ function ReviewRequest({
                 request.
               </span>
             </label>
-            <VerificationFields />
+            <VerificationFields returning={returning} />
           </>
         )}
         <ReasonField key={reject ? "reject" : "approve"} rejecting={reject} />
@@ -158,6 +179,53 @@ function ReviewRequest({
         </button>
       </form>
     </details>
+  );
+}
+
+export function NewPlayerApplications({
+  requests,
+  rosterOpen,
+  act,
+}: {
+  requests: PendingNewPlayerRegistration[];
+  rosterOpen: boolean;
+  act: Submit;
+}) {
+  return (
+    <section
+      className="panel p-4 md:p-7 space-y-5"
+      aria-labelledby="new-applications-title"
+    >
+      <h3 id="new-applications-title" className="text-xl font-bold">
+        Pending new-player applications
+      </h3>
+      {requests.length ? (
+        <>
+          <p className="text-sm text-slate-400">
+            Ask the applicant for their reference. Verify their identity,
+            details and control of their WhatsApp number before approving.
+          </p>
+          {!rosterOpen && (
+            <p className="notice">
+              The roster is locked. Pending applications can still be rejected.
+            </p>
+          )}
+          <ul className="space-y-3">
+            {requests.map((request) => (
+              <li key={request.reference}>
+                <ReviewRequest
+                  request={request}
+                  rosterOpen={rosterOpen}
+                  act={act}
+                />
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="text-slate-400">No pending applications.</p>
+      )}
+    </section>
   );
 }
 

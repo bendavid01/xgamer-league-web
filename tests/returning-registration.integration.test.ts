@@ -212,7 +212,7 @@ test(
   "011 adds only a detached queue and preserves the existing records and ID sequence",
   { skip },
   async () => {
-    assert.equal(ledger.at(-1)?.name, "011_returning_player_registration");
+    assert.ok(ledger.some((m) => m.name === "011_returning_player_registration"));
     assert.ok(!ledger.some((m) => m.name.startsWith("010")));
     assert.deepEqual(await history(), historicalBefore);
   },
@@ -656,7 +656,7 @@ test(
 );
 
 test(
-  "New Player still receives a permanent XG ID before approval and cannot use another player's saved number",
+  "New Player receives only a temporary reference and cannot use another player's saved number",
   { skip },
   async () => {
     const response = (phone: string) =>
@@ -671,14 +671,16 @@ test(
           website: "",
         }),
       );
-    assert.equal((await response(OLD_PHONE)).status, 409);
-    const created = await response("9899800090");
-    assert.equal(created.status, 201);
-    const body = await created.json();
-    const [app] =
-      await sql`select a.status,p.public_no from application a join player p on p.id=a.player_id
-    where a.tournament_id=${OTHER} and p.id=${body.playerId}`;
-    assert.equal(body.code, "XG-" + String(app.public_no).padStart(4, "0"));
-    assert.equal(app.status, "pending");
+    for (const phone of [OLD_PHONE, "9899800090"]) {
+      const created = await response(phone);
+      assert.equal(created.status, 202);
+      const body = await created.json();
+      assert.deepEqual(Object.keys(body), ["reference"]);
+      const [request] = await sql`select status, application_id
+        from new_player_registration_request where id=${body.reference}`;
+      assert.equal(request.status, "pending");
+      assert.equal(request.application_id, null);
+    }
+    assert.deepEqual(await history(), historicalBefore);
   },
 );

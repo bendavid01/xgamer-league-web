@@ -1,7 +1,10 @@
 "use client";
 import { useState } from "react";
 
-type Result = { kind: "success" } | { kind: "error"; message: string } | null;
+type Result =
+  | { kind: "success"; reference?: string }
+  | { kind: "error"; message: string }
+  | null;
 
 export default function RegistrationForm({
   tournament,
@@ -18,14 +21,25 @@ export default function RegistrationForm({
     return (
       <div className="panel p-6 md:p-10" role="status">
         <p className="eyebrow">REGISTRATION RECEIVED</p>
-        <h2 className="text-3xl font-bold">
-          {kind === "existing" ? "Request received." : "You’re on the list."}
-        </h2>
-        <p className="text-slate-300 mt-4 leading-relaxed">
-          {kind === "existing"
-            ? "Message an organizer privately on Discord to verify your XG ID and WhatsApp number. Your entry is pending until they approve it."
-            : "An organizer will message you on WhatsApp to confirm your entry. Keep your eFootball ID ready. They’ll ask for it after you’re approved."}
-        </p>
+        <h2 className="text-3xl font-bold">Request received.</h2>
+        {result.reference ? (
+          <>
+            <p className="mt-4">Application reference</p>
+            <code className="block mt-2 break-all text-cyan-200">
+              {result.reference}
+            </code>
+            <p className="text-slate-300 mt-4 leading-relaxed">
+              Share your reference privately with an organizer on Discord.
+              You&apos;ll receive your permanent XG ID if they approve your
+              application.
+            </p>
+          </>
+        ) : (
+          <p className="text-slate-300 mt-4 leading-relaxed">
+            Message an organizer privately on Discord to verify your XG ID and
+            WhatsApp number. Your entry is pending until they approve it.
+          </p>
+        )}
       </div>
     );
 
@@ -56,8 +70,12 @@ export default function RegistrationForm({
           });
           const body = await res.json().catch(() => ({}));
           setResult(
-            res.ok
-              ? { kind: "success" }
+            res.ok &&
+              (kind === "existing" || typeof body.reference === "string")
+              ? {
+                  kind: "success",
+                  reference: kind === "new" ? body.reference : undefined,
+                }
               : {
                   kind: "error",
                   message:
@@ -199,7 +217,7 @@ export default function RegistrationForm({
           <span id="phone-hint" className="block mt-2 text-sm text-slate-400">
             {kind === "existing"
               ? "Use a number you control. Include the country code if it’s outside India."
-              : "10-digit Indian mobile number. Only organizers see it."}
+              : "Use a 10-digit Indian mobile number you control."}
           </span>
         </label>
         <div hidden aria-hidden="true">

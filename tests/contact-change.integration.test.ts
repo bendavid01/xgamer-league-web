@@ -11,6 +11,7 @@ import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { isLocalTestDatabase, testDatabaseUrl } from "./helpers/test-database";
+import { approveNewPlayer } from "./helpers/approve-new-player";
 
 // W-L1: capture every console line written while these tests run.
 const logs: string[] = [];
@@ -240,10 +241,11 @@ before(async () => {
     t: string,
     ip: string,
   ) => {
-    const r = await reg(
+    const { reference } = await reg(
       { playerName: name, teamName: `${name} FC`, phone, tournament: t },
       ip,
     );
+    const r = await approveNewPlayer(reference, { tournament: t, phone }, as(A));
     ply[key] = { id: r.playerId, code: r.code, phone: `+91${phone}` };
   };
   for (const [i, [key, name]] of [
@@ -1101,23 +1103,17 @@ test(
 );
 
 test(
-  "W-K3: completion racing registration with the same new number: one owner, no partial state",
+  "W-K3: a contact change racing new-player approval has one owner and no partial state",
   { skip },
   async () => {
     await resetLimits();
     const s = await start(A, ply.eve, "9833300009", evidence());
     await code(A, String(s.changeId), String(s.code));
+    const intake = { playerName: "Racer", teamName: "Race FC", phone: "9833300009", tournament: W };
+    const { reference } = await reg(intake, "10.9.9.9");
     const results = await Promise.allSettled([
       approve(B, String(s.changeId)),
-      reg(
-        {
-          playerName: "Racer",
-          teamName: "Race FC",
-          phone: "9833300009",
-          tournament: W,
-        },
-        "10.9.9.9",
-      ),
+      approveNewPlayer(reference, intake, as(A)),
     ]);
     const owners =
       await sql`select id from player where contact_hash=${hashOf("+919833300009")}`;
@@ -1789,21 +1785,20 @@ test(
     });
     const before = await annState();
     assert.equal(before.player.contact_hash, hashOf("+919833300001"));
+    const reserved = {
+      playerName: "Impostor",
+      teamName: "Other Team",
+      phone: "+91-98333-00001",
+      tournament: W,
+    };
+    const claim = await reg(reserved, "10.7.0.1");
     await assert.rejects(
-      reg(
-        {
-          playerName: "Impostor",
-          teamName: "Other Team",
-          phone: "+91-98333-00001",
-          tournament: W,
-        },
-        "10.7.0.1",
-      ),
-      status(409, /^Registration needs organizer review\./),
+      approveNewPlayer(claim.reference, reserved, as(A)),
+      status(409, /WhatsApp number is already reserved/),
     );
     assert.deepEqual(await annState(), before);
     // Old number: a new player and a new XG ID; Ann is untouched.
-    const fresh = await reg(
+    const { reference } = await reg(
       {
         playerName: "Newcomer",
         teamName: "New FC",
@@ -1812,6 +1807,7 @@ test(
       },
       "10.7.0.2",
     );
+    const fresh = await approveNewPlayer(reference, { tournament: W, phone: "9811100001" }, as(A));
     assert.notEqual(fresh.code, ply.ann.code);
     assert.notEqual(fresh.playerId, ply.ann.id);
     assert.deepEqual(await annState(), before);

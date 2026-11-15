@@ -81,11 +81,12 @@ test("G2: 008 only re-creates the provenance check, with exactly the 4 labels, a
 
 test("G3: a fresh database applies all migrations and still accepts only the four team labels", async () => {
   const files = (await readdir(dir)).filter((f) => /^\d{3}_.*\.sql$/.test(f));
-  assert.deepEqual(files.sort().slice(-4), [
+  assert.deepEqual(files.sort().slice(-5), [
     "007_application_team_name.sql",
     "008_team_name_provenance.sql",
     "009_contact_change.sql",
     "011_returning_player_registration.sql",
+    "012_new_player_registration_approval.sql",
   ]);
   const pg = new PGlite();
   try {
