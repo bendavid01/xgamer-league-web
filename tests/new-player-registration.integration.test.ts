@@ -313,7 +313,14 @@ test(
       .newPlayerRequests!;
     assert.deepEqual(
       Object.keys(queue.find((r) => r.reference === ref)!).sort(),
-      ["createdAt", "name", "reference", "team"],
+      [
+        "createdAt",
+        "moreMatches",
+        "name",
+        "possibleMatches",
+        "reference",
+        "team",
+      ],
     );
     assert.ok(!JSON.stringify(queue).includes(String(payload(13).phone)));
     for (const who of [coordinator, { ...admin, id: coordinator.id }]) {
@@ -549,6 +556,7 @@ test(
         tournament: LEGACY,
         status,
         verified: status === "approved",
+        reason: "Verified the earlier applicant on their number on file.",
         items: [{ id: row.id, revision: row.revision }],
       });
       const [actual] = await sql`select p.public_no,a.id,a.player_id,a.status

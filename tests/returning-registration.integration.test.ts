@@ -14,6 +14,7 @@ const OTHER = "another-cup";
 const OLD_PHONE = "+919899800001";
 const CLAIM_PHONE = "+447911123456";
 const FORMATTED_CLAIM_PHONE = "+44 7911 123456";
+const ELLIS_PHONE = "+919899800002";
 const VERIFIED = {
   identityVerified: true,
   contactVerified: true,
@@ -103,7 +104,9 @@ before(async () => {
   const { encrypt, fingerprint } = await import("../src/lib/private-data");
   players = [];
   for (const [i, name] of ["River", "Ellis", "Retired"].entries()) {
-    const phone = i === 0 ? OLD_PHONE : `+91989980000${i + 1}`;
+    // River's number on file is the one River claims with (H1: approvals must
+    // match it). OLD_PHONE belongs to the retired record, so it is still taken.
+    const phone = [CLAIM_PHONE, ELLIS_PHONE, OLD_PHONE][i];
     const [player] = await sql<{ id: string; public_no: number }[]>`
       insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_version,deleted_at)
       values(${name},'Current Club',${fingerprint("whatsapp:" + phone)},${encrypt(phone)},'test',
@@ -379,6 +382,7 @@ test(
           action: "returning.add",
           xgId: code(0),
           teamName: "Club",
+          verifiedPhone: CLAIM_PHONE,
           ...VERIFIED,
         },
         coordinator,
@@ -396,6 +400,7 @@ test(
         tournament: CUP,
         xgId: code(0),
         teamName: "Club",
+        verifiedPhone: CLAIM_PHONE,
         ...VERIFIED,
       }),
     );
@@ -537,11 +542,18 @@ test(
       action: "returning.add",
       xgId: code(1),
       teamName: "Manual Club",
+      verifiedPhone: ELLIS_PHONE,
       ...VERIFIED,
     };
     await assert.rejects(
       run({ ...manual, contactVerified: false }),
       rejects(400),
+    );
+    const { verifiedPhone: _phone, ...withoutPhone } = manual;
+    await assert.rejects(run(withoutPhone), rejects(400));
+    await assert.rejects(
+      run({ ...manual, verifiedPhone: CLAIM_PHONE }),
+      rejects(409, /not the WhatsApp number on file for XG-\d{4}/),
     );
     await assert.rejects(run({ ...manual, xgId: code(2) }), rejects(404));
     await assert.rejects(
@@ -570,12 +582,28 @@ test(
     assert.equal(audit.actor, otherAdmin.id);
     assert.equal(audit.after_value.method, "manual_existing_player");
     assert.equal(audit.after_value.reason, VERIFIED.reason);
-    await sql`update application set status='withdrawn',deleted_at=now() where id=${entry.id}`;
     await assert.rejects(run(manual), rejects(409, /already has an entry/));
+    // M2: a removed entry is restored in place (same row, team and provenance kept).
+    await sql`update application set status='withdrawn',deleted_at=now() where id=${entry.id}`;
+    const restored = await run({ ...manual, teamName: "Different Club" });
+    assert.deepEqual(restored, {
+      ok: true,
+      restored: true,
+      team: "Manual Club",
+    });
     const [after] =
-      await sql`select status,deleted_at from application where id=${entry.id}`;
-    assert.equal(after.status, "withdrawn");
-    assert.ok(after.deleted_at);
+      await sql`select id,status,deleted_at,team_name,team_name_source from application
+        where player_id=${players[1].id} and tournament_id=${CUP}`;
+    assert.equal(after.id, entry.id);
+    assert.equal(after.status, "approved");
+    assert.equal(after.deleted_at, null);
+    assert.equal(after.team_name, "Manual Club");
+    assert.equal(after.team_name_source, "registration");
+    const [restoreAudit] =
+      await sql`select action,before_value,after_value from audit_event where entity=${entry.id} and action='application.restore'`;
+    assert.equal(restoreAudit.before_value.status, "withdrawn");
+    assert.equal(restoreAudit.after_value.requested_team, "Different Club");
+    assert.equal(restoreAudit.after_value.contact_matches_number_on_file, true);
     assert.deepEqual(await history(), historicalBefore);
   },
 );
@@ -594,6 +622,7 @@ test(
           tournament: OTHER,
           xgId: code(0),
           teamName: "Replay Club",
+          verifiedPhone: CLAIM_PHONE,
           ...VERIFIED,
         },
         otherAdmin,
@@ -617,7 +646,9 @@ test(
   "a failed approval audit rolls back the entry and leaves the claim pending",
   { skip },
   async () => {
-    await received(await send({ tournament: OTHER, xgId: code(1) }));
+    await received(
+      await send({ tournament: OTHER, xgId: code(1), phone: ELLIS_PHONE }),
+    );
     const req = (await pending(OTHER)).find(
       (r) => r.claimed_public_no === players[1].public_no,
     )!;
@@ -632,7 +663,7 @@ test(
     `);
     try {
       await assert.rejects(
-        approve(req.id, { tournament: OTHER }),
+        approve(req.id, { tournament: OTHER, verifiedPhone: ELLIS_PHONE }),
         /Test audit unavailable/,
       );
       const [row] = await sql`select status, application_id, contact_proof

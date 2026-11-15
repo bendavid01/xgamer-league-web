@@ -17,6 +17,10 @@ import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
 import { tournamentParticipants } from "./tournament-participants";
 import { pendingReturningRegistrations } from "./returning-registration";
 import { pendingNewPlayerRegistrations } from "./new-player-registration";
+import {
+  registrationReviewReason,
+  requireRegistrationReviewer,
+} from "./registration-review";
 
 /* ─────────────────────────── Commands ─────────────────────────── */
 
@@ -81,6 +85,8 @@ const command = z.discriminatedUnion("action", [
       .max(200),
     status: z.enum(["approved", "rejected", "pending"]),
     verified: z.boolean(),
+    // Every registration decision is a main-admin decision with an audited reason (M1).
+    reason: registrationReviewReason,
   }),
   z.object({
     action: z.literal("remove"),
@@ -164,7 +170,9 @@ const OPERATION: Record<Command["action"], Parameters<typeof actor>[0]> = {
   remove_photo: "tournaments",
   delete_tournament: "delete",
   restore_tournament: "delete",
-  review: "registrations",
+  // Approving, rejecting or re-pending entries is a main-admin decision (M1),
+  // the same permission as the new-player and returning-player reviews.
+  review: "players",
   remove: "delete",
   score: "results",
   announce: "announcements",
@@ -303,7 +311,7 @@ function recentAudit() {
 
 /* ─────────────────────────── Writes ─────────────────────────── */
 
-export async function execute(raw: unknown) {
+export async function execute(raw: unknown, resolve = actor) {
   const parsed = command.safeParse(raw);
   if (!parsed.success)
     throw new HttpError(
@@ -314,7 +322,7 @@ export async function execute(raw: unknown) {
     );
   const c = parsed.data;
   const scope = "tournament" in c ? c.tournament : "*";
-  const user = await actor(OPERATION[c.action], scope);
+  const user = await resolve(OPERATION[c.action], scope);
   return run(user, c);
 }
 
@@ -551,6 +559,8 @@ export async function run(user: Who, c: Command) {
       after = { status };
       summary = c.open ? "Opened registration" : "Closed registration";
     } else if (c.action === "review") {
+      // Also enforced here, because run() is exported and called directly.
+      requireRegistrationReviewer(user);
       if (!fieldOpen)
         throw new HttpError(
           409,
@@ -579,7 +589,12 @@ export async function run(user: Who, c: Command) {
         rejected: "Rejected",
         pending: "Moved back to pending",
       }[c.status];
-      after = { status: c.status, players: changed };
+      after = {
+        status: c.status,
+        players: changed,
+        verified: c.status === "approved" ? c.verified : undefined,
+        reason: c.reason,
+      };
     } else if (c.action === "remove") {
       if (!fieldOpen)
         throw new HttpError(

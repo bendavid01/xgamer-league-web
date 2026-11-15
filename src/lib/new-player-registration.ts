@@ -1,3 +1,4 @@
+import type { TransactionSql } from "postgres";
 import { z } from "zod";
 import type { Actor } from "./access";
 import { actor, HttpError } from "./api";
@@ -7,6 +8,7 @@ import {
   auditText,
 } from "./audit-text";
 import { playerCode } from "./codes";
+import { contactReservedByOpenChange, lockContactNumber } from "./contact-lock";
 import { db } from "./db";
 import { encrypt, fingerprint } from "./private-data";
 import { newPlayerContactProof, registrationInput } from "./registration";
@@ -19,19 +21,96 @@ import {
   requireRegistrationReviewer,
 } from "./registration-review";
 
+/** An existing player record that might be the same person (M3). Never merged. */
+export type PossibleMatch = {
+  code: string;
+  name: string;
+  team: string | null;
+  retired: boolean;
+  sameName: boolean;
+  sameTeam: boolean;
+};
+
 export type PendingNewPlayerRegistration = {
   reference: string;
   name: string;
   team: string;
   createdAt: string;
+  /** Every same-name record (each must be confirmed), then up to 5 same-team ones. */
+  possibleMatches: PossibleMatch[];
+  /** Same-team records not listed. Team names are often real clubs, so informational. */
+  moreMatches: number;
 };
+
+const SHOWN_TEAM_MATCHES = 5;
+
+type Sql = ReturnType<typeof db> | TransactionSql;
+
+/**
+ * Existing players (retired ones included) whose gaming name, current team or any
+ * tournament team equals the pending application's, compared after NFKC
+ * normalization, case folding and collapsing spaces. A hint for the reviewer
+ * only: names and teams are not identity proof, and nothing is ever merged.
+ */
+async function possibleMatches(sql: Sql, tournament: string, reference?: string) {
+  const rows = await sql<
+    {
+      request_id: string;
+      public_no: number;
+      gaming_name: string;
+      team_name: string | null;
+      retired: boolean;
+      same_name: boolean;
+      same_team: boolean;
+    }[]
+  >`
+    with r as (
+      select id,
+        regexp_replace(lower(btrim(normalize(gaming_name, NFKC))), '[[:space:]]+', ' ', 'g') as n,
+        regexp_replace(lower(btrim(normalize(team_name, NFKC))), '[[:space:]]+', ' ', 'g') as tm
+      from new_player_registration_request
+      where tournament_id=${tournament} and status='pending'
+        and (${reference ?? null}::uuid is null or id=${reference ?? null}::uuid)
+    ), p as (
+      select id, public_no, gaming_name, team_name, deleted_at is not null as retired,
+        regexp_replace(lower(btrim(normalize(gaming_name, NFKC))), '[[:space:]]+', ' ', 'g') as n,
+        regexp_replace(lower(btrim(normalize(coalesce(team_name, ''), NFKC))), '[[:space:]]+', ' ', 'g') as tm
+      from player
+    ), teams as (
+      select distinct player_id,
+        regexp_replace(lower(btrim(normalize(team_name, NFKC))), '[[:space:]]+', ' ', 'g') as tm
+      from application where team_name is not null
+    ), m as (
+      select r.id as request_id, p.public_no, p.gaming_name, p.team_name, p.retired,
+        p.n = r.n as same_name,
+        (p.tm = r.tm or exists (select 1 from teams x where x.player_id = p.id and x.tm = r.tm)) as same_team
+      from r join p on true
+    )
+    select * from m where same_name or same_team
+    order by request_id, same_name desc, same_team desc, public_no`;
+  const byRequest = new Map<string, PossibleMatch[]>();
+  for (const row of rows) {
+    const list = byRequest.get(row.request_id) ?? [];
+    list.push({
+      code: playerCode(row.public_no),
+      name: row.gaming_name,
+      team: row.team_name,
+      retired: row.retired,
+      sameName: row.same_name,
+      sameTeam: row.same_team,
+    });
+    byRequest.set(row.request_id, list);
+  }
+  return byRequest;
+}
 
 export async function pendingNewPlayerRegistrations(
   user: Actor,
   tournament: string,
 ) {
   if (!canReviewRegistration(user)) return undefined;
-  const requests = await db()<
+  const sql = db();
+  const requests = await sql<
     {
       id: string;
       gaming_name: string;
@@ -41,12 +120,22 @@ export async function pendingNewPlayerRegistrations(
   >`
     select id,gaming_name,team_name,created_at from new_player_registration_request
     where tournament_id=${tournament} and status='pending' order by created_at,id`;
-  return requests.map((r): PendingNewPlayerRegistration => ({
-    reference: r.id,
-    name: r.gaming_name,
-    team: r.team_name,
-    createdAt: r.created_at.toISOString(),
-  }));
+  const matches = requests.length
+    ? await possibleMatches(sql, tournament)
+    : new Map<string, PossibleMatch[]>();
+  return requests.map((r): PendingNewPlayerRegistration => {
+    const found = matches.get(r.id) ?? [];
+    const sameName = found.filter((m) => m.sameName);
+    const teamOnly = found.filter((m) => !m.sameName);
+    return {
+      reference: r.id,
+      name: r.gaming_name,
+      team: r.team_name,
+      createdAt: r.created_at.toISOString(),
+      possibleMatches: [...sameName, ...teamOnly.slice(0, SHOWN_TEAM_MATCHES)],
+      moreMatches: Math.max(teamOnly.length - SHOWN_TEAM_MATCHES, 0),
+    };
+  });
 }
 
 const { tournament, phone } = registrationInput.shape;
@@ -63,6 +152,15 @@ const command = z.discriminatedUnion("action", [
     reference,
     verifiedPhone: phone,
     ...registrationVerification,
+    /**
+     * The XG IDs with the applicant's name that the reviewer checked and found to be
+     * different people (M3). It must cover every same-name record at approval time,
+     * so a record that appears after the page was loaded is never confirmed blindly.
+     */
+    confirmedDistinctFrom: z
+      .array(z.string().regex(/^XG-\d{4,10}$/))
+      .max(100)
+      .optional(),
   }),
   z.strictObject({
     action: z.literal("newPlayer.reject"),
@@ -80,6 +178,9 @@ export function isNewPlayerRegistrationAction(raw: unknown) {
     (raw.action === "newPlayer.approve" || raw.action === "newPlayer.reject")
   );
 }
+
+const describe = (m: PossibleMatch) =>
+  `${m.code}${m.retired ? " (removed record)" : ""}`;
 
 export async function executeNewPlayerRegistration(
   raw: unknown,
@@ -121,7 +222,6 @@ export async function executeNewPlayerRegistration(
         409,
         "This application is no longer pending in this tournament.",
       );
-    requireRegistrationReviewer(organizer);
     if (c.action === "newPlayer.reject") {
       await tx`update new_player_registration_request set status='rejected',
         decided_at=now(),gaming_name=null,team_name=null,contact_proof=null where id=${request.id}`;
@@ -142,13 +242,33 @@ export async function executeNewPlayerRegistration(
         "The verified WhatsApp number does not match this application.",
       );
     const contactHash = fingerprint("whatsapp:" + c.verifiedPhone);
+    // Serializes with number changes and other approvals of this number (L1).
+    await lockContactNumber(tx, contactHash);
     // Retired identities also reserve their existing contact numbers.
     const [existing] =
       await tx`select 1 from player where contact_hash=${contactHash}`;
     if (existing) throw contactConflict();
-    requireRegistrationReviewer(organizer);
-    // The unique player contact also guards concurrent decisions in other
-    // tournaments and races with the separate contact-change workflow.
+    if (await contactReservedByOpenChange(tx, contactHash))
+      throw new HttpError(
+        409,
+        "This WhatsApp number is reserved by an open number change for an existing player. Finish or cancel that change first, or review whether the applicant already has an XG ID.",
+      );
+
+    // Possible existing identities, recomputed here rather than trusted from the page (M3).
+    const matches =
+      (await possibleMatches(tx, t, request.id)).get(request.id) ?? [];
+    const sameName = matches.filter((m) => m.sameName);
+    const confirmed = new Set(c.confirmedDistinctFrom ?? []);
+    const unconfirmed = sameName.filter((m) => !confirmed.has(m.code));
+    if (unconfirmed.length)
+      throw new HttpError(
+        409,
+        `Possible existing identity with the same name: ${unconfirmed
+          .map(describe)
+          .join(", ")}. If the applicant already has an XG ID, reject this application and add them under Returning players. If each is a different person, confirm that and approve again.`,
+      );
+
+    // The unique player contact still guards anything the lock does not cover.
     const [player] = await tx<{ id: string; public_no: number }[]>`
       insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_at,consent_version)
       values(${request.gaming_name},${request.team_name},${contactHash},${encrypt(c.verifiedPhone)},
@@ -172,6 +292,11 @@ export async function executeNewPlayerRegistration(
           new_player_request_id: request.id,
           identity_verified_by_organizer: true,
           contact_control_verified_by_organizer: true,
+          same_name_records_confirmed_distinct: sameName.map((m) => m.code),
+          same_team_records: matches
+            .filter((m) => !m.sameName)
+            .slice(0, SHOWN_TEAM_MATCHES)
+            .map((m) => m.code),
           reason: c.reason,
         })})`;
     return {

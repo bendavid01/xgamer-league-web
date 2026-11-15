@@ -6,9 +6,12 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
+import { normalizeMigrationSource } from "../src/lib/migrations";
 
 const dir = new URL("../migrations/", import.meta.url);
-const source = (file: string) => readFile(new URL(file, dir), "utf8");
+// The same LF form the migration runner hashes and runs (M5).
+const source = async (file: string) =>
+  normalizeMigrationSource(await readFile(new URL(file, dir), "utf8"));
 const sha256 = (t: string) => createHash("sha256").update(t).digest("hex");
 const files = async () =>
   (await readdir(dir)).filter((f) => /^\d{3}_.*\.sql$/.test(f)).sort();

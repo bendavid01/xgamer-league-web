@@ -15,12 +15,64 @@ export function response(value: unknown, status = 200) {
     headers: { "Cache-Control": "no-store" },
   });
 }
-export async function endpoint(fn: () => Promise<Response>) {
+/**
+ * Expected database conflicts (L4). A unique index or a lock conflict means the
+ * request lost a race or repeats an existing record; nothing was written, and a
+ * plain retry would fail the same way, so it is a 409 with a precise reason.
+ * Everything else stays a 503.
+ */
+const CONFLICT_MESSAGES: Record<string, string> = {
+  player_contact_hash_key:
+    "This WhatsApp number belongs to another player record.",
+  application_tournament_id_player_id_key:
+    "This player already has an entry for this tournament.",
+  new_player_registration_pending_claim:
+    "This application is already waiting for review.",
+  returning_registration_pending_claim:
+    "This request is already waiting for review.",
+  contact_change_open_player:
+    "There is already an open change for this player or number.",
+  contact_change_open_number:
+    "There is already an open change for this player or number.",
+};
+/**
+ * `detailed` names the conflicting record and is for signed-in organizer
+ * endpoints only. Public endpoints get the generic text, so a response can
+ * never reveal whether a number or player is on file.
+ */
+export function databaseConflict(
+  error: unknown,
+  detailed = false,
+): HttpError | null {
+  const e = error as { code?: unknown; constraint_name?: unknown } | null;
+  if (!e || typeof e !== "object") return null;
+  if (e.code === "23505")
+    return new HttpError(
+      409,
+      (detailed &&
+        typeof e.constraint_name === "string" &&
+        CONFLICT_MESSAGES[e.constraint_name]) ||
+        "This conflicts with an existing record. Nothing was saved. Refresh and try again.",
+    );
+  // Deadlock: PostgreSQL rolled this transaction back.
+  if (e.code === "40P01")
+    return new HttpError(
+      409,
+      "Someone else changed this at the same time. Nothing was saved. Refresh and try again.",
+    );
+  return null;
+}
+export async function endpoint(
+  fn: () => Promise<Response>,
+  options: { detailedConflicts?: boolean } = {},
+) {
   try {
     return await fn();
   } catch (error) {
     if (error instanceof HttpError)
       return response({ error: error.message }, error.status);
+    const conflict = databaseConflict(error, options.detailedConflicts);
+    if (conflict) return response({ error: conflict.message }, conflict.status);
     return response(
       {
         error:

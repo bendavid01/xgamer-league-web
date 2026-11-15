@@ -14,6 +14,7 @@ import { canonicalPhone, maskPhone, waUrl } from "./phone";
 import { efootballIdInput } from "./registration";
 import { playerCode } from "./codes";
 import { lockAuditRequest } from "./audit-request";
+import { lockContactNumber } from "./contact-lock";
 import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
 
 /**
@@ -586,6 +587,9 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
     const newHash = fingerprint("whatsapp:" + parsed.phone);
     if (newHash === player.contact_hash)
       throw new HttpError(400, "That is already this player's number.");
+    // Serializes with new-player approvals of the same number (L1); the checks
+    // below then see anything those committed.
+    await lockContactNumber(tx, newHash);
     const [owner] =
       await tx`select public_no, deleted_at from player where contact_hash=${newHash}`;
     if (owner)
@@ -793,6 +797,7 @@ async function apply(tx: Tx, user: Who, c: ContactCommand) {
   }
 
   const complete = async (method: string, approvedBy: string | null) => {
+    await lockContactNumber(tx, ch.new_contact_hash);
     const [taken] =
       await tx`select public_no, deleted_at from player where contact_hash=${ch.new_contact_hash} and id<>${playerId}`;
     if (taken)

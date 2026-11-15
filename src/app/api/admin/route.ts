@@ -52,5 +52,6 @@ export async function POST(request: Request) {
               ? await executeNewPlayerRegistration(raw)
               : await execute(raw),
     );
-  });
+    // Every command above authenticates an organizer before touching data.
+  }, { detailedConflicts: true });
 }

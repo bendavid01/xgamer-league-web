@@ -48,6 +48,10 @@ if (mode === "skip") {
       console.log(
         `[migrate] WARNING: applied outside this code version and not recognized (left untouched): ${status.unknown.join(", ")}.`,
       );
+    if (status.lineEndingVariants.length)
+      console.log(
+        `[migrate] NOTE: recorded from a CRLF (Windows) checkout of the same SQL (not an edit; ledger left untouched): ${status.lineEndingVariants.join(", ")}.`,
+      );
     if (status.changed.length)
       failure = `[migrate] Applied migration checksum differs: ${status.changed.join(", ")}. Verify the ledger before proceeding.`;
     else if (status.pending.length)

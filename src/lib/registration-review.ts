@@ -12,10 +12,11 @@ export const registrationVerification = {
   reason: registrationReviewReason,
 };
 
-export const canReviewRegistration = (user: Actor) =>
+/** Main admins only, in every registration workflow (new, returning and legacy). */
+export const canReviewRegistration = (user: Pick<Actor, "id" | "role">) =>
   user.role === "admin" && adminIds().includes(user.id);
 
-export function requireRegistrationReviewer(user: Actor) {
+export function requireRegistrationReviewer(user: Pick<Actor, "id" | "role">) {
   if (!canReviewRegistration(user))
     throw new HttpError(403, "Only main admins can review registrations.");
 }
@@ -39,3 +40,12 @@ export async function lockRegistrationReviewTournament(
 // Both request tables constrain proofs to a 64-character hex digest.
 export const registrationProofMatches = (verified: string, stored: string) =>
   timingSafeEqual(Buffer.from(verified, "hex"), Buffer.from(stored, "hex"));
+
+/**
+ * Compares two keyed hex fingerprints without leaking timing. Unlike a bare
+ * timingSafeEqual, a missing or differently sized value is simply unequal.
+ */
+export const fingerprintsMatch = (a: string | null | undefined, b: string) =>
+  typeof a === "string" &&
+  a.length === b.length &&
+  timingSafeEqual(Buffer.from(a), Buffer.from(b));

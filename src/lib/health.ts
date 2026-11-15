@@ -221,6 +221,49 @@ export async function healthReport(): Promise<Section[]> {
       ],
     });
 
+  /* ── Registration review (011/012): read-only, public identifiers only ── */
+  // Approvals linked to an existing XG ID before the server compared the verified
+  // number with the number on file (H1). Listed for manual re-verification only;
+  // nothing is changed or revoked automatically.
+  const unchecked = await sql<{ public_no: number; name: string }[]>`
+      select p.public_no, t.name from audit_event e
+      join application a on a.id::text = e.entity
+      join player p on p.id = a.player_id
+      join tournament t on t.id = a.tournament_id
+      where e.action = 'application.create'
+        and e.after_value->>'method' in ('returning_request', 'manual_existing_player')
+        and not coalesce((e.after_value->>'contact_matches_number_on_file')::boolean, false)
+      order by e.id`.catch(() => null);
+  const stale = await sql<{ queue: string; c: number }[]>`
+      select 'new' as queue, count(*)::int as c from new_player_registration_request
+        where status = 'pending' and created_at < now() - interval '30 days'
+      union all
+      select 'returning', count(*)::int from returning_registration_request
+        where status = 'pending' and created_at < now() - interval '30 days'`.catch(
+    () => null,
+  );
+  if (unchecked && stale) {
+    const old = (q: string) => stale.find((s) => s.queue === q)?.c ?? 0;
+    sections.push({
+      title: "Registration review",
+      checks: [
+        {
+          title: "Existing-player links made before the number check",
+          level: unchecked.length ? "warn" : "ok",
+          detail: unchecked.length
+            ? `${unchecked.length} returning-player approval(s) were made before Organizer Manager compared the verified number with the number on file. Re-verify these entries with the player; nothing was changed automatically.`
+            : "Every existing-player link was checked against the number on file.",
+          items: unchecked.map((u) => `${code(u.public_no)} in ${u.name}`),
+        },
+        {
+          title: "Pending applications older than 30 days",
+          level: old("new") + old("returning") ? "warn" : "ok",
+          detail: `${old("new")} new-player and ${old("returning")} returning-player request(s). Review or reject them; nothing is deleted automatically (see docs/REGISTRATION-RETENTION.md).`,
+        },
+      ],
+    });
+  }
+
   /* ── 3. Fixtures and official results ── */
   const [fx] = await sql`select count(*)::int total,
       count(*) filter (where home_score is not null)::int scored from fixture where stage='league'`;

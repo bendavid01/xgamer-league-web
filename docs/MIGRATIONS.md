@@ -22,3 +22,14 @@ SQL migration numbers are a separate series from feature IDs (for example, featu
 **Returning-player requests (011):** Public intake stores the claimed XG number, tournament team and a keyed contact proof. A main admin checks identity and control of the submitted WhatsApp number. Only approval creates a tournament entry referencing the existing player. Decisions clear the pending proof and record the organizer and reason in the existing audit log. Rotating `PRIVATE_DATA_KEY` invalidates pending proofs, so finish or reject those requests and have the applicants resubmit when needed.
 
 **First-time applications (012):** New submissions receive an application reference. Applicants share it privately with an organizer. A main admin reviews the request in the New applications tab and re-enters the independently verified number. The service checks for contact conflicts during this private review. Approval creates one player and tournament entry and records its audit event in the same transaction. Rejection clears the pending contact proof and applicant details. The proof uses the same key lifecycle as the returning-player queue. Existing pending entries already have permanent XG IDs and stay in the Players tab for review. PostgreSQL's ID sequence can leave a gap after a rolled-back approval. Keep those numbers unused.
+
+**Line endings (M5):** Git stores every migration with LF line endings, and every issued checksum is of that LF form. `.gitattributes` keeps `*.sql` and `migrations/**` LF in every checkout. The runner also normalizes CRLF to LF before hashing and running, so a Windows checkout (`core.autocrlf=true`) gets the same checksums and executes the same bytes. No issued checksum changed. If a ledger row was ever recorded from a CRLF checkout of the same SQL, the build check reports it as a line-ending variant (not an edit) and leaves the ledger untouched.
+
+**Release preflight (L3):** Before the registration packet, run `docs/sql/registration-preflight.sql` against the target. It is read-only (`begin transaction read only … rollback`) and works even without a ledger. It returns one row per check. Any `fail` stops the release:
+- PostgreSQL 18 or later
+- ledger checksums against the LF values (a CRLF variant is reported as `warn`)
+- 006 against its pinned checksum
+- unknown ledger rows
+- each table and index created by 011 and 012 must be absent before its migration and present after it. This catches a pre-existing object that `create … if not exists` would otherwise keep silently.
+
+`tests/registration-preflight.integration.test.ts` keeps the file in step with `migrations/`.

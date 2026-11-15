@@ -154,6 +154,7 @@ const FILTERS = [
 ] as const;
 const ACTION_LABEL: Record<string, string> = {
   "application.create": "Registered",
+  "application.restore": "Restored removed entry",
   review: "Reviewed players",
   delete: "Removed player",
   configure: "Updated settings",
@@ -297,6 +298,10 @@ export default function ControlCenter() {
       }
       if (value.action === "newPlayer.approve" && typeof result.code === "string")
         setNotice(`New player approved with permanent ID ${result.code}.`);
+      else if (result.restored === true)
+        setNotice(
+          `Removed entry restored under the existing XG ID, keeping its recorded team${typeof result.team === "string" ? ` (${result.team})` : ""}. Correct the team in Edit player details if needed.`,
+        );
       else if (done) setNotice(done);
       return true;
     } catch (e) {
@@ -773,7 +778,8 @@ function PublishSwitch({
 
 function Coordinators({ data, act }: { data: Home; act: Act }) {
   const OPS = [
-    ["registrations", "Review players"],
+    // Approving or rejecting players is for main admins only.
+    ["registrations", "View and contact players"],
     ["results", "Enter scores"],
     ["announcements", "Post announcements"],
   ] as const;
@@ -1076,9 +1082,17 @@ function PlayersTab({
     data.applications
       .filter((a) => selected.has(a.id))
       .map(({ id, revision }) => ({ id, revision }));
+  const [reason, setReason] = useState("");
   const review = async (status: string, verified: boolean, done: string) => {
-    if (await act({ action: "review", status, verified, items: items() }, done))
+    if (
+      await act(
+        { action: "review", status, verified, items: items(), reason },
+        done,
+      )
+    ) {
       setSelected(new Set());
+      setReason("");
+    }
   };
   return (
     <section className="panel p-4 md:p-7 space-y-5">
@@ -1112,10 +1126,26 @@ function PlayersTab({
           changed={reload}
         />
       )}
-      {fieldOpen && selected.size > 0 && (
+      {admin && fieldOpen && selected.size > 0 && (
         <div className="om-bulk">
+          <label className="block w-full">
+            Reason for this decision
+            <textarea
+              className="control-input"
+              rows={2}
+              minLength={10}
+              maxLength={300}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <span className="block text-xs text-slate-400">
+              Recorded in the activity log. Leave phone numbers, verification
+              codes and credentials out of this note.
+            </span>
+          </label>
           <button
             className="button-primary"
+            disabled={reason.trim().length < 10}
             onClick={() => {
               if (
                 confirm(
@@ -1133,6 +1163,7 @@ function PlayersTab({
           </button>
           <button
             className="button-secondary"
+            disabled={reason.trim().length < 10}
             onClick={() => void review("rejected", false, "Rejected.")}
           >
             Reject selected
@@ -1153,7 +1184,7 @@ function PlayersTab({
                 <input
                   type="checkbox"
                   aria-label="Select all shown"
-                  disabled={!fieldOpen}
+                  disabled={!fieldOpen || !admin}
                   checked={
                     visible.length > 0 &&
                     visible.every((a) => selected.has(a.id))
@@ -1181,7 +1212,7 @@ function PlayersTab({
                   <input
                     type="checkbox"
                     aria-label={`Select ${a.gaming_name}`}
-                    disabled={!fieldOpen}
+                    disabled={!fieldOpen || !admin}
                     checked={selected.has(a.id)}
                     onChange={(e) => {
                       const next = new Set(selected);

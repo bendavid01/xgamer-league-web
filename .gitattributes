@@ -1,0 +1,5 @@
+# Migration checksums are sha256 of the LF source stored in git. Keep every
+# checkout LF so a Windows clone (core.autocrlf) hashes and runs the same bytes.
+*.sql text eol=lf
+migrations/** text eol=lf
+docs/sql/** text eol=lf

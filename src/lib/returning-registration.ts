@@ -15,9 +15,11 @@ import {
   checkRegistrationLimit,
   lockOpenRegistration,
   registrationInput,
+  requirePendingRoom,
 } from "./registration";
 import {
   canReviewRegistration,
+  fingerprintsMatch,
   lockRegistrationReviewTournament,
   registrationProofMatches,
   registrationReviewReason,
@@ -68,6 +70,11 @@ export async function submitReturningRegistration(
     const proof = contactProof(t, input.xgId, input.teamName, input.phone);
     // All well-formed claims have the same result, including retries and unknown IDs.
     // This path never reads the player or application tables.
+    const [retry] = await tx`select 1 from returning_registration_request
+      where tournament_id=${t} and contact_proof=${proof} and status='pending'`;
+    if (retry) return;
+    // Bounded queue (M4), counted under the tournament lock taken above.
+    await requirePendingRoom(tx, "returning", t);
     await tx`insert into returning_registration_request(tournament_id,claimed_public_no,team_name,contact_proof)
       values(${t},${input.xgId},${input.teamName},${proof})
       on conflict (tournament_id,contact_proof) where status='pending' do nothing`;
@@ -129,6 +136,8 @@ const command = z.discriminatedUnion("action", [
     tournament,
     xgId,
     teamName,
+    // Manual additions are checked against the number on file too (H1).
+    verifiedPhone: phone,
     ...registrationVerification,
   }),
 ]);
@@ -166,7 +175,13 @@ export async function executeReturningRegistration(
   return db().begin(async (tx) => {
     await lockRegistrationReviewTournament(tx, t, c.action !== "returning.reject");
     if (c.action === "returning.add")
-      return addVerifiedEntry(tx, organizer, t, c.xgId, c.teamName, c.reason);
+      return addVerifiedEntry(tx, organizer, {
+        tournamentId: t,
+        publicNo: c.xgId,
+        team: c.teamName,
+        verifiedPhone: c.verifiedPhone,
+        why: c.reason,
+      });
 
     const [request] = await tx<
       {
@@ -184,7 +199,6 @@ export async function executeReturningRegistration(
         409,
         "This request is no longer pending in this tournament.",
       );
-    requireRegistrationReviewer(organizer);
     if (c.action === "returning.reject") {
       await tx`update returning_registration_request set
         status='rejected',decided_at=now(),team_name=null,contact_proof=null where id=${request.id}`;
@@ -206,61 +220,153 @@ export async function executeReturningRegistration(
         409,
         "The verified WhatsApp number does not match this request.",
       );
-    return addVerifiedEntry(
-      tx,
-      organizer,
-      t,
-      request.claimed_public_no,
-      request.team_name,
-      c.reason,
-      request.id,
-    );
+    return addVerifiedEntry(tx, organizer, {
+      tournamentId: t,
+      publicNo: request.claimed_public_no,
+      team: request.team_name,
+      verifiedPhone: c.verifiedPhone,
+      why: c.reason,
+      claimId: request.id,
+    });
   });
 }
 
+type VerifiedEntry = {
+  tournamentId: string;
+  publicNo: number;
+  team: string;
+  /** The number the organizer verified the person controls. */
+  verifiedPhone: string;
+  why: string;
+  claimId?: string;
+};
+
+/**
+ * Enters an existing player after a main admin verified them. The verified number
+ * must be the player's WhatsApp number on file (H1): a different number is never
+ * accepted here and goes through the audited number-change workflow first.
+ *
+ * Lock order: tournament (caller) → request (caller) → player → application,
+ * the same order as contact-change.ts and player-details.ts.
+ */
 async function addVerifiedEntry(
   tx: TransactionSql,
   organizer: Actor,
-  tournamentId: string,
-  publicNo: number,
-  team: string,
-  why: string,
-  claimId?: string,
+  entry: VerifiedEntry,
 ) {
-  const [player] = await tx<{ id: string }[]>`
-    select id from player where public_no=${publicNo} and deleted_at is null for update`;
+  const { tournamentId, publicNo, team, verifiedPhone, why, claimId } = entry;
+  const code = playerCode(publicNo);
+  const [player] = await tx<
+    { id: string; contact_hash: string }[]
+  >`
+    select id,contact_hash from player
+    where public_no=${publicNo} and deleted_at is null for update`;
   if (!player) throw new HttpError(404, "No active player has that XG ID.");
-  requireRegistrationReviewer(organizer);
-  // Keep the existing unique pair, including withdrawn and rejected history.
-  const [application] = await tx<{ id: string }[]>`
-    insert into application(tournament_id,player_id,status,verified_at,team_name,team_name_source)
-    values(${tournamentId},${player.id},'approved',now(),${team},'registration')
-    on conflict (tournament_id,player_id) do nothing returning id`;
-  if (!application)
+  if (
+    !fingerprintsMatch(
+      player.contact_hash,
+      fingerprint("whatsapp:" + verifiedPhone),
+    )
+  ) {
+    // Contact changes start from a tournament where the player has an entry.
+    const places = await tx<{ name: string }[]>`
+      select t.name from application a join tournament t on t.id=a.tournament_id
+      where a.player_id=${player.id} and a.deleted_at is null and t.deleted_at is null
+      order by a.created_at desc limit 3`;
     throw new HttpError(
       409,
-      "This player already has an entry for this tournament.",
+      places.length
+        ? `The verified number is not the WhatsApp number on file for ${code}. If the player changed numbers, first complete a WhatsApp number change in Edit player details (open ${code} in ${places.map((p) => p.name).join(" or ")}), then approve. Otherwise reject this request.`
+        : `The verified number is not the WhatsApp number on file for ${code}, and ${code} has no tournament entry where a number change can be started. Reject this request and contact the system owner.`,
     );
+  }
+
+  const [existing] = await tx<
+    {
+      id: string;
+      status: string;
+      deleted_at: Date | null;
+      team_name: string | null;
+      team_name_source: string | null;
+      revision: number;
+    }[]
+  >`
+    select id,status,deleted_at,team_name,team_name_source,revision from application
+    where tournament_id=${tournamentId} and player_id=${player.id} for update`;
+  if (existing && !existing.deleted_at)
+    throw new HttpError(
+      409,
+      `This player already has an entry for this tournament (${existing.status}).`,
+    );
+  // One restoration path only: the manual addition below. A request's approval
+  // would have to link the old entry, which an earlier request may already own.
+  if (existing && claimId)
+    throw new HttpError(
+      409,
+      `${code} was removed from this tournament earlier. Restore that entry with "Add a verified existing player" (it keeps the recorded team), then reject this request as a duplicate.`,
+    );
+
+  const verification = {
+    playerId: player.id,
+    status: "approved",
+    method: claimId ? "returning_request" : "manual_existing_player",
+    returning_request_id: claimId ?? null,
+    identity_verified_by_organizer: true,
+    contact_control_verified_by_organizer: true,
+    // The server compared the verified number with the number on file (H1).
+    contact_matches_number_on_file: true,
+    reason: why,
+  };
+
+  let applicationId: string;
+  if (existing) {
+    // M2: the entry was removed earlier. The unique (tournament, player) row is
+    // reinstated rather than duplicated, and its recorded team and provenance stay
+    // as they were; a different team is corrected later in Edit player details.
+    const [restored] = await tx<{ id: string }[]>`
+      update application set deleted_at=null,status='approved',verified_at=now(),revision=revision+1
+      where id=${existing.id} and deleted_at is not null returning id`;
+    applicationId = restored.id;
+    await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,before_value,after_value)
+      values(${organizer.id},${auditText(organizer.name ?? null)},'admin','application.restore',${applicationId},${tournamentId},
+        'Restored removed entry',${code},${tx.json({
+          status: existing.status,
+          removed_at: existing.deleted_at!.toISOString(),
+          team: auditRegistrationTeam(existing.team_name ?? ""),
+          team_name_source: existing.team_name_source,
+          revision: existing.revision,
+        })},${tx.json({
+          ...verification,
+          method: "restore_removed_entry",
+          team: auditRegistrationTeam(existing.team_name ?? ""),
+          requested_team: auditRegistrationTeam(team),
+          revision: existing.revision + 1,
+        })})`;
+  } else {
+    const [created] = await tx<{ id: string }[]>`
+      insert into application(tournament_id,player_id,status,verified_at,team_name,team_name_source)
+      values(${tournamentId},${player.id},'approved',now(),${team},'registration')
+      on conflict (tournament_id,player_id) do nothing returning id`;
+    if (!created)
+      throw new HttpError(
+        409,
+        "This player already has an entry for this tournament.",
+      );
+    applicationId = created.id;
+    await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,after_value)
+      values(${organizer.id},${auditText(organizer.name ?? null)},'admin','application.create',${applicationId},${tournamentId},
+        ${claimId ? "Approved returning-player request" : "Added verified existing player"},${code},${tx.json({
+          ...verification,
+          team: auditRegistrationTeam(team),
+        })})`;
+  }
 
   if (claimId) {
     await tx`update returning_registration_request set status='approved',
-      decided_at=now(),application_id=${application.id},team_name=null,contact_proof=null
+      decided_at=now(),application_id=${applicationId},team_name=null,contact_proof=null
       where id=${claimId}`;
   }
-  const summary = claimId
-    ? "Approved returning-player request"
-    : "Added verified existing player";
-  await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,after_value)
-    values(${organizer.id},${auditText(organizer.name ?? null)},'admin','application.create',${application.id},${tournamentId},
-      ${summary},${playerCode(publicNo)},${tx.json({
-        playerId: player.id,
-        team: auditRegistrationTeam(team),
-        status: "approved",
-        method: claimId ? "returning_request" : "manual_existing_player",
-        returning_request_id: claimId ?? null,
-        identity_verified_by_organizer: true,
-        contact_control_verified_by_organizer: true,
-        reason: why,
-      })})`;
-  return { ok: true };
+  return existing
+    ? { ok: true as const, restored: true as const, team: existing.team_name }
+    : { ok: true as const };
 }

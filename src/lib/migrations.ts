@@ -9,7 +9,15 @@ import { OUTSIDE_MIGRATIONS, outsideMigrationStatus } from "./known-migrations";
  * (a deliberate run) and scripts/build-migrate.mts (the build check).
  */
 type Sql = ReturnType<typeof db>;
-export type Migration = { name: string; source: string; hash: string };
+export type Migration = {
+  name: string;
+  /** Source with LF line endings, exactly as stored in git. */
+  source: string;
+  /** sha256 of the LF source: the checksum recorded in the ledger. */
+  hash: string;
+  /** sha256 of the same source with CRLF line endings (a Windows checkout). */
+  crlfHash: string;
+};
 export type LedgerEntry = { name: string; hash: string };
 export type MigrationStatus = {
   /** In this code version but not applied to the database. */
@@ -20,7 +28,23 @@ export type MigrationStatus = {
   recognized: string[];
   /** Applied outside this code version and not recognized. Reported, never touched. */
   unknown: string[];
+  /**
+   * Applied from a CRLF (Windows) checkout of the same file. The SQL is identical,
+   * so this is not an edit. Reported so the ledger can be reviewed, never rewritten.
+   */
+  lineEndingVariants: string[];
 };
+
+const sha256 = (text: string) =>
+  createHash("sha256").update(text).digest("hex");
+
+/**
+ * Git stores every migration with LF line endings, and previously issued
+ * checksums are of that LF form. A Windows checkout (core.autocrlf) turns LF
+ * into CRLF on disk, so the file is normalized back before hashing or running.
+ */
+export const normalizeMigrationSource = (text: string) =>
+  text.replace(/\r\n/g, "\n");
 
 const FILE = /^\d{3}_[a-z0-9_]+\.sql$/;
 
@@ -30,11 +54,14 @@ export async function migrationFiles(
   const names = (await readdir(dir)).filter((f) => FILE.test(f)).sort();
   return Promise.all(
     names.map(async (file) => {
-      const source = await readFile(new URL(file, dir), "utf8");
+      const source = normalizeMigrationSource(
+        await readFile(new URL(file, dir), "utf8"),
+      );
       return {
         name: file.replace(/\.sql$/, ""),
         source,
-        hash: createHash("sha256").update(source).digest("hex"),
+        hash: sha256(source),
+        crlfHash: sha256(source.replace(/\n/g, "\r\n")),
       };
     }),
   );
@@ -47,6 +74,8 @@ export function compareLedger(
 ): MigrationStatus {
   const applied = new Map(ledger.map((m) => [m.name, m.hash]));
   const local = files.filter((f) => !OUTSIDE_MIGRATIONS.has(f.name));
+  const matches = (f: Migration) =>
+    applied.get(f.name) === f.hash || applied.get(f.name) === f.crlfHash;
   const outside = [...applied]
     .filter(([name]) => !local.some((f) => f.name === name))
     .map(([name, hash]) => ({
@@ -57,7 +86,7 @@ export function compareLedger(
     pending: local.filter((f) => !applied.has(f.name)).map((f) => f.name),
     changed: [
       ...local
-        .filter((f) => applied.has(f.name) && applied.get(f.name) !== f.hash)
+        .filter((f) => applied.has(f.name) && !matches(f))
         .map((f) => f.name),
       ...outside.filter((m) => m.state === "changed").map((m) => m.name),
     ].sort(),
@@ -69,6 +98,11 @@ export function compareLedger(
       .filter((m) => m.state === "unknown")
       .map((m) => m.name)
       .sort(),
+    lineEndingVariants: local
+      .filter(
+        (f) => f.crlfHash !== f.hash && applied.get(f.name) === f.crlfHash,
+      )
+      .map((f) => f.name),
   };
 }
 

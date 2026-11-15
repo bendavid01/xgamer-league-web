@@ -64,6 +64,39 @@ export async function lockOpenRegistration(tx: TransactionSql, tournament: strin
   return t.id;
 }
 
+/**
+ * Queue limit (M4): pending requests per tournament, for each public queue.
+ * REGISTRATION_PENDING_LIMIT overrides the default of 200 (1–5000).
+ * There is deliberately no per-number or per-XG-ID limit: anyone can type someone
+ * else's number or XG ID, so such a limit would let them block that person.
+ */
+export const DEFAULT_PENDING_LIMIT = 200;
+export function pendingLimit(
+  env: Record<string, string | undefined> = process.env,
+) {
+  const n = Number(env.REGISTRATION_PENDING_LIMIT);
+  return Number.isInteger(n) && n >= 1 && n <= 5000 ? n : DEFAULT_PENDING_LIMIT;
+}
+
+/** Call with the tournament row already locked, so the count cannot race. */
+export async function requirePendingRoom(
+  tx: TransactionSql,
+  queue: "new" | "returning",
+  tournament: string,
+) {
+  const [row] =
+    queue === "new"
+      ? await tx<{ c: number }[]>`select count(*)::int as c from new_player_registration_request
+          where tournament_id=${tournament} and status='pending'`
+      : await tx<{ c: number }[]>`select count(*)::int as c from returning_registration_request
+          where tournament_id=${tournament} and status='pending'`;
+  if (row.c >= pendingLimit())
+    throw new HttpError(
+      429,
+      "This tournament has too many applications waiting for review. Please try again later or contact an organizer on Discord.",
+    );
+}
+
 export const newPlayerContactProof = (tournament: string, phone: string) =>
   fingerprint("xg:new-player-registration:v1:" + JSON.stringify([tournament, phone]));
 
@@ -78,18 +111,21 @@ export async function register(
     const tournament = await lockOpenRegistration(tx, input.tournament);
     // Intake records a claim without revealing whether the number is on file.
     const proof = newPlayerContactProof(tournament, phone);
+    // An exact retry gets its existing reference, even when the queue is full.
+    const [pending] = await tx<{ id: string }[]>`
+      select id from new_player_registration_request
+      where tournament_id=${tournament} and contact_proof=${proof} and gaming_name=${input.playerName}
+        and team_name=${input.teamName} and status='pending'`;
+    if (pending) return { reference: pending.id };
+    await requirePendingRoom(tx, "new", tournament);
     const [created] = await tx<{ id: string }[]>`
       insert into new_player_registration_request(tournament_id,gaming_name,team_name,contact_proof,consent_version)
       values(${tournament},${input.playerName},${input.teamName},${proof},'2026-10-v3')
       on conflict(tournament_id,contact_proof,gaming_name,team_name) where status='pending'
       do nothing returning id`;
-    if (created) return { reference: created.id };
-
-    const [pending] = await tx<{ id: string }[]>`
-      select id from new_player_registration_request
-      where tournament_id=${tournament} and contact_proof=${proof} and gaming_name=${input.playerName}
-        and team_name=${input.teamName} and status='pending'`;
-    return { reference: pending.id };
+    if (!created)
+      throw new HttpError(409, "This application is already waiting for review.");
+    return { reference: created.id };
   });
 }
 

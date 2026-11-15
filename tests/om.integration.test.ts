@@ -964,6 +964,7 @@ test(
       name: "099_test_probe",
       source,
       hash: createHash("sha256").update(source).digest("hex"),
+      crlfHash: "",
     };
     const logs: string[] = [];
     const before = await readLedger(sql);
@@ -995,7 +996,7 @@ test(
     assert.match(matched.detail, /1 recognized from another branch/);
     await applyMigrations(
       sql,
-      [{ name, hash, source: "not valid sql" }, pending],
+      [{ name, hash, source: "not valid sql", crlfHash: "" }, pending],
       (line) => logs.push(line),
     );
     assert.deepEqual(logs, [`Applied ${pending.name}.`]);

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   buildMode,
   compareLedger,
@@ -68,12 +69,19 @@ test("ledger check finds pending, edited and outside migrations", async () => {
     changed: [],
     recognized: [],
     unknown: [],
+    lineEndingVariants: [],
   });
   // Production today: 001–005 plus 006_mcp_oauth from the MCP preview build.
   // A known name with a different checksum fails the check.
   assert.deepEqual(
     compareLedger(files, [...ledger, { name: "006_mcp_oauth", hash: "h" }]),
-    { pending: [], changed: ["006_mcp_oauth"], recognized: [], unknown: [] },
+    {
+      pending: [],
+      changed: ["006_mcp_oauth"],
+      recognized: [],
+      unknown: [],
+      lineEndingVariants: [],
+    },
   );
   // Anything else applied outside the code is reported as unknown (still untouched).
   assert.deepEqual(
@@ -118,6 +126,7 @@ test("G6: the release ledger includes the returning-player migration and verifie
     changed: [],
     recognized: ["006_mcp_oauth"],
     unknown: [],
+    lineEndingVariants: [],
   });
   // After the packet: all required migrations are present and 006 remains recognized.
   const after = [
@@ -131,6 +140,7 @@ test("G6: the release ledger includes the returning-player migration and verifie
     changed: [],
     recognized: ["006_mcp_oauth"],
     unknown: [],
+    lineEndingVariants: [],
   });
   const drifted = after.map((m) =>
     m.name === "006_mcp_oauth" ? { ...m, hash: "a".repeat(64) } : m,
@@ -143,10 +153,59 @@ test("G6: the release ledger includes the returning-player migration and verifie
         {
           ...drifted.find((m) => m.name === "006_mcp_oauth")!,
           source: "select 1",
+          crlfHash: "b".repeat(64),
         },
       ],
       drifted,
     ),
-    { pending: [], changed: ["006_mcp_oauth"], recognized: [], unknown: [] },
+    {
+      pending: [],
+      changed: ["006_mcp_oauth"],
+      recognized: [],
+      unknown: [],
+      lineEndingVariants: [],
+    },
   );
+});
+
+test("M5: checksums ignore CRLF checkouts and keep every previously issued LF hash", async () => {
+  const files = await migrationFiles();
+  for (const f of files) {
+    assert.ok(!f.source.includes("\r"), `${f.name} is normalized to LF`);
+    assert.equal(
+      f.crlfHash,
+      createHash("sha256").update(f.source.replace(/\n/g, "\r\n")).digest("hex"),
+    );
+  }
+  // Issued checksums (Linux CI and production builds), pinned independently of the
+  // working tree so a CRLF checkout on Windows can never change them.
+  const issued: Record<string, string> = {
+    "007_application_team_name":
+      "bbc004390ba1b09cbc7ce09c2fc644192e7d081d92e54a3bfaec397655f5ea41",
+  };
+  for (const [name, hash] of Object.entries(issued))
+    assert.equal(files.find((f) => f.name === name)?.hash, hash);
+  // The same SQL hashed from a CRLF checkout is equal, not an edit.
+  const fromWindows = files.map((f) => ({ name: f.name, hash: f.crlfHash }));
+  const status = compareLedger(files, fromWindows);
+  assert.deepEqual(status.changed, []);
+  assert.deepEqual(status.pending, []);
+  assert.deepEqual(
+    status.lineEndingVariants,
+    files.map((f) => f.name),
+  );
+  // A real edit is still caught.
+  assert.deepEqual(
+    compareLedger(files, [{ name: files[0].name, hash: "c".repeat(64) }])
+      .changed,
+    [files[0].name],
+  );
+  // The written files are pure LF from git's point of view.
+  const { readFile } = await import("node:fs/promises");
+  const attributes = await readFile(
+    new URL("../.gitattributes", import.meta.url),
+    "utf8",
+  );
+  assert.match(attributes, /^\*\.sql text eol=lf$/m);
+  assert.match(attributes, /^migrations\/\*\* text eol=lf$/m);
 });

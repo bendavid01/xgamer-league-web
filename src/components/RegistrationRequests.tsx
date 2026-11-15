@@ -64,6 +64,92 @@ function verification(data: FormData) {
   };
 }
 
+/**
+ * Existing records with the applicant's name (each must be checked) or team
+ * (information only: many teams are real club names). Nothing is ever merged.
+ */
+function PossibleMatches({
+  request,
+}: {
+  request: PendingNewPlayerRegistration;
+}) {
+  const sameName = request.possibleMatches.filter((m) => m.sameName);
+  const teamOnly = request.possibleMatches.filter((m) => !m.sameName);
+  if (!sameName.length && !teamOnly.length) return null;
+  const link = (m: PendingNewPlayerRegistration["possibleMatches"][number]) => (
+    <Link
+      href={`/players/${m.code}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="om-link"
+    >
+      {m.code}
+    </Link>
+  );
+  return (
+    <div className="notice space-y-2">
+      {sameName.length > 0 && (
+        <fieldset className="space-y-1">
+          <legend className="font-semibold">
+            Possible existing identity: same gaming name
+          </legend>
+          <p className="text-xs">
+            If the applicant already has an XG ID, reject this application and
+            add them under Returning players. Tick each record only after you
+            confirmed it is a different person.
+          </p>
+          {sameName.map((m) => (
+            <label key={m.code} className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                name="distinct"
+                value={m.code}
+                required
+                className="mt-1"
+              />
+              <span>
+                Not the same person as {link(m)} · {m.name}
+                {m.team ? ` · ${m.team}` : ""}
+                {m.retired ? " · removed record" : ""}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {teamOnly.length > 0 && (
+        <p className="text-xs">
+          Same team name on record (for information):{" "}
+          {teamOnly.map((m, i) => (
+            <span key={m.code}>
+              {i > 0 && ", "}
+              {link(m)} {m.name}
+              {m.retired ? " (removed record)" : ""}
+            </span>
+          ))}
+          {request.moreMatches > 0 && ` and ${request.moreMatches} more`}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function VerifiedPhoneField({ help }: { help: string }) {
+  return (
+    <label className="block">
+      Independently verified WhatsApp number
+      <input
+        className="control-input"
+        type="tel"
+        autoComplete="off"
+        name="verifiedPhone"
+        required
+        maxLength={32}
+      />
+      <span className="block text-xs text-slate-400">{help}</span>
+    </label>
+  );
+}
+
 function ReviewRequest({
   request,
   rosterOpen,
@@ -115,6 +201,9 @@ function ReviewRequest({
                 ...decision,
                 ...verification(data),
                 verifiedPhone: data.get("verifiedPhone"),
+                ...(returning
+                  ? {}
+                  : { confirmedDistinctFrom: data.getAll("distinct") }),
               },
               returning
                 ? "Returning player approved under their existing XG ID."
@@ -155,21 +244,14 @@ function ReviewRequest({
         )}
         {!reject && (
           <>
-            <label className="block">
-              Independently verified WhatsApp number
-              <input
-                className="control-input"
-                type="tel"
-                autoComplete="off"
-                name="verifiedPhone"
-                required
-                maxLength={32}
-              />
-              <span className="block text-xs text-slate-400">
-                Organizer Manager checks this number against the submitted
-                request.
-              </span>
-            </label>
+            {!returning && <PossibleMatches request={request} />}
+            <VerifiedPhoneField
+              help={
+                returning
+                  ? "Organizer Manager checks this number against the request and the number on file for this XG ID. A changed number needs a WhatsApp number change first."
+                  : "Organizer Manager checks this number against the submitted application and existing records."
+              }
+            />
             <VerificationFields returning={returning} />
           </>
         )}
@@ -248,8 +330,9 @@ export default function ReturningPlayers({
       </h3>
       <p className="text-sm text-slate-400">
         Verify ownership using independent evidence, such as an established
-        organizer contact or a live identity check. A matching XG ID and phone
-        number alone are insufficient.
+        organizer contact or a live identity check. The number must also be
+        the one on file for that XG ID, but a matching XG ID and phone number
+        alone are insufficient.
       </p>
       {!rosterOpen && (
         <p className="notice">
@@ -274,7 +357,7 @@ export default function ReturningPlayers({
       {rosterOpen && (
         <details className="om-card">
           <summary className="cursor-pointer font-semibold">
-            Add a verified existing player
+            Add a verified existing player or restore a removed entry
           </summary>
           <form
             className="mt-4 space-y-4"
@@ -287,6 +370,7 @@ export default function ReturningPlayers({
                   action: "returning.add",
                   xgId: data.get("xgId"),
                   teamName: data.get("teamName"),
+                  verifiedPhone: data.get("verifiedPhone"),
                   ...verification(data),
                   reason: data.get("reason"),
                 },
@@ -317,6 +401,7 @@ export default function ReturningPlayers({
                 autoComplete="off"
               />
             </label>
+            <VerifiedPhoneField help="Must be the number on file for this XG ID. If the player was removed from this tournament earlier, their entry is restored with its recorded team." />
             <VerificationFields />
             <ReasonField />
             <button className="button-primary">Add player</button>
