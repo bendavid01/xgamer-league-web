@@ -49,13 +49,17 @@ added(migration, tbl, col) as (values
   ('009_contact_change', 'player', 'contact_verified_at'),
   ('009_contact_change', 'player', 'contact_verification_method')
 ),
--- Every index and constraint (NOT NULL included) on the tables these migrations
--- create, as PostgreSQL 18 prints it once 001-012 are applied, with the migration
--- that last sets it. An applied migration's definitions must all be present: a
--- name alone is not enough, because "create ... if not exists" keeps an index of
--- the same name with other columns, another predicate or no uniqueness.
+-- Every index, constraint (NOT NULL included), column default (identity columns
+-- included), trigger (with its enabled state) and function of these migrations,
+-- as PostgreSQL 18 prints it once 001-012 are applied, with the migration that
+-- last sets it. An applied migration's definitions must all be present: a name
+-- alone is not enough, because "create ... if not exists" keeps an index of the
+-- same name with other columns, another predicate or no uniqueness, and a
+-- disabled trigger or a replaced function keeps its name too.
 -- Constraints are compared by table, type and definition (generated names can
--- differ after an upgrade); indexes by their full definition, name included.
+-- differ after an upgrade); indexes and triggers by their full definition, name
+-- included; defaults by column and expression; functions by a sha256 digest of
+-- their full definition.
 -- tests/registration-preflight.integration.test.ts regenerates this list from a
 -- fresh database, one migration at a time, and requires it to be identical.
 defs(migration, kind, tbl, name, def) as (values
@@ -68,6 +72,9 @@ defs(migration, kind, tbl, name, def) as (values
   ('001_control_center', 'n', 'announcement', 'announcement_title_not_null', 'NOT NULL title'),
   ('001_control_center', 'n', 'announcement', 'announcement_tournament_id_not_null', 'NOT NULL tournament_id'),
   ('001_control_center', 'p', 'announcement', 'announcement_pkey', 'PRIMARY KEY (id)'),
+  ('001_control_center', 'default', 'announcement', 'id', 'id DEFAULT gen_random_uuid()'),
+  ('001_control_center', 'default', 'announcement', 'published', 'published DEFAULT false'),
+  ('001_control_center', 'default', 'announcement', 'revision', 'revision DEFAULT 0'),
   ('001_control_center', 'index', 'application', 'application_pkey', 'CREATE UNIQUE INDEX application_pkey ON public.application USING btree (id)'),
   ('001_control_center', 'index', 'application', 'application_tournament_id_player_id_key', 'CREATE UNIQUE INDEX application_tournament_id_player_id_key ON public.application USING btree (tournament_id, player_id)'),
   ('001_control_center', 'c', 'application', 'application_status_check', 'CHECK ((status = ANY (ARRAY[''pending''::text, ''waitlisted''::text, ''approved''::text, ''rejected''::text, ''withdrawn''::text])))'),
@@ -81,6 +88,9 @@ defs(migration, kind, tbl, name, def) as (values
   ('001_control_center', 'n', 'application', 'application_tournament_id_not_null', 'NOT NULL tournament_id'),
   ('001_control_center', 'p', 'application', 'application_pkey', 'PRIMARY KEY (id)'),
   ('001_control_center', 'u', 'application', 'application_tournament_id_player_id_key', 'UNIQUE (tournament_id, player_id)'),
+  ('001_control_center', 'default', 'application', 'created_at', 'created_at DEFAULT now()'),
+  ('001_control_center', 'default', 'application', 'id', 'id DEFAULT gen_random_uuid()'),
+  ('001_control_center', 'default', 'application', 'revision', 'revision DEFAULT 0'),
   ('001_control_center', 'index', 'audit_event', 'audit_event_pkey', 'CREATE UNIQUE INDEX audit_event_pkey ON public.audit_event USING btree (id)'),
   ('001_control_center', 'n', 'audit_event', 'audit_event_action_not_null', 'NOT NULL action'),
   ('001_control_center', 'n', 'audit_event', 'audit_event_actor_not_null', 'NOT NULL actor'),
@@ -88,6 +98,9 @@ defs(migration, kind, tbl, name, def) as (values
   ('001_control_center', 'n', 'audit_event', 'audit_event_entity_not_null', 'NOT NULL entity'),
   ('001_control_center', 'n', 'audit_event', 'audit_event_id_not_null', 'NOT NULL id'),
   ('001_control_center', 'p', 'audit_event', 'audit_event_pkey', 'PRIMARY KEY (id)'),
+  ('001_control_center', 'default', 'audit_event', 'created_at', 'created_at DEFAULT now()'),
+  ('001_control_center', 'default', 'audit_event', 'id', 'id GENERATED ALWAYS AS IDENTITY (START 1 INCREMENT 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1)'),
+  ('001_control_center', 'trigger', 'audit_event', 'audit_immutable', 'CREATE TRIGGER audit_immutable BEFORE DELETE OR UPDATE ON public.audit_event FOR EACH ROW EXECUTE FUNCTION immutable_audit() (enabled)'),
   ('001_control_center', 'index', 'coordinator', 'coordinator_pkey', 'CREATE UNIQUE INDEX coordinator_pkey ON public.coordinator USING btree (discord_id)'),
   ('001_control_center', 'c', 'coordinator', 'coordinator_discord_id_check', 'CHECK ((discord_id ~ ''^[0-9]{17,20}$''::text))'),
   ('001_control_center', 'c', 'coordinator', 'coordinator_operations_check', 'CHECK ((operations <@ ARRAY[''registrations''::text, ''results''::text, ''announcements''::text]))'),
@@ -96,12 +109,14 @@ defs(migration, kind, tbl, name, def) as (values
   ('001_control_center', 'n', 'coordinator', 'coordinator_operations_not_null', 'NOT NULL operations'),
   ('001_control_center', 'n', 'coordinator', 'coordinator_tournaments_not_null', 'NOT NULL tournaments'),
   ('001_control_center', 'p', 'coordinator', 'coordinator_pkey', 'PRIMARY KEY (discord_id)'),
+  ('001_control_center', 'default', 'coordinator', 'active', 'active DEFAULT true'),
   ('001_control_center', 'index', 'finals_access', 'finals_access_pkey', 'CREATE UNIQUE INDEX finals_access_pkey ON public.finals_access USING btree (tournament_id)'),
   ('001_control_center', 'f', 'finals_access', 'finals_access_tournament_id_fkey', 'FOREIGN KEY (tournament_id) REFERENCES tournament(id)'),
   ('001_control_center', 'n', 'finals_access', 'finals_access_credential_cipher_not_null', 'NOT NULL credential_cipher'),
   ('001_control_center', 'n', 'finals_access', 'finals_access_released_not_null', 'NOT NULL released'),
   ('001_control_center', 'n', 'finals_access', 'finals_access_tournament_id_not_null', 'NOT NULL tournament_id'),
   ('001_control_center', 'p', 'finals_access', 'finals_access_pkey', 'PRIMARY KEY (tournament_id)'),
+  ('001_control_center', 'default', 'finals_access', 'released', 'released DEFAULT false'),
   ('001_control_center', 'index', 'fixture', 'fixture_pkey', 'CREATE UNIQUE INDEX fixture_pkey ON public.fixture USING btree (id)'),
   ('001_control_center', 'index', 'fixture', 'fixture_tournament_id_stage_round_home_away_key', 'CREATE UNIQUE INDEX fixture_tournament_id_stage_round_home_away_key ON public.fixture USING btree (tournament_id, stage, round, home, away)'),
   ('001_control_center', 'c', 'fixture', 'fixture_away_score_check', 'CHECK (((away_score >= 0) AND (away_score <= 99)))'),
@@ -123,6 +138,9 @@ defs(migration, kind, tbl, name, def) as (values
   ('001_control_center', 'n', 'fixture', 'fixture_tournament_id_not_null', 'NOT NULL tournament_id'),
   ('001_control_center', 'p', 'fixture', 'fixture_pkey', 'PRIMARY KEY (id)'),
   ('001_control_center', 'u', 'fixture', 'fixture_tournament_id_stage_round_home_away_key', 'UNIQUE (tournament_id, stage, round, home, away)'),
+  ('001_control_center', 'default', 'fixture', 'id', 'id DEFAULT gen_random_uuid()'),
+  ('001_control_center', 'default', 'fixture', 'revision', 'revision DEFAULT 0'),
+  ('001_control_center', 'default', 'fixture', 'slot', 'slot DEFAULT 0'),
   ('001_control_center', 'index', 'player', 'player_contact_hash_key', 'CREATE UNIQUE INDEX player_contact_hash_key ON public.player USING btree (contact_hash)'),
   ('001_control_center', 'index', 'player', 'player_discord_id_key', 'CREATE UNIQUE INDEX player_discord_id_key ON public.player USING btree (discord_id)'),
   ('001_control_center', 'index', 'player', 'player_efootball_hash_key', 'CREATE UNIQUE INDEX player_efootball_hash_key ON public.player USING btree (efootball_hash)'),
@@ -139,6 +157,9 @@ defs(migration, kind, tbl, name, def) as (values
   ('001_control_center', 'u', 'player', 'player_contact_hash_key', 'UNIQUE (contact_hash)'),
   ('001_control_center', 'u', 'player', 'player_discord_id_key', 'UNIQUE (discord_id)'),
   ('001_control_center', 'u', 'player', 'player_efootball_hash_key', 'UNIQUE (efootball_hash)'),
+  ('001_control_center', 'default', 'player', 'consent_at', 'consent_at DEFAULT now()'),
+  ('001_control_center', 'default', 'player', 'id', 'id DEFAULT gen_random_uuid()'),
+  ('001_control_center', 'function', 'public', 'immutable_audit', 'sha256 e3b4397e3dbcb07c4d25a2339c785409bf4bf65b20d15aa213eb6a7d9cc89744'),
   ('001_control_center', 'index', 'qualification', 'qualification_pkey', 'CREATE UNIQUE INDEX qualification_pkey ON public.qualification USING btree (tournament_id, player_id)'),
   ('001_control_center', 'index', 'qualification', 'qualification_tournament_id_rank_key', 'CREATE UNIQUE INDEX qualification_tournament_id_rank_key ON public.qualification USING btree (tournament_id, rank)'),
   ('001_control_center', 'f', 'qualification', 'qualification_player_id_fkey', 'FOREIGN KEY (player_id) REFERENCES player(id)'),
@@ -161,26 +182,37 @@ defs(migration, kind, tbl, name, def) as (values
   ('001_control_center', 'n', 'tournament', 'tournament_revision_not_null', 'NOT NULL revision'),
   ('001_control_center', 'n', 'tournament', 'tournament_status_not_null', 'NOT NULL status'),
   ('001_control_center', 'p', 'tournament', 'tournament_pkey', 'PRIMARY KEY (id)'),
+  ('001_control_center', 'default', 'tournament', 'capacity', 'capacity DEFAULT 64'),
+  ('001_control_center', 'default', 'tournament', 'revision', 'revision DEFAULT 0'),
+  ('001_control_center', 'default', 'tournament', 'status', 'status DEFAULT ''draft''::text'),
   ('001_control_center', 'index', 'xgamer_migration', 'xgamer_migration_pkey', 'CREATE UNIQUE INDEX xgamer_migration_pkey ON public.xgamer_migration USING btree (name)'),
   ('001_control_center', 'n', 'xgamer_migration', 'xgamer_migration_applied_at_not_null', 'NOT NULL applied_at'),
   ('001_control_center', 'n', 'xgamer_migration', 'xgamer_migration_hash_not_null', 'NOT NULL hash'),
   ('001_control_center', 'n', 'xgamer_migration', 'xgamer_migration_name_not_null', 'NOT NULL name'),
   ('001_control_center', 'p', 'xgamer_migration', 'xgamer_migration_pkey', 'PRIMARY KEY (name)'),
+  ('001_control_center', 'default', 'xgamer_migration', 'applied_at', 'applied_at DEFAULT now()'),
   ('002_open_registration', 'c', 'player', 'player_efootball_pair', 'CHECK (((efootball_hash IS NULL) = (efootball_cipher IS NULL)))'),
+  ('002_open_registration', 'default', 'player', 'preference', 'preference DEFAULT ''whatsapp''::text'),
   ('002_open_registration', 'c', 'qualification', 'qualification_rank_range', 'CHECK (((rank >= 1) AND (rank <= 32)))'),
   ('002_open_registration', 'c', 'tournament', 'tournament_opponents_check', 'CHECK (((opponents IS NULL) OR ((opponents >= 1) AND (opponents <= 63))))'),
   ('002_open_registration', 'c', 'tournament', 'tournament_qualifiers_check', 'CHECK ((qualifiers = ANY (ARRAY[2, 4, 8, 16, 32])))'),
   ('002_open_registration', 'n', 'tournament', 'tournament_format_not_null', 'NOT NULL format'),
   ('002_open_registration', 'n', 'tournament', 'tournament_qualifiers_not_null', 'NOT NULL qualifiers'),
+  ('002_open_registration', 'default', 'tournament', 'qualifiers', 'qualifiers DEFAULT 8'),
   ('003_multi_tournament', 'index', 'fixture', 'league_pair_ordered', 'CREATE UNIQUE INDEX league_pair_ordered ON public.fixture USING btree (tournament_id, home, away) WHERE (stage = ''league''::text)'),
   ('003_multi_tournament', 'index', 'player', 'player_public_no', 'CREATE UNIQUE INDEX player_public_no ON public.player USING btree (public_no)'),
   ('003_multi_tournament', 'n', 'player', 'player_public_no_not_null', 'NOT NULL public_no'),
+  ('003_multi_tournament', 'default', 'player', 'public_no', 'public_no GENERATED BY DEFAULT AS IDENTITY (START 1 INCREMENT 1 MINVALUE 1 MAXVALUE 2147483647 CACHE 1)'),
   ('003_multi_tournament', 'c', 'tournament', 'tournament_fee_check', 'CHECK (((entry_fee IS NULL) OR (entry_fee >= 0)))'),
   ('003_multi_tournament', 'c', 'tournament', 'tournament_format_v2', 'CHECK ((format = ANY (ARRAY[''league''::text, ''knockout''::text])))'),
   ('003_multi_tournament', 'c', 'tournament', 'tournament_legs_check', 'CHECK ((legs = ANY (ARRAY[1, 2])))'),
   ('003_multi_tournament', 'n', 'tournament', 'tournament_created_at_not_null', 'NOT NULL created_at'),
   ('003_multi_tournament', 'n', 'tournament', 'tournament_knockout_not_null', 'NOT NULL knockout'),
   ('003_multi_tournament', 'n', 'tournament', 'tournament_legs_not_null', 'NOT NULL legs'),
+  ('003_multi_tournament', 'default', 'tournament', 'created_at', 'created_at DEFAULT now()'),
+  ('003_multi_tournament', 'default', 'tournament', 'format', 'format DEFAULT ''league''::text'),
+  ('003_multi_tournament', 'default', 'tournament', 'knockout', 'knockout DEFAULT false'),
+  ('003_multi_tournament', 'default', 'tournament', 'legs', 'legs DEFAULT 1'),
   ('004_seasons_podium', 'index', 'podium', 'podium_pkey', 'CREATE UNIQUE INDEX podium_pkey ON public.podium USING btree (tournament_id, place)'),
   ('004_seasons_podium', 'index', 'podium', 'podium_tournament_id_player_id_key', 'CREATE UNIQUE INDEX podium_tournament_id_player_id_key ON public.podium USING btree (tournament_id, player_id)'),
   ('004_seasons_podium', 'c', 'podium', 'podium_place_check', 'CHECK (((place >= 1) AND (place <= 3)))'),
@@ -194,6 +226,7 @@ defs(migration, kind, tbl, name, def) as (values
   ('004_seasons_podium', 'index', 'tournament', 'tournament_competition_season', 'CREATE UNIQUE INDEX tournament_competition_season ON public.tournament USING btree (lower(competition), season) WHERE ((competition IS NOT NULL) AND (deleted_at IS NULL))'),
   ('004_seasons_podium', 'c', 'tournament', 'tournament_season_check', 'CHECK ((((competition IS NULL) AND (season IS NULL)) OR ((competition IS NOT NULL) AND (season IS NOT NULL) AND ((season >= 1) AND (season <= 999)))))'),
   ('004_seasons_podium', 'n', 'tournament', 'tournament_published_not_null', 'NOT NULL published'),
+  ('004_seasons_podium', 'default', 'tournament', 'published', 'published DEFAULT false'),
   ('004_seasons_podium', 'index', 'tournament_photo', 'tournament_photo_pkey', 'CREATE UNIQUE INDEX tournament_photo_pkey ON public.tournament_photo USING btree (tournament_id)'),
   ('004_seasons_podium', 'c', 'tournament_photo', 'tournament_photo_content_type_check', 'CHECK ((content_type = ANY (ARRAY[''image/jpeg''::text, ''image/webp''::text, ''image/png''::text])))'),
   ('004_seasons_podium', 'c', 'tournament_photo', 'tournament_photo_data_check', 'CHECK ((octet_length(data) <= 716800))'),
@@ -203,8 +236,10 @@ defs(migration, kind, tbl, name, def) as (values
   ('004_seasons_podium', 'n', 'tournament_photo', 'tournament_photo_tournament_id_not_null', 'NOT NULL tournament_id'),
   ('004_seasons_podium', 'n', 'tournament_photo', 'tournament_photo_updated_at_not_null', 'NOT NULL updated_at'),
   ('004_seasons_podium', 'p', 'tournament_photo', 'tournament_photo_pkey', 'PRIMARY KEY (tournament_id)'),
+  ('004_seasons_podium', 'default', 'tournament_photo', 'updated_at', 'updated_at DEFAULT now()'),
   ('005_announcement_dates', 'index', 'announcement', 'announcement_tournament_recent', 'CREATE INDEX announcement_tournament_recent ON public.announcement USING btree (tournament_id, created_at DESC) WHERE (deleted_at IS NULL)'),
   ('005_announcement_dates', 'n', 'announcement', 'announcement_created_at_not_null', 'NOT NULL created_at'),
+  ('005_announcement_dates', 'default', 'announcement', 'created_at', 'created_at DEFAULT now()'),
   ('008_team_name_provenance', 'c', 'application', 'application_team_name_source_check', 'CHECK (((team_name_source IS NULL) OR (team_name_source = ANY (ARRAY[''registration''::text, ''registration_record''::text, ''organizer_attested''::text, ''organizer_corrected''::text]))))'),
   ('009_contact_change', 'index', 'contact_change', 'contact_change_open_number', 'CREATE UNIQUE INDEX contact_change_open_number ON public.contact_change USING btree (new_contact_hash) WHERE (status = ANY (ARRAY[''pending_code''::text, ''awaiting_second_admin''::text]))'),
   ('009_contact_change', 'index', 'contact_change', 'contact_change_open_player', 'CREATE UNIQUE INDEX contact_change_open_player ON public.contact_change USING btree (player_id) WHERE (status = ANY (ARRAY[''pending_code''::text, ''awaiting_second_admin''::text]))'),
@@ -242,10 +277,16 @@ defs(migration, kind, tbl, name, def) as (values
   ('009_contact_change', 'n', 'contact_change', 'contact_change_status_not_null', 'NOT NULL status'),
   ('009_contact_change', 'n', 'contact_change', 'contact_change_tournament_id_not_null', 'NOT NULL tournament_id'),
   ('009_contact_change', 'p', 'contact_change', 'contact_change_pkey', 'PRIMARY KEY (id)'),
+  ('009_contact_change', 'default', 'contact_change', 'attempts', 'attempts DEFAULT 0'),
+  ('009_contact_change', 'default', 'contact_change', 'created_at', 'created_at DEFAULT now()'),
+  ('009_contact_change', 'default', 'contact_change', 'id', 'id DEFAULT gen_random_uuid()'),
+  ('009_contact_change', 'default', 'contact_change', 'resends', 'resends DEFAULT 0'),
+  ('009_contact_change', 'default', 'contact_change', 'status', 'status DEFAULT ''pending_code''::text'),
   ('009_contact_change', 'c', 'player', 'player_contact_attestation_method', 'CHECK (((contact_verification_method IS NULL) OR (contact_verification_method = ANY (ARRAY[''organizer_attested_established_channel''::text, ''organizer_attested_independent_evidence''::text]))))'),
   ('009_contact_change', 'c', 'player', 'player_contact_attestation_pair', 'CHECK (((contact_verified_at IS NULL) = (contact_verification_method IS NULL)))'),
   ('009_contact_change', 'c', 'player', 'player_contact_version_positive', 'CHECK ((contact_version >= 1))'),
   ('009_contact_change', 'n', 'player', 'player_contact_version_not_null', 'NOT NULL contact_version'),
+  ('009_contact_change', 'default', 'player', 'contact_version', 'contact_version DEFAULT 1'),
   ('011_returning_player_registration', 'index', 'returning_registration_request', 'returning_registration_pending_claim', 'CREATE UNIQUE INDEX returning_registration_pending_claim ON public.returning_registration_request USING btree (tournament_id, contact_proof) WHERE (status = ''pending''::text)'),
   ('011_returning_player_registration', 'index', 'returning_registration_request', 'returning_registration_pending_queue', 'CREATE INDEX returning_registration_pending_queue ON public.returning_registration_request USING btree (tournament_id, created_at, id) WHERE (status = ''pending''::text)'),
   ('011_returning_player_registration', 'index', 'returning_registration_request', 'returning_registration_request_application_id_key', 'CREATE UNIQUE INDEX returning_registration_request_application_id_key ON public.returning_registration_request USING btree (application_id)'),
@@ -267,6 +308,9 @@ defs(migration, kind, tbl, name, def) as (values
   ('011_returning_player_registration', 'n', 'returning_registration_request', 'returning_registration_request_tournament_id_not_null', 'NOT NULL tournament_id'),
   ('011_returning_player_registration', 'p', 'returning_registration_request', 'returning_registration_request_pkey', 'PRIMARY KEY (id)'),
   ('011_returning_player_registration', 'u', 'returning_registration_request', 'returning_registration_request_application_id_key', 'UNIQUE (application_id)'),
+  ('011_returning_player_registration', 'default', 'returning_registration_request', 'created_at', 'created_at DEFAULT now()'),
+  ('011_returning_player_registration', 'default', 'returning_registration_request', 'id', 'id DEFAULT gen_random_uuid()'),
+  ('011_returning_player_registration', 'default', 'returning_registration_request', 'status', 'status DEFAULT ''pending''::text'),
   ('012_new_player_registration_approval', 'index', 'new_player_registration_request', 'new_player_registration_pending_claim', 'CREATE UNIQUE INDEX new_player_registration_pending_claim ON public.new_player_registration_request USING btree (tournament_id, contact_proof, gaming_name, team_name) WHERE (status = ''pending''::text)'),
   ('012_new_player_registration_approval', 'index', 'new_player_registration_request', 'new_player_registration_pending_queue', 'CREATE INDEX new_player_registration_pending_queue ON public.new_player_registration_request USING btree (tournament_id, created_at, id) WHERE (status = ''pending''::text)'),
   ('012_new_player_registration_approval', 'index', 'new_player_registration_request', 'new_player_registration_request_application_id_key', 'CREATE UNIQUE INDEX new_player_registration_request_application_id_key ON public.new_player_registration_request USING btree (application_id)'),
@@ -288,7 +332,10 @@ defs(migration, kind, tbl, name, def) as (values
   ('012_new_player_registration_approval', 'n', 'new_player_registration_request', 'new_player_registration_request_status_not_null', 'NOT NULL status'),
   ('012_new_player_registration_approval', 'n', 'new_player_registration_request', 'new_player_registration_request_tournament_id_not_null', 'NOT NULL tournament_id'),
   ('012_new_player_registration_approval', 'p', 'new_player_registration_request', 'new_player_registration_request_pkey', 'PRIMARY KEY (id)'),
-  ('012_new_player_registration_approval', 'u', 'new_player_registration_request', 'new_player_registration_request_application_id_key', 'UNIQUE (application_id)')
+  ('012_new_player_registration_approval', 'u', 'new_player_registration_request', 'new_player_registration_request_application_id_key', 'UNIQUE (application_id)'),
+  ('012_new_player_registration_approval', 'default', 'new_player_registration_request', 'created_at', 'created_at DEFAULT now()'),
+  ('012_new_player_registration_approval', 'default', 'new_player_registration_request', 'id', 'id DEFAULT gen_random_uuid()'),
+  ('012_new_player_registration_approval', 'default', 'new_player_registration_request', 'status', 'status DEFAULT ''pending''::text')
 ),
 ledger_xml as (
   select case when to_regclass('public.xgamer_migration') is null then '<table/>'::xml
@@ -314,6 +361,53 @@ actual_defs as (
   join pg_class c on c.oid = k.conrelid
   join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relname in (select tbl from defs)
+  union all
+  -- Column defaults, identity columns (with their sequence settings: the XG number
+  -- is player.public_no) and generated columns, each with its column name.
+  select 'default', c.relname::text, a.attname::text,
+    format('%I ', a.attname) || case
+      when a.attidentity <> '' then format(
+        'GENERATED %s AS IDENTITY (START %s INCREMENT %s MINVALUE %s MAXVALUE %s CACHE %s%s)',
+        case a.attidentity when 'a' then 'ALWAYS' else 'BY DEFAULT' end,
+        s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache,
+        case when s.seqcycle then ' CYCLE' else '' end)
+      when a.attgenerated <> '' then 'GENERATED ALWAYS AS (' || pg_get_expr(d.adbin, d.adrelid) || ')'
+        || case a.attgenerated when 's' then ' STORED' else ' VIRTUAL' end
+      else 'DEFAULT ' || pg_get_expr(d.adbin, d.adrelid)
+    end
+  from pg_attribute a
+  join pg_class c on c.oid = a.attrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+  left join pg_depend q on a.attidentity <> '' and q.classid = 'pg_class'::regclass
+    and q.refclassid = 'pg_class'::regclass and q.refobjid = a.attrelid
+    and q.refobjsubid = a.attnum and q.deptype = 'i'
+  left join pg_sequence s on s.seqrelid = q.objid
+  where n.nspname = 'public' and c.relname in (select tbl from defs) and c.relkind = 'r'
+    and a.attnum > 0 and not a.attisdropped and (d.oid is not null or a.attidentity <> '')
+  union all
+  -- Triggers (not the internal ones behind foreign keys), with their enabled state.
+  select 'trigger', c.relname::text, t.tgname::text,
+    pg_get_triggerdef(t.oid) || ' (' || case t.tgenabled
+      when 'O' then 'enabled' when 'D' then 'DISABLED'
+      when 'R' then 'replica only' when 'A' then 'always' end || ')'
+  from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relname in (select tbl from defs) and not t.tgisinternal
+  union all
+  -- Functions in public that no extension owns, compared by a digest of their full
+  -- definition (body, language, volatility, security), line endings normalized.
+  select 'function', 'public', p.proname::text,
+    'sha256 ' || encode(sha256(convert_to(
+      replace(pg_get_functiondef(p.oid), chr(13) || chr(10), chr(10)), 'UTF8')), 'hex')
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.prokind = 'f'
+    and not exists (
+      select 1 from pg_depend e
+      where e.classid = 'pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e'
+    )
 ),
 def_check as (
   select d.*, exists (
@@ -421,7 +515,7 @@ checks(ord, check_name, status, detail) as (
   from expected e
   where not exists (select 1 from ledger l where l.name = e.name)
   union all
-  -- Exact index and constraint definitions of every applied migration.
+  -- Exact schema definitions of every applied migration.
   select 9, 'Definitions for ' || d.migration,
     case
       when not exists (select 1 from ledger l where l.name = d.migration) then
@@ -433,7 +527,7 @@ checks(ord, check_name, status, detail) as (
       when not exists (select 1 from ledger l where l.name = d.migration) then
         case when d.migration < '006' then 'not checked: the migration is missing from the ledger'
              else 'not applied yet: the migration creates or replaces its ' || count(*) || ' definition(s)' end
-      when bool_and(d.ok) then 'all ' || count(*) || ' index and constraint definitions match'
+      when bool_and(d.ok) then 'all ' || count(*) || ' definitions match'
       else 'MISSING OR DIFFERENT: ' || string_agg(d.tbl || '.' || d.name, ', ' order by d.tbl, d.name)
         filter (where not d.ok) || '. Stop and investigate.'
     end
@@ -441,7 +535,7 @@ checks(ord, check_name, status, detail) as (
   group by d.migration
   union all
   -- Anything else on these tables, or a known name with another definition.
-  select 10, 'Unexpected indexes and constraints',
+  select 10, 'Unexpected schema definitions',
     case when count(*) = 0 then 'pass' else 'warn' end,
     case when count(*) = 0 then 'none'
       else string_agg(a.tbl || '.' || a.name, ', ' order by a.tbl, a.name)
