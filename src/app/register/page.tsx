@@ -68,7 +68,7 @@ export default async function Register({
         title={chosen ? tournamentLabel(chosen) : "Earn your place."}
         description={
           chosen?.description ??
-          "Tell us who you are. An organizer contacts you on WhatsApp to confirm your entry."
+          "An organizer verifies your registration before you join the tournament."
         }
       />
       {choose ? (
@@ -115,12 +115,16 @@ export default async function Register({
             <ol className="register-steps">
               <li>
                 <strong>Register</strong>
-                <span>Player name, team name and your WhatsApp number.</span>
+                <span>
+                  Enter your player name or existing XG ID, tournament team and
+                  WhatsApp number.
+                </span>
               </li>
               <li>
                 <strong>Get confirmed</strong>
                 <span>
-                  An organizer messages you on WhatsApp and approves your entry.
+                  If you already have an XG ID, message an organizer privately
+                  on Discord to verify your request.
                 </span>
               </li>
               <li>

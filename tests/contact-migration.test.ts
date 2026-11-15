@@ -247,19 +247,21 @@ test("M9-4: the 007 + 008 + 009 release packet in one transaction changes only t
   }
 });
 
-test("M9-5: numbering: 001–005 and 007–009 in the repository; 010 reserved for player accounts; docs and health agree", async () => {
+test("M9-5: migration numbering still reserves 010 for player accounts; docs and health agree", async () => {
   assert.deepEqual(
     (await files()).map((f) => f.slice(0, 3)),
-    ["001", "002", "003", "004", "005", "007", "008", "009"],
+    ["001", "002", "003", "004", "005", "007", "008", "009", "011"],
   );
   const { KNOWN_MIGRATIONS } = await import("../src/lib/health");
   assert.ok(KNOWN_MIGRATIONS.includes("009_contact_change"));
+  assert.ok(KNOWN_MIGRATIONS.includes("011_returning_player_registration"));
   const doc = await readFile(
     new URL("../docs/MIGRATIONS.md", import.meta.url),
     "utf8",
   );
   assert.match(doc, /009_contact_change/);
   assert.match(doc, /010_player_accounts/);
+  assert.match(doc, /011_returning_player_registration/);
   assert.match(doc, /reserved/i);
   // 009 adds contact_version; a future 010 must not add it again.
   for (const f of (await files()).filter((f) => f >= "010"))

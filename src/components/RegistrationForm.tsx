@@ -10,6 +10,7 @@ export default function RegistrationForm({
   tournament: string | null;
 }) {
   const enabled = !!tournament;
+  const [kind, setKind] = useState<"new" | "existing">("new");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result>(null);
 
@@ -17,11 +18,13 @@ export default function RegistrationForm({
     return (
       <div className="panel p-6 md:p-10" role="status">
         <p className="eyebrow">REGISTRATION RECEIVED</p>
-        <h2 className="text-3xl font-bold">You&apos;re on the list.</h2>
+        <h2 className="text-3xl font-bold">
+          {kind === "existing" ? "Request received." : "You’re on the list."}
+        </h2>
         <p className="text-slate-300 mt-4 leading-relaxed">
-          An organizer will message you on WhatsApp to confirm your entry. Keep
-          your eFootball ID ready — they&apos;ll ask for it after you&apos;re
-          approved.
+          {kind === "existing"
+            ? "Message an organizer privately on Discord to verify your XG ID and WhatsApp number. Your entry is pending until they approve it."
+            : "An organizer will message you on WhatsApp to confirm your entry. Keep your eFootball ID ready. They’ll ask for it after you’re approved."}
         </p>
       </div>
     );
@@ -40,7 +43,10 @@ export default function RegistrationForm({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              playerName: data.get("playerName"),
+              kind,
+              ...(kind === "existing"
+                ? { xgId: data.get("xgId") }
+                : { playerName: data.get("playerName") }),
               teamName: data.get("teamName"),
               phone: data.get("phone"),
               website: data.get("website") ?? "",
@@ -76,20 +82,66 @@ export default function RegistrationForm({
           group to hear when it opens.
         </p>
       )}
-      {/* WHY: fields stay editable while closed; only submitting waits for registration to open. */}
       <fieldset disabled={busy} className="space-y-5 disabled:opacity-60">
-        <label className="block">
-          Player name
-          <input
-            required
-            name="playerName"
-            minLength={2}
-            maxLength={40}
-            className="control-input"
-            autoComplete="nickname"
-            placeholder="The name you play as"
-          />
-        </label>
+        <fieldset>
+          <legend className="mb-2 font-semibold">Register as</legend>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="registrationKind"
+                value="new"
+                checked={kind === "new"}
+                onChange={() => {
+                  setKind("new");
+                  setResult(null);
+                }}
+              />
+              New Player
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="registrationKind"
+                value="existing"
+                checked={kind === "existing"}
+                onChange={() => {
+                  setKind("existing");
+                  setResult(null);
+                }}
+              />
+              Existing Player
+            </label>
+          </div>
+        </fieldset>
+        {kind === "existing" ? (
+          <label className="block">
+            Permanent XG ID
+            <input
+              key="xgId"
+              required
+              name="xgId"
+              maxLength={16}
+              className="control-input"
+              autoComplete="off"
+              placeholder="XG-0007"
+            />
+          </label>
+        ) : (
+          <label className="block">
+            Player name
+            <input
+              key="playerName"
+              required
+              name="playerName"
+              minLength={2}
+              maxLength={40}
+              className="control-input"
+              autoComplete="nickname"
+              placeholder="The name you play as"
+            />
+          </label>
+        )}
         <label className="block">
           Team name
           <input
@@ -104,35 +156,50 @@ export default function RegistrationForm({
         </label>
         <label className="block">
           WhatsApp number
-          <span className="phone-field">
-            <span className="phone-prefix" aria-hidden="true">
-              +91
-            </span>
+          {kind === "existing" ? (
             <input
+              key="existingPhone"
               required
               name="phone"
               type="tel"
-              inputMode="numeric"
-              autoComplete="tel-national"
-              minLength={10}
-              maxLength={10}
-              pattern="[6-9][0-9]{9}"
-              title="10-digit Indian mobile number"
+              autoComplete="tel"
+              maxLength={32}
               className="control-input"
-              placeholder="9876543210"
               aria-describedby="phone-hint"
-              onInput={(e) => {
-                // Digits only; a pasted +91 / 0 prefix is dropped.
-                const el = e.currentTarget;
-                let d = el.value.replace(/\D/g, "");
-                if (d.length > 10 && d.startsWith("91")) d = d.slice(2);
-                if (d.length > 10 && d.startsWith("0")) d = d.slice(1);
-                el.value = d.slice(0, 10);
-              }}
             />
-          </span>
+          ) : (
+            <span className="phone-field">
+              <span className="phone-prefix" aria-hidden="true">
+                +91
+              </span>
+              <input
+                required
+                name="phone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel-national"
+                minLength={10}
+                maxLength={10}
+                pattern="[6-9][0-9]{9}"
+                title="10-digit Indian mobile number"
+                className="control-input"
+                placeholder="9876543210"
+                aria-describedby="phone-hint"
+                onInput={(e) => {
+                  // Digits only; a pasted +91 / 0 prefix is dropped.
+                  const el = e.currentTarget;
+                  let d = el.value.replace(/\D/g, "");
+                  if (d.length > 10 && d.startsWith("91")) d = d.slice(2);
+                  if (d.length > 10 && d.startsWith("0")) d = d.slice(1);
+                  el.value = d.slice(0, 10);
+                }}
+              />
+            </span>
+          )}
           <span id="phone-hint" className="block mt-2 text-sm text-slate-400">
-            10-digit Indian mobile number. Only organizers see it.
+            {kind === "existing"
+              ? "Use a number you control. Include the country code if it’s outside India."
+              : "10-digit Indian mobile number. Only organizers see it."}
           </span>
         </label>
         <div hidden aria-hidden="true">
@@ -158,8 +225,10 @@ export default function RegistrationForm({
           {busy
             ? "Registering…"
             : enabled
-              ? "Register"
-              : "Registration opens soon"}
+              ? kind === "existing"
+                ? "Submit for verification"
+                : "Register"
+              : "Registration closed"}
         </button>
       </fieldset>
       {result?.kind === "error" && (

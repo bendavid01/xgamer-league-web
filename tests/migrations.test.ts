@@ -92,7 +92,7 @@ test("ledger check finds pending, edited and outside migrations", async () => {
   );
 });
 
-test("G6: the release branch against production's ledger (001–006, then 007 + 008 + 009): schema matches, 006 recognized and untouched", async () => {
+test("G6: the release ledger includes the returning-player migration and verifies 006 without running it", async () => {
   const files = await migrationFiles();
   assert.ok(
     !files.some((f) => f.name.startsWith("006")),
@@ -106,18 +106,19 @@ test("G6: the release branch against production's ledger (001–006, then 007 + 
       hash: "ae5529b1a747ca3ba6fe30da75ed1d3b368bbb57462a9917c3162468cddde2d1",
     },
   ].map(({ name, hash }) => ({ name, hash }));
-  // Before the release packet: 007 and 008 are pending, so a production build stops.
+  // Before the release packet: the build stops because the new schema is pending.
   assert.deepEqual(compareLedger(files, production), {
     pending: [
       "007_application_team_name",
       "008_team_name_provenance",
       "009_contact_change",
+      "011_returning_player_registration",
     ],
     changed: [],
     recognized: ["006_mcp_oauth"],
     unknown: [],
   });
-  // After the packet records 007 and 008: clean, and 006 is still only recognized.
+  // After the packet: all required migrations are present and 006 remains recognized.
   const after = [
     ...production,
     ...files

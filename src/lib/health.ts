@@ -31,6 +31,7 @@ export const KNOWN_MIGRATIONS = [
   "007_application_team_name",
   "008_team_name_provenance",
   "009_contact_change",
+  "011_returning_player_registration",
 ];
 
 const n = (v: unknown) => Number(v ?? 0);

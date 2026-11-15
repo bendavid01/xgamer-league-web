@@ -12,7 +12,10 @@ SQL migration numbers are a separate series from feature IDs (for example, featu
 | 008 | `008_team_name_provenance` | yes | pending | Schema only: the four team-name provenance labels. Needs 007. |
 | 009 | `009_contact_change` | yes | pending | Schema only: `contact_version` (default 1), organizer-attestation fields, `contact_change`. Needs 001 and 003. |
 | **010** | **`010_player_accounts`** | **reserved** | — | Feature XG-008 (player accounts). Must not add `contact_version` again (009 does). Must keep all four team-name labels in any redefinition of `application_team_name_source_check`. |
+| 011 | `011_returning_player_registration` | yes | pending | Adds a detached request queue. No backfill or change to existing player, application, result or audit rows. No dependency on 010. |
 
-**Next release packet:** 007 → 008 → 009 in one transaction, with three ledger rows. Code on the OM branch reads all three, and the production build check stops any deploy until they are recorded.
+**Release packet for returning-player registration:** 007 → 008 → 009 → 011 in one transaction for a database still on 001–006, with four ledger rows. The build check requires the full schema for this code. Production remains approval-gated.
 
 **Attestation fields (009):** `player.contact_verified_at` and `contact_verification_method` record a manual organizer attestation in OM. They are not automated proof of WhatsApp ownership and never authorization for player login.
+
+**Returning-player requests (011):** Public intake stores the claimed XG number, tournament team and a keyed contact proof. A main admin checks identity and control of the submitted WhatsApp number. Only approval creates a tournament entry referencing the existing player. Decisions clear the pending proof and record the organizer and reason in the existing audit log. Rotating `PRIVATE_DATA_KEY` invalidates pending proofs, so finish or reject those requests and have the applicants resubmit when needed.

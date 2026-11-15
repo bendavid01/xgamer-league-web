@@ -9,7 +9,8 @@
       "ci/postgres-18": false,
       "feature/om-edit-player-details": false,
       "security/gate-c-contact": false,
-      "security/gate-d-coding-fixes": false
+      "security/gate-d-coding-fixes": false,
+      "feature/returning-player-registration": false
     }
   }
 }

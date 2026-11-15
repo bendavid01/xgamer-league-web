@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import ReturningPlayers from "@/components/ReturningPlayers";
+import type { PendingReturningRegistration } from "@/lib/returning-registration";
 import {
   FORMAT_CHOICES,
   FORMAT_LABEL,
@@ -101,6 +103,7 @@ type Workspace = {
     description: string | null;
   };
   applications: Application[];
+  returningRequests?: PendingReturningRegistration[];
   fixtures: Match[];
   standings: {
     id: string;
@@ -944,6 +947,9 @@ function TournamentWorkspace({
     ...(can("registrations")
       ? [["players", "Players"] as [string, string]]
       : []),
+    ...(data.returningRequests
+      ? [["returning", "Returning players"] as [string, string]]
+      : []),
     ...(admin ? [["setup", "Set up"] as [string, string]] : []),
     ...(t.format === "league" && (can("results") || admin)
       ? [["fixtures", "Fixtures & scores"] as [string, string]]
@@ -1005,6 +1011,13 @@ function TournamentWorkspace({
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === "players" && (
         <PlayersTab data={data} act={act} reload={reload} />
+      )}
+      {tab === "returning" && data.returningRequests && (
+        <ReturningPlayers
+          requests={data.returningRequests}
+          rosterOpen={["draft", "open", "locked"].includes(t.status) && !data.fixtures.length}
+          act={act}
+        />
       )}
       {tab === "setup" && admin && <SetupTab data={data} act={act} />}
       {tab === "fixtures" && (

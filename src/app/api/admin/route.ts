@@ -12,6 +12,10 @@ import {
   executeContact,
   isContactCommand,
 } from "@/lib/contact-change";
+import {
+  executeReturningRegistration,
+  isReturningRegistrationAction,
+} from "@/lib/returning-registration";
 
 /**
  * GET /api/admin → OM home; GET /api/admin?t=<id> → that tournament's workspace;
@@ -38,7 +42,9 @@ export async function POST(request: Request) {
         ? await executeContact(raw)
         : isEditCommand(raw)
           ? await executeEdit(raw)
-          : await execute(raw),
+          : isReturningRegistrationAction(raw)
+            ? await executeReturningRegistration(raw)
+            : await execute(raw),
     );
   });
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TransactionSql } from "postgres";
 import { db } from "./db";
 import { encrypt, fingerprint } from "./private-data";
 import { HttpError } from "./api";
@@ -24,6 +25,7 @@ const name = (max: number) =>
     .regex(/^[\p{L}\p{N} _.'&-]+$/u);
 
 export const registrationInput = z.object({
+  kind: z.literal("new").optional(),
   playerName: name(40),
   teamName: name(40),
   phone: z
@@ -44,27 +46,37 @@ export const efootballIdInput = z
   .regex(/^[a-zA-Z0-9-]+$/)
   .transform((x) => x.toUpperCase());
 
+/** Both public forms share the same attempt limit. */
+export async function checkRegistrationLimit(ip: string) {
+  const [rate] =
+    await db()`insert into rate_limit(key,hits,expires_at) values(${fingerprint("ip:" + ip)},1,now()+interval '1 hour')
+    on conflict(key) do update set hits=case when rate_limit.expires_at<now() then 1 else rate_limit.hits+1 end,
+    expires_at=case when rate_limit.expires_at<now() then now()+interval '1 hour' else rate_limit.expires_at end returning hits`;
+  if (rate.hits > 10)
+    throw new HttpError(429, "Too many attempts. Try again in an hour.");
+}
+
+export async function lockOpenRegistration(tx: TransactionSql, tournament: string) {
+  const [t] = await tx<{ id: string }[]>`
+    select id from tournament
+    where id=${tournament} and status='open' and published and deleted_at is null
+    for update`;
+  if (!t) throw new HttpError(409, "Registration for this tournament is closed.");
+  return t.id;
+}
+
 export async function register(
   input: z.infer<typeof registrationInput>,
   ip: string,
 ) {
   const phone = normalizePhone(input.phone);
   if (!phone) throw new HttpError(400, "Check the mobile number and try again.");
-  const sql = db();
-  const [rate] =
-    await sql`insert into rate_limit(key,hits,expires_at) values(${fingerprint("ip:" + ip)},1,now()+interval '1 hour')
-    on conflict(key) do update set hits=case when rate_limit.expires_at<now() then 1 else rate_limit.hits+1 end,
-    expires_at=case when rate_limit.expires_at<now() then now()+interval '1 hour' else rate_limit.expires_at end returning hits`;
-  if (rate.hits > 10)
-    throw new HttpError(429, "Too many attempts. Try again in an hour.");
-  return sql.begin(async (tx) => {
-    const [t] =
-      await tx`select * from tournament where id=${input.tournament} and deleted_at is null for update`;
-    if (!t || t.status !== "open" || !t.published)
-      throw new HttpError(409, "Registration for this tournament is closed.");
+  await checkRegistrationLimit(ip);
+  return db().begin(async (tx) => {
+    const tournament = await lockOpenRegistration(tx, input.tournament);
     const phoneHash = fingerprint("whatsapp:" + phone);
     // A number on file is not proof of the person's identity. Retired records
-    // reserve their numbers too. Until verified linking exists, send both to review.
+    // reserve their numbers too. The existing-player form uses a separate review.
     const needsReview = () =>
       new HttpError(409, "Registration needs organizer review. Contact an organizer to continue.");
     const [existing] =
@@ -78,10 +90,10 @@ export async function register(
     const [application] =
       // The team for THIS tournament; later registrations never change it.
       await tx`insert into application(tournament_id,player_id,status,team_name,team_name_source)
-        values(${t.id},${player.id},'pending',${input.teamName},'registration') returning id,status`;
+        values(${tournament},${player.id},'pending',${input.teamName},'registration') returning id,status`;
     const code = `XG-${String(player.public_no).padStart(4, "0")}`;
     await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,after_value)
-      values(${"player:" + player.id},${auditText(input.playerName)},'player','application.create',${application.id},${t.id},'Registered',${code},${tx.json({ playerId: player.id, team: auditRegistrationTeam(input.teamName), status: application.status })})`;
+      values(${"player:" + player.id},${auditText(input.playerName)},'player','application.create',${application.id},${tournament},'Registered',${code},${tx.json({ playerId: player.id, team: auditRegistrationTeam(input.teamName), status: application.status })})`;
     return {
       playerId: player.id as string,
       code,
