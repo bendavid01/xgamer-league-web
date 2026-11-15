@@ -483,12 +483,12 @@ export async function healthReport(): Promise<Section[]> {
           return `${m.name} — ${new Date(m.applied_at).toISOString().slice(0, 16).replace("T", " ")} UTC${status}`;
         }),
       },
-      process.env.MIGRATE_ON_BUILD === "true"
+      process.env.MIGRATE_ON_BUILD?.trim()
         ? {
             title: "Automatic migrations",
             level: "warn",
             detail:
-              "MIGRATE_ON_BUILD is switched on, so builds apply database migrations. Remove it once the approved release is live.",
+              "Off. MIGRATE_ON_BUILD is set but ignored: builds never change the database. Remove the variable.",
           }
         : {
             title: "Automatic migrations",

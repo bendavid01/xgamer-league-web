@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import {
   buildMode,
   compareLedger,
+  migrateOnBuildRequested,
   migrationFiles,
 } from "../src/lib/migrations";
 
@@ -29,17 +30,9 @@ test("ordinary builds never change the database", () => {
   );
   // Local build with a database: check only.
   assert.equal(buildMode({ DATABASE_URL: url }), "check");
-  // Applying needs the explicit switch, spelled exactly.
-  assert.equal(
-    buildMode({
-      DATABASE_URL: url,
-      VERCEL: "1",
-      VERCEL_ENV: "production",
-      MIGRATE_ON_BUILD: "true",
-    }),
-    "apply",
-  );
-  for (const v of ["1", "yes", "TRUE", ""])
+  // No build ever applies migrations, whatever MIGRATE_ON_BUILD says: a Vercel
+  // production build only checks, and a preview build doesn't connect at all.
+  for (const v of ["true", "1", "yes", "TRUE", ""]) {
     assert.equal(
       buildMode({
         DATABASE_URL: url,
@@ -49,6 +42,31 @@ test("ordinary builds never change the database", () => {
       }),
       "check",
     );
+    assert.equal(
+      buildMode({
+        DATABASE_URL: url,
+        VERCEL: "1",
+        VERCEL_ENV: "preview",
+        MIGRATE_ON_BUILD: v,
+      }),
+      "skip",
+    );
+    assert.equal(buildMode({ DATABASE_URL: url, MIGRATE_ON_BUILD: v }), "check");
+  }
+  assert.equal(migrateOnBuildRequested({ MIGRATE_ON_BUILD: "true" }), true);
+  assert.equal(migrateOnBuildRequested({ MIGRATE_ON_BUILD: " " }), false);
+  assert.equal(migrateOnBuildRequested({}), false);
+});
+
+test("the build script cannot apply migrations: it never imports the runner", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const script = await readFile(
+    new URL("../scripts/build-migrate.mts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(!/applyMigrations/.test(script), "build-migrate must not apply");
+  assert.ok(!/\bunsafe\s*\(/.test(script));
+  assert.ok(!/insert into|create table|alter table/i.test(script));
 });
 
 test("ledger check finds pending, edited and outside migrations", async () => {

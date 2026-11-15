@@ -8,13 +8,18 @@ import {
   auditText,
 } from "./audit-text";
 import { playerCode } from "./codes";
-import { contactReservedByOpenChange, lockContactNumber } from "./contact-lock";
+import {
+  contactReservedByOpenChange,
+  lockContactNumber,
+  lockPlayerName,
+} from "./contact-lock";
 import { db } from "./db";
 import { encrypt, fingerprint } from "./private-data";
 import { newPlayerContactProof, registrationInput } from "./registration";
 import {
   canReviewRegistration,
   lockRegistrationReviewTournament,
+  recheckRegistrationReviewer,
   registrationProofMatches,
   registrationReviewReason,
   registrationVerification,
@@ -255,6 +260,7 @@ export async function executeNewPlayerRegistration(
         "This application is no longer pending in this tournament.",
       );
     if (c.action === "newPlayer.reject") {
+      recheckRegistrationReviewer(organizer);
       await tx`update new_player_registration_request set status='rejected',
         decided_at=now(),gaming_name=null,team_name=null,contact_proof=null where id=${request.id}`;
       await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,after_value)
@@ -286,6 +292,9 @@ export async function executeNewPlayerRegistration(
         "This WhatsApp number is reserved by an open number change for an existing player. Finish or cancel that change first, or review whether the applicant already has an XG ID.",
       );
 
+    // Approvals in other tournaments with the same name wait here, so each one
+    // sees the records the others created before it looks for matches.
+    await lockPlayerName(tx, request.gaming_name);
     // Possible existing identities, recomputed here rather than trusted from the page (M3).
     const matches =
       (await possibleMatches(tx, t, request.id)).get(request.id)?.list ?? [];
@@ -300,6 +309,8 @@ export async function executeNewPlayerRegistration(
           .join(", ")}. If the applicant already has an XG ID, reject this application and add them under Returning players. If each is a different person, confirm that and approve again.`,
       );
 
+    // Every lock is held: confirm the reviewer is still a main admin before writing.
+    recheckRegistrationReviewer(organizer);
     // The unique player contact still guards anything the lock does not cover.
     const [player] = await tx<{ id: string; public_no: number }[]>`
       insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_at,consent_version)

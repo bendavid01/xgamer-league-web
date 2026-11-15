@@ -2,7 +2,7 @@
 
 SQL migration numbers are a separate series from feature IDs (for example, feature XG-008's schema is SQL migration 010). Files live in `migrations/`, are applied once each in name order, and are recorded with their SHA-256 in `xgamer_migration`. An applied file is never edited; changes go into a new migration.
 
-**Production rule:** ordinary builds only check the schema. Migrations reach production through the Neon SQL Editor packet procedure (preflight, target and ledger guard, one transaction with the ledger rows, post-check), each separately authorized.
+**Production rule:** builds only check the schema; they never apply a migration. Migrations reach production through the Neon SQL Editor packet procedure (preflight, target and ledger guard, one transaction with the ledger rows, post-check), each separately authorized. `MIGRATE_ON_BUILD` no longer does anything. A build that sees it prints a warning and ignores it, on Vercel and everywhere else, and the build script does not import the migration runner. `npm run db:migrate` remains for local databases.
 
 | Number | Migration | In this repository | Production (13 Nov 2026) | Notes |
 | --- | --- | --- | --- | --- |
@@ -31,5 +31,6 @@ SQL migration numbers are a separate series from feature IDs (for example, featu
 - 006 against its pinned checksum
 - unknown ledger rows
 - each table and index created by 011 and 012 must be absent before its migration and present after it. This catches a pre-existing object that `create … if not exists` would otherwise keep silently.
+- definitions: every index and constraint on these tables (NOT NULL included) is checked as PostgreSQL prints it, for each migration already in the ledger. Existence alone is not enough: an index with the right name but other columns, another predicate or no uniqueness fails, as does an invalid index (for example, left over from a failed concurrent build) and a weakened or missing constraint. The file fixes `search_path` to `public` for its own transaction, so definitions print the same way in any session. Indexes are compared by full definition, name included. Constraints are compared by table, type and definition. A definition owned by a migration not yet applied is left to that migration. A definition on these tables that the migrations don't create is reported as `warn` for review.
 
 `tests/registration-preflight.integration.test.ts` keeps the file in step with `migrations/`.

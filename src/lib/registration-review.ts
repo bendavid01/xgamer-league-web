@@ -21,6 +21,20 @@ export function requireRegistrationReviewer(user: Pick<Actor, "id" | "role">) {
     throw new HttpError(403, "Only main admins can review registrations.");
 }
 
+/**
+ * The same check again, made once the decision's locks are held and immediately
+ * before anything is written. The first check runs before the transaction, and a
+ * lock wait can be long, so the allowlist is re-read at the moment of decision.
+ *
+ * Limitation: the allowlist is MAIN_ADMIN_DISCORD_IDS, which a running deployment
+ * reads from its own environment. Removing an admin takes effect only for a new
+ * deployment; existing deployments keep the old list. See "Revoking a main admin"
+ * in docs/CONTROL-CENTER-RELEASE.md.
+ */
+export function recheckRegistrationReviewer(user: Pick<Actor, "id" | "role">) {
+  requireRegistrationReviewer(user);
+}
+
 export async function lockRegistrationReviewTournament(
   tx: TransactionSql,
   tournament: string,

@@ -27,6 +27,24 @@ The owner explicitly requested that new registration and organizer operations st
 7. Run actual isolated staging HTTP flows with both administrators and coordinator identities, parallel 70 applications, malformed submissions, duplicate/retry attempts, score corrections, all knockout rounds, cutoff ties, finals access denial/grant and grant revocation. Perform provider backup restoration into a new database and verify encrypted records using the saved key. Embedded PostgreSQL tests do not establish hosted production or concurrency behavior.
 8. Only after those checks: turn registration on, open the tournament through the admin API, redeploy and verify live success/error behavior. Do not publish fake counts while registration is closed.
 
+## Revoking a main admin
+
+Main admins come from the `MAIN_ADMIN_DISCORD_IDS` environment variable, not from the database. Every organizer request checks it. Registration decisions (new-player and returning-player approval, rejection and manual addition, and the Players-tab review) check it once before the transaction. They check it again once every lock is held, immediately before anything is written, so a decision that waited on a lock is recorded only if the reviewer is still on the list.
+
+Limitations of environment-based revocation:
+
+- A deployment reads the variable from its own environment. Editing it in the Vercel project changes nothing for deployments that already exist. Only a deployment built after the change uses the new list. Until that deployment serves production, the removed admin keeps full access. Requests already running on the old deployment finish under the old list. Within one deployment the second check sees the same list as the first, because the environment does not change while it runs.
+- Older deployments stay reachable at their own deployment URLs with the old list and their own `AUTH_SECRET`. Make sure Deployment Protection blocks them, or delete them.
+- Sign-in sessions last up to four hours, and removing an ID does not end them. A new deployment rejects the removed ID on every request anyway. Rotating `AUTH_SECRET` signs everyone out, but only in deployments built after the rotation.
+- Coordinators are different: their access is read from the database on every request, so deactivating one takes effect immediately in every deployment.
+
+To revoke:
+
+1. Set `MAIN_ADMIN_DISCORD_IDS` to the remaining admin and the replacement. The list must have exactly two distinct IDs. Any other value, including a single ID, turns off all organizer access, so it can serve as an emergency stop.
+2. Redeploy production and confirm the new deployment is serving the production domain.
+3. Check that older deployments are protected or deleted.
+4. Review the audit log for the removed admin's recent decisions.
+
 ## API operations
 
 `GET /api/admin` returns a private workspace snapshot. `POST /api/admin` requires same-origin JSON and an authorized session. Commands: `review`, `delete` (application soft-delete only), `configure`, `generate`, `qualify`, `score`, `advance`, `announce`, `coordinator`, `finals`. Revision values are required for review/delete/configure/score. Coordinators cannot delete, assign roles, configure tournaments, qualify entrants, read audit records or release credentials, regardless of forged client payloads. Results/announcements-only coordinators receive no contact data.

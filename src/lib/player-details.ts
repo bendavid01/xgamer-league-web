@@ -9,6 +9,7 @@ import { tournamentLabel } from "./labels";
 import { teamDisplay } from "./team-display";
 import { contactSummary } from "./contact-change";
 import { lockAuditRequest } from "./audit-request";
+import { lockPlayerName } from "./contact-lock";
 import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
 
 /**
@@ -246,6 +247,10 @@ async function apply(tx: Tx, user: Who, c: EditCommand) {
     if (player.gaming_name !== c.expected) throw new HttpError(409, CHANGED);
     if (c.name === player.gaming_name)
       throw new HttpError(400, "That is already the gaming name.");
+    // A new-player approval of the same name in another tournament waits for this
+    // rename, then sees it as a same-name record (contact-lock.ts). Taken last,
+    // after every row lock, like the approval itself.
+    await lockPlayerName(tx, c.name);
     await tx`update player set gaming_name=${c.name} where id=${playerId}`;
     summary = "Changed gaming name";
     before = { gaming_name: auditText(player.gaming_name) };

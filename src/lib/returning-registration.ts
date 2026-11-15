@@ -21,6 +21,7 @@ import {
   canReviewRegistration,
   fingerprintsMatch,
   lockRegistrationReviewTournament,
+  recheckRegistrationReviewer,
   registrationProofMatches,
   registrationReviewReason,
   registrationVerification,
@@ -200,6 +201,7 @@ export async function executeReturningRegistration(
         "This request is no longer pending in this tournament.",
       );
     if (c.action === "returning.reject") {
+      recheckRegistrationReviewer(organizer);
       await tx`update returning_registration_request set
         status='rejected',decided_at=now(),team_name=null,contact_proof=null where id=${request.id}`;
       await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,after_value)
@@ -318,6 +320,8 @@ async function addVerifiedEntry(
     reason: why,
   };
 
+  // Every lock is held: confirm the reviewer is still a main admin before writing.
+  recheckRegistrationReviewer(organizer);
   let applicationId: string;
   if (existing) {
     // M2: the entry was removed earlier. The unique (tournament, player) row is

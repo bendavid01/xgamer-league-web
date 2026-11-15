@@ -145,16 +145,23 @@ export async function applyMigrations(
   });
 }
 
-export type BuildMode = "skip" | "check" | "apply";
+export type BuildMode = "skip" | "check";
 
 /**
- * What a build may do with the database. Ordinary builds never change it:
- * production builds only check, preview/development builds on Vercel don't
- * connect at all, and applying needs MIGRATE_ON_BUILD=true (an approved release).
+ * What a build may do with the database: never change it. Production builds only
+ * check, and preview/development builds on Vercel don't connect at all. There is
+ * no apply mode: migrations reach a database only through a deliberate run (the
+ * approved production packet, or `npm run db:migrate` for a local database).
+ * MIGRATE_ON_BUILD is ignored, so setting it by mistake on Vercel or anywhere
+ * else cannot start a migration.
  */
 export function buildMode(env: Record<string, string | undefined>): BuildMode {
   if (!env.DATABASE_URL) return "skip";
-  if (env.MIGRATE_ON_BUILD === "true") return "apply";
   if (env.VERCEL && env.VERCEL_ENV !== "production") return "skip";
   return "check";
 }
+
+/** True when MIGRATE_ON_BUILD is set to anything. Builds report it as ignored. */
+export const migrateOnBuildRequested = (
+  env: Record<string, string | undefined>,
+) => !!env.MIGRATE_ON_BUILD?.trim();

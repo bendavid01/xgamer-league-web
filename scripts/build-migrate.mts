@@ -1,24 +1,30 @@
 /**
- * Runs before `next build`. Ordinary builds never change the database.
+ * Runs before `next build`. Builds never change the database.
  *
  * - Production: a read-only check. The build stops if this code needs a migration
  *   the database doesn't have yet, or if an applied migration file was edited, so
  *   code can't go live ahead of its schema. Nothing is written.
  * - Preview/development builds on Vercel: no database access at all.
- * - MIGRATE_ON_BUILD=true: an approved release only. Applies the pending
- *   migrations, then checks. Remove the variable straight after that deploy.
  * - No DATABASE_URL (local builds, CI): nothing.
+ * - MIGRATE_ON_BUILD is ignored (reported, never acted on). Migrations reach a
+ *   database only through a deliberate run: the approved production packet
+ *   (docs/MIGRATIONS.md), or `npm run db:migrate` for a local database. This
+ *   script deliberately does not import the migration runner.
  */
 import { db } from "../src/lib/db";
 import {
-  applyMigrations,
   buildMode,
   compareLedger,
+  migrateOnBuildRequested,
   migrationFiles,
   readLedger,
 } from "../src/lib/migrations";
 import { OUTSIDE_MIGRATIONS } from "../src/lib/known-migrations";
 
+if (migrateOnBuildRequested(process.env))
+  console.warn(
+    "[migrate] WARNING: MIGRATE_ON_BUILD is set but ignored. Builds never apply migrations; use the approved migration procedure. Remove the variable.",
+  );
 const mode = buildMode(process.env);
 let failure = "";
 if (mode === "skip") {
@@ -31,14 +37,6 @@ if (mode === "skip") {
   const sql = db();
   try {
     const files = await migrationFiles();
-    if (mode === "apply") {
-      console.log(
-        "[migrate] MIGRATE_ON_BUILD=true — applying pending migrations for an approved release. Remove MIGRATE_ON_BUILD after this deploy.",
-      );
-      await applyMigrations(sql, files, (line) =>
-        console.log(`[migrate] ${line}`),
-      );
-    }
     const status = compareLedger(files, await readLedger(sql));
     for (const name of status.recognized)
       console.log(
@@ -55,12 +53,10 @@ if (mode === "skip") {
     if (status.changed.length)
       failure = `[migrate] Applied migration checksum differs: ${status.changed.join(", ")}. Verify the ledger before proceeding.`;
     else if (status.pending.length)
-      failure = `[migrate] The database is missing migration(s) ${status.pending.join(", ")}. Ordinary builds don't change the database. After approval, set MIGRATE_ON_BUILD=true for one production deploy, then remove it.`;
+      failure = `[migrate] The database is missing migration(s) ${status.pending.join(", ")}. Builds never change the database. Apply them through the approved migration procedure first.`;
     else
       console.log(
-        mode === "apply"
-          ? "[migrate] Database schema now matches this code."
-          : "[migrate] Database schema matches this code. Nothing was changed.",
+        "[migrate] Database schema matches this code. Nothing was changed.",
       );
   } finally {
     await sql.end();

@@ -19,6 +19,7 @@ import { pendingReturningRegistrations } from "./returning-registration";
 import { pendingNewPlayerRegistrations } from "./new-player-registration";
 import {
   registrationReviewReason,
+  recheckRegistrationReviewer,
   requireRegistrationReviewer,
 } from "./registration-review";
 
@@ -571,11 +572,15 @@ export async function run(user: Who, c: Command) {
           400,
           "Confirm you verified these players on WhatsApp first.",
         );
+      // Lock and check every entry first, then confirm the reviewer, then write.
       const changed: string[] = [];
+      const seen = new Set<string>();
       for (const item of c.items) {
         const [a] =
           await tx`select * from application where id=${item.id} and tournament_id=${tournamentId} and deleted_at is null for update`;
-        if (!a || a.revision !== item.revision)
+        // A repeated entry would have failed its revision check on the old
+        // one-pass loop; it still does.
+        if (!a || a.revision !== item.revision || seen.has(a.id))
           throw new HttpError(
             409,
             "A player changed meanwhile. Refresh and try again.",
@@ -586,9 +591,12 @@ export async function run(user: Who, c: Command) {
           if (retired)
             throw new HttpError(409, "A removed player record can't be approved.");
         }
-        await tx`update application set status=${c.status},verified_at=${c.status === "approved" ? new Date() : null},revision=revision+1 where id=${item.id}`;
+        seen.add(a.id);
         changed.push(a.player_id);
       }
+      recheckRegistrationReviewer(user);
+      for (const item of c.items)
+        await tx`update application set status=${c.status},verified_at=${c.status === "approved" ? new Date() : null},revision=revision+1 where id=${item.id}`;
       affected = await names(changed);
       summary = {
         approved: "Approved",
