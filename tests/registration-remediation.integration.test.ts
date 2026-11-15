@@ -699,3 +699,250 @@ test(
     );
   },
 );
+
+test(
+  "M2 edges: rejected entries, retired players, fixtures and simultaneous restores",
+  { skip },
+  async () => {
+    const add = (
+      t: string,
+      xgId: string,
+      verifiedPhone: string,
+      who: typeof admin = admin,
+    ) =>
+      returning.executeReturningRegistration(
+        {
+          action: "returning.add",
+          tournament: t,
+          xgId,
+          teamName: "Edge Club",
+          verifiedPhone,
+          ...VERIFIED,
+        },
+        as(who),
+      );
+    const person = async (name: string, phone: string, retired = false) => {
+      const [p] = await sql<{ id: string; public_no: number }[]>`
+        insert into player(gaming_name,contact_hash,contact_cipher,consent_version,deleted_at)
+        values(${name},${privateData.fingerprint("whatsapp:" + phone)},${privateData.encrypt(phone)},'test',
+          ${retired ? new Date() : null}) returning id,public_no`;
+      return { ...p, code: "XG-" + String(p.public_no).padStart(4, "0") };
+    };
+    // A rejected (not removed) entry is not revived by the restore path.
+    const rejected = await person("Edge Rejected", "+919855550001");
+    await sql`insert into application(tournament_id,player_id,status,team_name,team_name_source)
+      values(${TWO},${rejected.id},'rejected','Edge Club','registration')`;
+    await assert.rejects(
+      add(TWO, rejected.code, "+919855550001"),
+      rejects(409, /already has an entry for this tournament \(rejected\)/),
+    );
+    // A retired record is never restored.
+    const retired = await person("Edge Retired", "+919855550002", true);
+    await sql`insert into application(tournament_id,player_id,status,team_name,deleted_at)
+      values(${TWO},${retired.id},'withdrawn','Edge Club',now())`;
+    await assert.rejects(
+      add(TWO, retired.code, "+919855550002"),
+      rejects(404, /No active player/),
+    );
+    // Two admins restoring the same removed entry at once: one restore, one 409.
+    const twice = await person("Edge Twice", "+919855550003");
+    const [removed] = await sql`insert into application(tournament_id,player_id,status,team_name,team_name_source,deleted_at)
+      values(${TWO},${twice.id},'withdrawn','Edge Club','registration',now()) returning id`;
+    const results = await Promise.allSettled([
+      add(TWO, twice.code, "+919855550003"),
+      add(TWO, twice.code, "+919855550003", otherAdmin),
+    ]);
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+    for (const r of results)
+      if (r.status === "rejected") rejects(409, /already has an entry/)(r.reason);
+    assert.equal(
+      (await sql`select 1 from audit_event where entity=${removed.id} and action='application.restore'`).length,
+      1,
+    );
+    // Once fixtures exist the roster is locked: no restore.
+    const late = await person("Edge Late", "+919855550004");
+    await sql`insert into application(tournament_id,player_id,status,team_name,deleted_at)
+      values(${PAST},${late.id},'withdrawn','Edge Club',now())`;
+    await sql`insert into fixture(tournament_id,stage,round,slot,home,away)
+      values(${PAST},'league',1,1,${victim.id},${late.id})`;
+    await assert.rejects(
+      add(PAST, late.code, "+919855550004"),
+      rejects(409, /fixtures/),
+    );
+    // The legacy review cannot approve a retired record either.
+    const [retiredEntry] = await sql`select id,revision from application
+      where tournament_id=${TWO} and player_id=${retired.id}`;
+    await sql`update application set deleted_at=null,status='pending' where id=${retiredEntry.id}`;
+    await assert.rejects(
+      control.execute(
+        {
+          action: "review",
+          tournament: TWO,
+          items: [{ id: retiredEntry.id, revision: retiredEntry.revision }],
+          status: "approved",
+          verified: true,
+          reason: "Trying to approve a removed player record.",
+        },
+        as(admin),
+      ),
+      rejects(409, /removed player record/),
+    );
+  },
+);
+
+test(
+  "M3: the review queue carries no contact data and summarizes long same-team lists",
+  { skip },
+  async () => {
+    for (let i = 0; i < 7; i++) {
+      const phone = "+91986666000" + i;
+      await sql`insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_version)
+        values(${"Common Member " + i},'Common FC',${privateData.fingerprint("whatsapp:" + phone)},
+          ${privateData.encrypt(phone)},'test')`;
+    }
+    const reference = await apply(TWO, "Unrelated Name", "COMMON  fc", "9866660099");
+    const queue = (await newPlayers.pendingNewPlayerRegistrations(admin, TWO))!;
+    const item = queue.find((q) => q.reference === reference)!;
+    assert.equal(item.possibleMatches.length, 5);
+    assert.ok(item.possibleMatches.every((m) => m.sameTeam && !m.sameName));
+    assert.equal(item.moreMatches, 2);
+    const text = JSON.stringify(queue);
+    for (const h of await sql`select contact_hash, contact_cipher from player`) {
+      assert.ok(!text.includes(h.contact_hash));
+      assert.ok(!text.includes(h.contact_cipher));
+    }
+    assert.ok(!text.includes("986666"));
+    // Team-only matches never block approval.
+    const result = await newPlayerCmd({
+      action: "newPlayer.approve",
+      tournament: TWO,
+      reference,
+      verifiedPhone: "9866660099",
+      ...VERIFIED,
+    });
+    assert.ok(result.code);
+  },
+);
+
+test(
+  "M4/L4: a full queue answers the public with a generic 429 that reveals nothing",
+  { skip },
+  async () => {
+    const { POST } = await import("../src/app/api/registrations/route");
+    await sql`insert into tournament(id,name,status,published,format)
+      values('remedy-full','Full Cup','open',true,'league')`;
+    const send = (body: Record<string, unknown>, ip: string) =>
+      POST(
+        new Request(ORIGIN + "/api/registrations", {
+          method: "POST",
+          headers: {
+            origin: ORIGIN,
+            "content-type": "application/json",
+            "x-vercel-forwarded-for": ip,
+          },
+          body: JSON.stringify({
+            tournament: "remedy-full",
+            consent: true,
+            website: "",
+            ...body,
+          }),
+        }),
+      );
+    const fresh = (i: number) => ({
+      kind: "new",
+      playerName: `Full ${i}`,
+      teamName: "Full Club",
+      phone: `987777000${i}`,
+    });
+    const back = (no: string, phone: string) => ({
+      kind: "existing",
+      xgId: no,
+      teamName: "Full Club",
+      phone,
+    });
+    process.env.VERCEL = "1";
+    process.env.REGISTRATION_PENDING_LIMIT = "1";
+    try {
+      assert.equal((await send(fresh(1), "192.0.2.1")).status, 202);
+      assert.equal(
+        (await send(back(victimCode, VICTIM_PHONE), "192.0.2.2")).status,
+        202,
+      );
+      const bodies: { error: string }[] = [];
+      const attempts: [Record<string, unknown>, string][] = [
+        [fresh(2), "192.0.2.3"],
+        // A known identity and an unknown one get the same answer.
+        [back(victimCode, STRANGER_PHONE), "192.0.2.4"],
+        [back("XG-999999", STRANGER_PHONE), "192.0.2.5"],
+      ];
+      for (const [body, ip] of attempts) {
+        const r = await send(body, ip);
+        assert.equal(r.status, 429);
+        assert.equal(r.headers.get("cache-control"), "no-store");
+        bodies.push(await r.json());
+      }
+      assert.deepEqual(bodies[1], bodies[2]);
+      assert.deepEqual(bodies[0], bodies[1]);
+      assert.match(bodies[0].error, /too many applications waiting for review/);
+      assert.ok(!/XG-|WhatsApp|player record/i.test(bodies[0].error));
+    } finally {
+      delete process.env.VERCEL;
+      delete process.env.REGISTRATION_PENDING_LIMIT;
+    }
+  },
+);
+
+test(
+  "L1: a real number-change start waits for an approval holding the number and then refuses it",
+  { skip },
+  async () => {
+    const { executeContact } = await import("../src/lib/contact-change");
+    const { randomUUID } = await import("node:crypto");
+    const NUMBER = "+919833330003";
+    const hash = privateData.fingerprint("whatsapp:" + NUMBER);
+    const [{ contact_version }] =
+      await sql`select contact_version from player where id=${victim.id}`;
+    process.env.CONTACT_EDITING = "on";
+    // The established-channel route needs an organizer-attested number on file.
+    await sql`update player set contact_verified_at=now(),
+      contact_verification_method='organizer_attested_established_channel' where id=${victim.id}`;
+    let settled = false;
+    let start!: Promise<unknown>;
+    try {
+      await sql.begin(async (tx) => {
+        // The approval side: holds the number, then creates its player record.
+        await contactLock.lockContactNumber(tx, hash);
+        start = executeContact(
+          {
+            action: "contact.change_start",
+            tournament: PAST,
+            playerId: victim.id,
+            expectedContactVersion: contact_version,
+            newPhone: NUMBER,
+            route: "established_channel",
+            confirm: true,
+            reason: "Player changed phone",
+            requestId: randomUUID(),
+          },
+          as(admin),
+        ).finally(() => {
+          settled = true;
+        });
+        start.catch(() => {});
+        await new Promise((r) => setTimeout(r, 300));
+        assert.equal(settled, false, "the number change must wait for the lock");
+        await tx`insert into player(gaming_name,contact_hash,contact_cipher,consent_version)
+          values('Lock Holder',${hash},${privateData.encrypt(NUMBER)},'test')`;
+      });
+      await assert.rejects(start, rejects(409, /belongs to XG-/));
+      assert.equal(
+        (await sql`select 1 from contact_change where new_contact_hash=${hash}`).length,
+        0,
+      );
+    } finally {
+      delete process.env.CONTACT_EDITING;
+      await sql`update player set contact_verified_at=null, contact_verification_method=null
+        where id=${victim.id}`;
+    }
+  },
+);

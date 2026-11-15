@@ -232,7 +232,8 @@ export async function healthReport(): Promise<Section[]> {
       join tournament t on t.id = a.tournament_id
       where e.action = 'application.create'
         and e.after_value->>'method' in ('returning_request', 'manual_existing_player')
-        and not coalesce((e.after_value->>'contact_matches_number_on_file')::boolean, false)
+        and e.after_value->>'contact_matches_number_on_file' is distinct from 'true'
+        and a.deleted_at is null
       order by e.id`.catch(() => null);
   const stale = await sql<{ queue: string; c: number }[]>`
       select 'new' as queue, count(*)::int as c from new_player_registration_request
@@ -242,7 +243,20 @@ export async function healthReport(): Promise<Section[]> {
         where status = 'pending' and created_at < now() - interval '30 days'`.catch(
     () => null,
   );
-  if (unchecked && stale) {
+  if (!unchecked || !stale)
+    // Never hide the section: a failed check is itself worth seeing.
+    sections.push({
+      title: "Registration review",
+      checks: [
+        {
+          title: "Registration review checks",
+          level: "warn",
+          detail:
+            "These checks could not run on this database (for example, before migrations 011 and 012). Nothing was changed.",
+        },
+      ],
+    });
+  else {
     const old = (q: string) => stale.find((s) => s.queue === q)?.c ?? 0;
     sections.push({
       title: "Registration review",

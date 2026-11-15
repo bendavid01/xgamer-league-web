@@ -326,6 +326,9 @@ async function addVerifiedEntry(
     const [restored] = await tx<{ id: string }[]>`
       update application set deleted_at=null,status='approved',verified_at=now(),revision=revision+1
       where id=${existing.id} and deleted_at is not null returning id`;
+    // Unreachable while the row lock above is held; kept as a guard.
+    if (!restored)
+      throw new HttpError(409, "This entry changed meanwhile. Refresh and try again.");
     applicationId = restored.id;
     await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,before_value,after_value)
       values(${organizer.id},${auditText(organizer.name ?? null)},'admin','application.restore',${applicationId},${tournamentId},

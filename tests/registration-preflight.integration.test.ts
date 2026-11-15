@@ -130,6 +130,36 @@ test(
     await sql`insert into xgamer_migration(name,hash) values('099_mystery','x')`;
     assert.equal(status(await preflight(), "Unknown ledger entries"), "warn");
     await sql`delete from xgamer_migration where name='099_mystery'`;
+    // A later migration recorded while earlier ones are missing (and its objects absent).
+    const files = await migrationFiles();
+    const nine = files.find((f) => f.name === "009_contact_change")!;
+    await sql`insert into xgamer_migration(name,hash) values(${nine.name},${nine.hash})`;
+    try {
+      const rows = await preflight();
+      assert.deepEqual(failures(rows).sort(), [
+        "Columns for 009_contact_change: player.contact_verification_method",
+        "Columns for 009_contact_change: player.contact_verified_at",
+        "Columns for 009_contact_change: player.contact_version",
+        "Ledger order: 007_application_team_name",
+        "Ledger order: 008_team_name_provenance",
+        "Objects for 009_contact_change: public.contact_change",
+        "Objects for 009_contact_change: public.contact_change_open_number",
+        "Objects for 009_contact_change: public.contact_change_open_player",
+        "Objects for 009_contact_change: public.contact_change_queue",
+      ]);
+    } finally {
+      await sql`delete from xgamer_migration where name=${nine.name}`;
+    }
+    // A column added outside the ledger is flagged for review.
+    await sql`alter table application add column team_name text`;
+    try {
+      assert.equal(
+        status(await preflight(), "Columns for 007_application_team_name: application.team_name"),
+        "warn",
+      );
+    } finally {
+      await sql`alter table application drop column team_name`;
+    }
   },
 );
 

@@ -46,13 +46,28 @@ const SHOWN_TEAM_MATCHES = 5;
 
 type Sql = ReturnType<typeof db> | TransactionSql;
 
+type Matches = {
+  /** Every same-name record, then at most SHOWN_TEAM_MATCHES same-team ones. */
+  list: PossibleMatch[];
+  /** All same-team-only records, including those not listed. */
+  teamOnlyTotal: number;
+};
+
 /**
  * Existing players (retired ones included) whose gaming name, current team or any
  * tournament team equals the pending application's, compared after NFKC
- * normalization, case folding and collapsing spaces. A hint for the reviewer
+ * normalization, case folding and collapsing whitespace. A hint for the reviewer
  * only: names and teams are not identity proof, and nothing is ever merged.
+ *
+ * Equality joins (hash joins, no cross product), and the database returns every
+ * same-name record but only the first few same-team ones per application, so a
+ * common club name cannot multiply the result.
  */
-async function possibleMatches(sql: Sql, tournament: string, reference?: string) {
+async function possibleMatches(
+  sql: Sql,
+  tournament: string,
+  reference?: string,
+) {
   const rows = await sql<
     {
       request_id: string;
@@ -62,36 +77,54 @@ async function possibleMatches(sql: Sql, tournament: string, reference?: string)
       retired: boolean;
       same_name: boolean;
       same_team: boolean;
+      team_only_total: number;
     }[]
   >`
     with r as (
       select id,
-        regexp_replace(lower(btrim(normalize(gaming_name, NFKC))), '[[:space:]]+', ' ', 'g') as n,
-        regexp_replace(lower(btrim(normalize(team_name, NFKC))), '[[:space:]]+', ' ', 'g') as tm
+        btrim(regexp_replace(lower(normalize(gaming_name, NFKC)), '[[:space:]]+', ' ', 'g')) as n,
+        btrim(regexp_replace(lower(normalize(team_name, NFKC)), '[[:space:]]+', ' ', 'g')) as tm
       from new_player_registration_request
       where tournament_id=${tournament} and status='pending'
         and (${reference ?? null}::uuid is null or id=${reference ?? null}::uuid)
     ), p as (
-      select id, public_no, gaming_name, team_name, deleted_at is not null as retired,
-        regexp_replace(lower(btrim(normalize(gaming_name, NFKC))), '[[:space:]]+', ' ', 'g') as n,
-        regexp_replace(lower(btrim(normalize(coalesce(team_name, ''), NFKC))), '[[:space:]]+', ' ', 'g') as tm
+      select id,
+        btrim(regexp_replace(lower(normalize(gaming_name, NFKC)), '[[:space:]]+', ' ', 'g')) as n,
+        btrim(regexp_replace(lower(normalize(coalesce(team_name, ''), NFKC)), '[[:space:]]+', ' ', 'g')) as tm
       from player
     ), teams as (
       select distinct player_id,
-        regexp_replace(lower(btrim(normalize(team_name, NFKC))), '[[:space:]]+', ' ', 'g') as tm
+        btrim(regexp_replace(lower(normalize(team_name, NFKC)), '[[:space:]]+', ' ', 'g')) as tm
       from application where team_name is not null
+    ), by_name as (
+      select r.id as request_id, p.id as player_id from r join p on p.n = r.n
+    ), by_team as (
+      select r.id as request_id, p.id as player_id from r join p on p.tm = r.tm where r.tm <> ''
+      union
+      select r.id, x.player_id from r join teams x on x.tm = r.tm where r.tm <> ''
     ), m as (
-      select r.id as request_id, p.public_no, p.gaming_name, p.team_name, p.retired,
-        p.n = r.n as same_name,
-        (p.tm = r.tm or exists (select 1 from teams x where x.player_id = p.id and x.tm = r.tm)) as same_team
-      from r join p on true
+      select coalesce(n.request_id, t.request_id) as request_id,
+        coalesce(n.player_id, t.player_id) as player_id,
+        n.player_id is not null as same_name,
+        t.player_id is not null as same_team
+      from by_name n full join by_team t
+        on t.request_id = n.request_id and t.player_id = n.player_id
+    ), ranked as (
+      select m.*, pl.public_no, pl.gaming_name, pl.team_name, pl.deleted_at is not null as retired,
+        row_number() over (partition by m.request_id, m.same_name order by pl.public_no) as rank_in_kind,
+        (count(*) filter (where not m.same_name) over (partition by m.request_id))::int as team_only_total
+      from m join player pl on pl.id = m.player_id
     )
-    select * from m where same_name or same_team
+    select request_id, public_no, gaming_name, team_name, retired, same_name, same_team, team_only_total
+    from ranked where same_name or rank_in_kind <= ${SHOWN_TEAM_MATCHES}
     order by request_id, same_name desc, same_team desc, public_no`;
-  const byRequest = new Map<string, PossibleMatch[]>();
+  const byRequest = new Map<string, Matches>();
   for (const row of rows) {
-    const list = byRequest.get(row.request_id) ?? [];
-    list.push({
+    const entry = byRequest.get(row.request_id) ?? {
+      list: [],
+      teamOnlyTotal: row.team_only_total,
+    };
+    entry.list.push({
       code: playerCode(row.public_no),
       name: row.gaming_name,
       team: row.team_name,
@@ -99,7 +132,7 @@ async function possibleMatches(sql: Sql, tournament: string, reference?: string)
       sameName: row.same_name,
       sameTeam: row.same_team,
     });
-    byRequest.set(row.request_id, list);
+    byRequest.set(row.request_id, entry);
   }
   return byRequest;
 }
@@ -122,18 +155,17 @@ export async function pendingNewPlayerRegistrations(
     where tournament_id=${tournament} and status='pending' order by created_at,id`;
   const matches = requests.length
     ? await possibleMatches(sql, tournament)
-    : new Map<string, PossibleMatch[]>();
+    : new Map<string, Matches>();
   return requests.map((r): PendingNewPlayerRegistration => {
-    const found = matches.get(r.id) ?? [];
-    const sameName = found.filter((m) => m.sameName);
-    const teamOnly = found.filter((m) => !m.sameName);
+    const found = matches.get(r.id) ?? { list: [], teamOnlyTotal: 0 };
+    const shownTeamOnly = found.list.filter((m) => !m.sameName).length;
     return {
       reference: r.id,
       name: r.gaming_name,
       team: r.team_name,
       createdAt: r.created_at.toISOString(),
-      possibleMatches: [...sameName, ...teamOnly.slice(0, SHOWN_TEAM_MATCHES)],
-      moreMatches: Math.max(teamOnly.length - SHOWN_TEAM_MATCHES, 0),
+      possibleMatches: found.list,
+      moreMatches: Math.max(found.teamOnlyTotal - shownTeamOnly, 0),
     };
   });
 }
@@ -159,7 +191,7 @@ const command = z.discriminatedUnion("action", [
      */
     confirmedDistinctFrom: z
       .array(z.string().regex(/^XG-\d{4,10}$/))
-      .max(100)
+      .max(1000)
       .optional(),
   }),
   z.strictObject({
@@ -256,7 +288,7 @@ export async function executeNewPlayerRegistration(
 
     // Possible existing identities, recomputed here rather than trusted from the page (M3).
     const matches =
-      (await possibleMatches(tx, t, request.id)).get(request.id) ?? [];
+      (await possibleMatches(tx, t, request.id)).get(request.id)?.list ?? [];
     const sameName = matches.filter((m) => m.sameName);
     const confirmed = new Set(c.confirmedDistinctFrom ?? []);
     const unconfirmed = sameName.filter((m) => !confirmed.has(m.code));
@@ -295,7 +327,6 @@ export async function executeNewPlayerRegistration(
           same_name_records_confirmed_distinct: sameName.map((m) => m.code),
           same_team_records: matches
             .filter((m) => !m.sameName)
-            .slice(0, SHOWN_TEAM_MATCHES)
             .map((m) => m.code),
           reason: c.reason,
         })})`;

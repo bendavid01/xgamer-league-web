@@ -180,11 +180,31 @@ test("M5: checksums ignore CRLF checkouts and keep every previously issued LF ha
   // Issued checksums (Linux CI and production builds), pinned independently of the
   // working tree so a CRLF checkout on Windows can never change them.
   const issued: Record<string, string> = {
+    "001_control_center":
+      "ab5720d1adcdce493aad0d728a9bdf8da2c4de5f1ee9a25930a870b45b673066",
+    "002_open_registration":
+      "a834fadbc255c4bde33ea3620beb6a70f2f5ed70326db7963dca5fd8d60df03c",
+    "003_multi_tournament":
+      "cc60e24411fd2a8cb3bc62e1145d8e30cd27f92ece89e2728d36dbdf0cf256d7",
+    "004_seasons_podium":
+      "fde24c503a800f3820087bc418d3625432b7c5770bfcbedd907d462fd39d85b3",
+    "005_announcement_dates":
+      "30f43e74e0c7e22f9a06c6e89e2069976c04bc86a23127bbe0fb2e1d07b3ee1d",
     "007_application_team_name":
       "bbc004390ba1b09cbc7ce09c2fc644192e7d081d92e54a3bfaec397655f5ea41",
+    "008_team_name_provenance":
+      "ef7e292c35ac579b37964406ff5bf9f149fd78fec841e83054f1d9f4494b20d1",
+    "009_contact_change":
+      "af65cfb2a18f63b07ec3cdc7c1945ac18c44a0ae1a46c503742ddb2567f73097",
+    "011_returning_player_registration":
+      "d179cc982a00a3d1b585e0a5c5d779d94052db02d1640f60408bb5a05259d450",
+    "012_new_player_registration_approval":
+      "d946cfe3750594eb42bc380a7e874726d3d2006fe0e18129de6b4e1e4d6a4012",
   };
-  for (const [name, hash] of Object.entries(issued))
-    assert.equal(files.find((f) => f.name === name)?.hash, hash);
+  assert.deepEqual(
+    Object.fromEntries(files.map((f) => [f.name, f.hash])),
+    issued,
+  );
   // The same SQL hashed from a CRLF checkout is equal, not an edit.
   const fromWindows = files.map((f) => ({ name: f.name, hash: f.crlfHash }));
   const status = compareLedger(files, fromWindows);

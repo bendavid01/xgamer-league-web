@@ -25,14 +25,26 @@ with expected(name, lf_hash, crlf_hash) as (values
   ('011_returning_player_registration', 'd179cc982a00a3d1b585e0a5c5d779d94052db02d1640f60408bb5a05259d450', '179dbc300cd658ce0a80eeadecee997c836fadf53c4856cb251345405fe447dd'),
   ('012_new_player_registration_approval', 'd946cfe3750594eb42bc380a7e874726d3d2006fe0e18129de6b4e1e4d6a4012', '6801254160983b814deb0d947071b2d7f604b38042b25a59e5cf7e3749a6eed0')
 ),
--- Objects each new migration creates. They must not exist before it is applied.
+-- Objects each pending migration creates. They must not exist before it is applied.
 created(migration, object) as (values
+  ('009_contact_change', 'public.contact_change'),
+  ('009_contact_change', 'public.contact_change_open_player'),
+  ('009_contact_change', 'public.contact_change_open_number'),
+  ('009_contact_change', 'public.contact_change_queue'),
   ('011_returning_player_registration', 'public.returning_registration_request'),
   ('011_returning_player_registration', 'public.returning_registration_pending_claim'),
   ('011_returning_player_registration', 'public.returning_registration_pending_queue'),
   ('012_new_player_registration_approval', 'public.new_player_registration_request'),
   ('012_new_player_registration_approval', 'public.new_player_registration_pending_claim'),
   ('012_new_player_registration_approval', 'public.new_player_registration_pending_queue')
+),
+-- Columns this code reads, added by pending migrations with "add column if not exists".
+added(migration, tbl, col) as (values
+  ('007_application_team_name', 'application', 'team_name'),
+  ('007_application_team_name', 'application', 'team_name_source'),
+  ('009_contact_change', 'player', 'contact_version'),
+  ('009_contact_change', 'player', 'contact_verified_at'),
+  ('009_contact_change', 'player', 'contact_verification_method')
 ),
 ledger_xml as (
   select case when to_regclass('public.xgamer_migration') is null then '<table/>'::xml
@@ -105,6 +117,43 @@ checks(ord, check_name, status, detail) as (
              else 'ALREADY EXISTS without a ledger row: "if not exists" would silently keep it' end
     end
   from created c
+  union all
+  select 7, 'Columns for ' || a.migration || ': ' || a.tbl || '.' || a.col,
+    case
+      when exists (select 1 from ledger l where l.name = a.migration) then
+        case when present then 'pass' else 'fail' end
+      else
+        case when present then 'warn' else 'pass' end
+    end,
+    case
+      when exists (select 1 from ledger l where l.name = a.migration) then
+        case when present then 'present (migration applied)'
+             else 'MISSING although the migration is recorded' end
+      else
+        case when present then 'already exists without a ledger row: check it matches the migration'
+             else 'absent, as expected before the migration' end
+    end
+  from (
+    select a.*, exists (
+      select 1 from information_schema.columns c
+      where c.table_schema = 'public' and c.table_name = a.tbl and c.column_name = a.col
+    ) as present
+    from added a
+  ) a
+  union all
+  -- Migrations run in name order, so a recorded later migration with an earlier
+  -- one missing means the ledger was edited or a migration was skipped.
+  select 8, 'Ledger order: ' || e.name,
+    case when exists (
+      select 1 from ledger l join expected later on later.name = l.name
+      where later.name > e.name
+    ) then 'fail' else 'pass' end,
+    'missing while ' || coalesce((
+      select string_agg(l.name, ', ' order by l.name) from ledger l join expected later
+        on later.name = l.name where later.name > e.name
+    ), 'no later migration') || ' is recorded'
+  from expected e
+  where not exists (select 1 from ledger l where l.name = e.name)
 )
 select check_name, status, detail from checks order by ord, check_name;
 

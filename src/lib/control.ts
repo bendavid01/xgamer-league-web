@@ -580,6 +580,12 @@ export async function run(user: Who, c: Command) {
             409,
             "A player changed meanwhile. Refresh and try again.",
           );
+        if (c.status === "approved") {
+          const [retired] =
+            await tx`select 1 from player where id=${a.player_id} and deleted_at is not null`;
+          if (retired)
+            throw new HttpError(409, "A removed player record can't be approved.");
+        }
         await tx`update application set status=${c.status},verified_at=${c.status === "approved" ? new Date() : null},revision=revision+1 where id=${item.id}`;
         changed.push(a.player_id);
       }

@@ -52,6 +52,7 @@ export async function POST(request: Request) {
               ? await executeNewPlayerRegistration(raw)
               : await execute(raw),
     );
-    // Every command above authenticates an organizer before touching data.
+    // Organizer endpoint: conflict messages may name the conflicting record.
+    // The public registration endpoint keeps the generic text (L4).
   }, { detailedConflicts: true });
 }
