@@ -1,7 +1,6 @@
 "use client";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { omMono, omSans } from "./fonts";
 import s from "./om.module.css";
 
 /**
@@ -11,9 +10,7 @@ import s from "./om.module.css";
  */
 export default function OmLayer({ children }: { children: ReactNode }) {
   return createPortal(
-    <div className={`${s.ws} ${omSans.variable} ${omMono.variable}`}>
-      {children}
-    </div>,
+    <div className={s.ws}>{children}</div>,
     document.body,
   );
 }

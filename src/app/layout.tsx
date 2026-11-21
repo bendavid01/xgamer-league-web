@@ -3,7 +3,13 @@ import "./globals.css";
 import RouteMotion from "@/components/RouteMotion";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
-import { Space_Grotesk, Barlow_Condensed } from "next/font/google";
+import IntroLoader, { IntroPrepaint } from "@/components/IntroLoader";
+import {
+  Space_Grotesk,
+  Barlow_Condensed,
+  Plus_Jakarta_Sans,
+  JetBrains_Mono,
+} from "next/font/google";
 import Brand from "@/components/Brand";
 import { communityLinks } from "@/lib/community";
 import { getLiveStatus, liveNow } from "@/lib/live";
@@ -18,6 +24,19 @@ const displayFont = Barlow_Condensed({
   variable: "--font-display",
   display: "swap",
 });
+const broadcastFont = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-broadcast",
+  display: "swap",
+  preload: false,
+});
+const monoFont = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+  preload: false,
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL("https://xgamerproleague.vercel.app"),
   title: { default: "X-Gamer Pro League | 2.0", template: "%s | X-Gamer" },
@@ -35,8 +54,16 @@ export default async function RootLayout({
   // Shared live status: the badge shows only when a channel is confirmed live.
   const live = liveNow(await getLiveStatus().catch(() => []));
   return (
-    <html lang="en" className={`${bodyFont.variable} ${displayFont.variable}`}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${bodyFont.variable} ${displayFont.variable} ${broadcastFont.variable} ${monoFont.variable}`}
+    >
+      <head>
+        <IntroPrepaint />
+      </head>
       <body>
+        <IntroLoader />
         <a className="skip-link" href="#content">
           Skip to content
         </a>

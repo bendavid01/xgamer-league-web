@@ -13,15 +13,21 @@ export function XMark({ className = "" }: { className?: string }) {
     </svg>
   );
 }
-export default function Brand() {
+export default function Brand({ navbar = false }: { navbar?: boolean }) {
   return (
     <span className="brand">
-      <XMark className="brand-mark" />
+      {navbar ? (
+        <span className="nav-shield" aria-hidden="true" />
+      ) : (
+        <XMark className="brand-mark" />
+      )}
       <span>
         <span className="brand-name">
           XGAMER<span className="text-cyan-300">.</span>
         </span>
-        <span className="brand-caption">PRO LEAGUE / 2.0</span>
+        <span className="brand-caption">
+          {navbar ? "PRO LEAGUE" : "PRO LEAGUE / 2.0"}
+        </span>
       </span>
     </span>
   );

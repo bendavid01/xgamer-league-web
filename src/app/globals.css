@@ -1339,152 +1339,515 @@ nav[aria-label="Main navigation"] > .page-shell {
   --xg-cyan: #22d3ee;
   --xg-pink: #ff4fd8;
 }
-.crest-hero {
-  background: #070b16;
+:root {
+  --broadcast-canvas: #06080f;
+  --broadcast-section: #080c14;
+  --broadcast-glass: rgb(10 15 24 / 65%);
+  --broadcast-border: rgb(255 255 255 / 9%);
+  --broadcast-specular: inset 0 1px 0 rgb(255 255 255 / 14%);
+  --broadcast-cyan: #38bdf8;
+  --broadcast-violet: #7c3aed;
+  --broadcast-edge: linear-gradient(100deg, #38bdf8, #a855f7 65%, #ec4899);
+  --broadcast-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --hero-height: clamp(480px, 73svh, 780px);
+  --art-right: clamp(80px, 10vw, 160px);
+}
+body {
+  background: var(--broadcast-canvas);
+}
+.nav-sentinel {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+nav.broadcast-nav[aria-label] {
+  font-family: var(--font-broadcast), system-ui, sans-serif;
+  background: #0a0f18;
+  border-color: var(--broadcast-border);
+  box-shadow:
+    var(--broadcast-specular),
+    0 10px 30px #0005;
+}
+@supports (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  nav.broadcast-nav[aria-label] {
+    --nav-blur: 24px;
+    background: var(--broadcast-glass);
+    -webkit-backdrop-filter: blur(var(--nav-blur)) saturate(1.5);
+    backdrop-filter: blur(var(--nav-blur)) saturate(1.5);
+  }
+  @media (max-width: 767px) {
+    nav.broadcast-nav[aria-label] {
+      --nav-blur: 14px;
+    }
+  }
+}
+.broadcast-nav::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    -6px 2px 16px -8px #38bdf8aa,
+    6px 3px 18px -8px #a855f7a0,
+    inset 0 1px 0 #e0f2fe45;
+  opacity: 0.38;
+  transition: opacity 160ms ease;
+}
+.broadcast-nav:is(:hover, :focus-within, [data-scrolled="true"])::before {
+  opacity: 1;
+}
+.nav-shield {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  background: url("/images/xgamer-crest-mobile.webp") center / auto 128%
+    no-repeat;
+  mask-image: radial-gradient(ellipse, #000 53%, transparent 78%);
+}
+.broadcast-nav .brand-caption {
+  letter-spacing: 0.18em;
+}
+.nav-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  color: #beccdc;
+  font-size: 0.875rem;
+}
+.nav-item:is(:hover, :focus-visible, [aria-current="page"]) {
+  color: #f3faff;
+}
+.broadcast-nav .nav-item[aria-current="page"]::after {
+  content: none;
+}
+.nav-active {
+  position: absolute;
+  inset: auto 12px 5px;
+  height: 2px;
+  background: var(--broadcast-edge);
+  border-radius: 9px;
+}
+.broadcast-nav .nav-live,
+.broadcast-nav a,
+#mobile-nav a {
+  min-height: 44px;
+  align-content: center;
+}
+#mobile-nav {
+  position: absolute;
+  inset: calc(100% + 8px) 0 auto;
+  border-radius: 22px;
+  border: 1px solid var(--broadcast-border);
+  background: #0a0f18;
+  box-shadow:
+    var(--broadcast-specular),
+    0 12px 28px #0007;
+}
+#mobile-nav .page-shell {
+  padding-block: 10px;
+}
+.broadcast-nav :is(a, button):focus-visible,
+.editorial-home a:focus-visible,
+.intro-skip:focus-visible {
+  outline: 2px solid var(--broadcast-cyan);
+  outline-offset: 3px;
+}
+
+.editorial-home {
+  background: var(--broadcast-canvas);
+  font-family: var(--font-broadcast), system-ui, sans-serif;
+  --font-body: var(--font-broadcast);
+}
+.route-motion:has(.editorial-home) {
+  animation: none;
+}
+.editorial-home :is(.section-index, .scroll-cue, .journey-row > span) {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+.cinema-hero.crest-hero {
+  background: var(--broadcast-canvas);
+  min-height: 0;
+  height: var(--hero-height);
 }
 .crest-hero .hero-media {
   position: absolute;
   inset: 0;
-  z-index: -3;
   overflow: hidden;
-  animation: crest-settle 2.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  isolation: isolate;
+  pointer-events: none;
+}
+.hero-atmosphere {
+  position: absolute;
+  inset: 0;
+  mask-image: radial-gradient(ellipse 72% 70%, #000 48%, transparent 97%);
+  background:
+    radial-gradient(ellipse at 25% 45%, #38bdf810, transparent 58%),
+    radial-gradient(ellipse at 77% 57%, #ec489911, transparent 50%);
+}
+.hero-atmosphere::before,
+.hero-atmosphere::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.hero-atmosphere::before {
+  background:
+    radial-gradient(ellipse at 28% 50%, #38bdf81a, transparent 48%),
+    radial-gradient(ellipse at 70% 53%, #7c3aed1c, transparent 50%);
+}
+.hero-atmosphere::after {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.22'/%3E%3C/svg%3E"),
+    linear-gradient(#a4dcff38 1px, transparent 1px),
+    linear-gradient(90deg, #a4dcff38 1px, transparent 1px);
+  background-size:
+    120px 120px,
+    52px 52px,
+    52px 52px;
+  opacity: 0.14;
+  mask-image: radial-gradient(ellipse, #000 30%, transparent 80%);
+}
+.crest-hero picture {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  inset: 20px var(--art-right) 30px 0;
 }
 .crest-hero .hero-photo {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 50% 45%;
+  width: auto;
+  height: auto;
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  mask-image:
+    radial-gradient(ellipse 65% 79% at 51% 52%, #000 60%, transparent 100%),
+    linear-gradient(0deg, transparent, #000 4%, #000 81%, transparent),
+    linear-gradient(90deg, transparent, #000 17%, #000 83%, transparent);
+  mask-composite: intersect;
 }
-/* Soft cyan→pink pulse sitting behind the crest outline. */
-.crest-glow {
-  position: absolute;
-  left: 50%;
-  top: 45%;
-  width: min(46vw, 640px);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(
-    closest-side,
-    rgba(34, 211, 238, 0.28),
-    rgba(255, 79, 216, 0.16) 55%,
-    transparent 75%
-  );
-  mix-blend-mode: screen;
-  animation: crest-pulse 4.5s ease-in-out 2.4s infinite;
-}
-/* One light pass across the crest after it settles. */
 .crest-shine {
   position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    105deg,
-    transparent 38%,
-    rgba(255, 255, 255, 0.13) 48%,
-    transparent 58%
-  );
-  background-size: 250% 100%;
-  background-position: 120% 0;
-  mix-blend-mode: screen;
-  animation: crest-shine 1.6s ease-out 1.2s 1 both;
+  inset: 10% 15% 8%;
+  overflow: hidden;
+  mask-image: radial-gradient(ellipse, #000, transparent 65%);
 }
-.hero-particles span {
+.crest-shine::after,
+.intro-art span {
+  content: "";
   position: absolute;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--xg-cyan);
-  box-shadow: 0 0 10px var(--xg-cyan);
+  inset: 0;
   opacity: 0;
-  animation-name: particle-rise;
-  animation-iteration-count: infinite;
-  animation-timing-function: linear;
+  background: linear-gradient(
+    106deg,
+    transparent 39%,
+    #38bdf82b 48%,
+    #e9faff5c 50%,
+    #ec489933 52%,
+    transparent 60%
+  );
 }
-.hero-particles span:nth-child(3n) {
-  background: var(--xg-pink);
-  box-shadow: 0 0 10px var(--xg-pink);
+.crest-hero .hero-description {
+  max-width: 285px;
 }
-.crest-hero .hero-shade {
-  background:
-    linear-gradient(90deg, #050913b3, transparent 30%, transparent 70%, #050913a0),
-    linear-gradient(0deg, #050913f2 2%, transparent 45%, #05091340);
+.crest-hero .hero-description p {
+  font-size: clamp(0.95rem, 1.2vw, 1.1rem);
+  line-height: 1.5;
+  text-wrap: pretty;
+  margin-bottom: 14px;
 }
-.hero-join {
-  box-shadow: 0 0 0 0 rgba(255, 79, 216, 0.45);
-  animation: join-ping 1.8s ease-out 2.6s 2;
+.crest-hero .hero-bottom {
+  gap: 18px;
+  bottom: 26px;
 }
-@keyframes crest-settle {
-  from { transform: scale(1.08); opacity: 0.4; }
-  to { transform: none; opacity: 1; }
+.crest-hero .hero-sub-link {
+  margin-left: 10px;
+  color: #e0ebff;
 }
-@keyframes crest-pulse {
-  0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(0.96); }
-  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+.broadcast-nav .button-primary,
+.crest-hero .hero-join {
+  position: relative;
+  background: var(--broadcast-cyan);
+  color: #04101a;
+  box-shadow: var(--broadcast-specular);
 }
-@keyframes crest-shine { to { background-position: -40% 0; } }
-@keyframes particle-rise {
-  0% { opacity: 0; transform: translateY(0); }
-  15% { opacity: 0.9; }
-  100% { opacity: 0; transform: translateY(-90px); }
+.broadcast-nav .button-primary::after,
+.crest-hero .hero-join::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 4px 24px #38bdf84d;
+  opacity: 0;
+  transition: opacity 160ms;
 }
-@keyframes join-ping { to { box-shadow: 0 0 0 16px rgba(255, 79, 216, 0); } }
-
-/* Phones: crest fully visible at the top, copy underneath (never on top of the logo). */
-@media (max-width: 767px) {
-  .crest-hero {
+.broadcast-nav .button-primary:is(:hover, :focus-visible)::after,
+.crest-hero .hero-join:is(:hover, :focus-visible)::after {
+  opacity: 1;
+}
+#whats-on {
+  scroll-margin-top: 112px;
+}
+.editorial-home :is(.xg-tile, .journey-row) {
+  position: relative;
+  background: var(--broadcast-section);
+  box-shadow: var(--broadcast-specular);
+  isolation: isolate;
+}
+.editorial-home .journey-rows {
+  display: grid;
+  gap: 10px;
+}
+.editorial-home .journey-row {
+  border: 1px solid var(--broadcast-border);
+  border-radius: 16px;
+  padding: clamp(18px, 2.3vw, 32px);
+  transition: none;
+}
+.editorial-home :is(.xg-tile, .journey-row)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at 15% 0%, #38bdf812, transparent 65%);
+  box-shadow:
+    inset 0 1px 0 #b9efff66,
+    inset 0 0 0 1px #a855f733;
+  transition: opacity 160ms;
+}
+.editorial-home :is(.xg-tile, .journey-row):is(:hover, :focus-within)::before {
+  opacity: 1;
+}
+.editorial-home .xg-tile {
+  transition: transform 160ms;
+}
+.xg-intro {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-xg-intro="pending"] .xg-intro {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: block;
+    background: var(--broadcast-canvas);
+    animation: xg-curtain 1s linear both;
+  }
+  html[data-xg-intro="pending"]:not(:has(.xg-intro))::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: var(--broadcast-canvas);
+  }
+  .intro-art {
+    position: absolute;
+    inset: 118px calc(24px + var(--art-right)) auto 24px;
+    height: calc(var(--hero-height) - 50px);
+    background: url("/images/xgamer-crest-wide.webp") center / contain no-repeat;
+    mask-image: radial-gradient(
+      ellipse 55% 76% at 51% 51%,
+      #000 62%,
+      transparent 100%
+    );
+    overflow: hidden;
+    animation: xg-emerge 1s var(--broadcast-ease) both;
+  }
+  .intro-art span {
+    animation: xg-sweep 0.65s 0.08s ease-out both;
+  }
+  .intro-progress {
+    position: absolute;
+    bottom: 12%;
+    left: 35%;
+    right: 35%;
+    height: 2px;
+    background: #c7dfff19;
+  }
+  .intro-progress span {
+    display: block;
+    height: 100%;
+    background: var(--broadcast-edge);
+    transform-origin: left;
+    animation: xg-progress 0.73s var(--broadcast-ease) both;
+  }
+  .intro-skip {
+    position: absolute;
+    right: max(20px, env(safe-area-inset-right));
+    bottom: max(20px, env(safe-area-inset-bottom));
+    min-height: 44px;
+    padding: 0 16px;
+    color: #e3edf8;
+    border: 1px solid #ffffff39;
+    border-radius: 999px;
+  }
+  .crest-shine::after {
+    animation: xg-sweep 0.85s var(--broadcast-ease) both;
+  }
+  .crest-hero .hero-description > * {
+    animation: xg-rise 0.35s var(--broadcast-ease) backwards;
+  }
+  .crest-hero .hero-description > :nth-child(2) {
+    animation-delay: 40ms;
+  }
+  .crest-hero .hero-description > :nth-child(3) {
+    animation-delay: 80ms;
+  }
+  html[data-xg-intro="pending"] .crest-hero .hero-description > * {
+    animation-delay: 650ms;
+  }
+  html[data-xg-intro="pending"] .crest-hero .hero-description > :nth-child(2) {
+    animation-delay: 690ms;
+  }
+  html[data-xg-intro="pending"] .crest-hero .hero-description > :nth-child(3) {
+    animation-delay: 730ms;
+  }
+  .crest-hero .scroll-cue svg {
+    animation: xg-cue 2s ease-in-out 2;
+  }
+  .hero-atmosphere::before {
+    animation: xg-drift 18s ease-in-out infinite alternate;
+    animation-play-state: paused;
+  }
+  .crest-hero[data-in-view="true"] .hero-atmosphere::before {
+    animation-play-state: running;
+  }
+}
+@keyframes xg-curtain {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes xg-emerge {
+  from {
+    opacity: 0.22;
+    transform: scale(0.98);
+  }
+  22% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes xg-sweep {
+  from {
+    opacity: 0;
+    transform: translateX(-70%);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(70%);
+  }
+}
+@keyframes xg-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes xg-rise {
+  from {
+    opacity: 0.55;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes xg-cue {
+  50% {
+    transform: translateY(3px);
+  }
+}
+@keyframes xg-drift {
+  from {
+    transform: translate(-1.5%, 0);
+  }
+  to {
+    transform: translate(1.5%, 2%);
+  }
+}
+@media (max-width: 1023px) {
+  .cinema-hero.crest-hero {
     height: auto;
-    min-height: 0;
     max-height: none;
     display: flex;
     flex-direction: column;
   }
   .crest-hero .hero-media {
     position: relative;
-    inset: auto;
-    order: 1;
     width: 100%;
-    aspect-ratio: 1000 / 780;
-    z-index: 0;
+    aspect-ratio: 16 / 9;
   }
-  .crest-hero .hero-photo { object-position: 50% 50%; }
-  .crest-glow { width: 78%; top: 50%; }
-  .crest-hero .hero-shade {
-    inset: auto 0 0 0;
-    top: 0;
-    background: linear-gradient(0deg, #070b16 0%, transparent 32%);
-    z-index: 1;
-    pointer-events: none;
-  }
-  .crest-hero .hero-topline {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 2;
+  .crest-hero picture {
+    inset: 8px 0 0;
   }
   .crest-hero .hero-bottom {
+    display: flex;
     position: relative;
-    order: 2;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    padding: 4px 22px 28px;
-    z-index: 2;
+    inset: auto;
+    align-items: end;
+    padding: 12px 18px 24px;
   }
-  .crest-hero .scroll-cue { display: none; }
+  .crest-hero .hero-description {
+    max-width: 380px;
+  }
+  .intro-art {
+    inset: 106px 24px auto;
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+}
+@media (max-width: 767px) {
+  .crest-hero .hero-media {
+    aspect-ratio: 1000 / 780;
+  }
+  .crest-hero .hero-bottom {
+    align-items: start;
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .crest-hero .scroll-cue {
+    margin: 0;
+  }
+  .intro-art {
+    inset: 92px 12px auto;
+    aspect-ratio: 1000 / 780;
+    background-image: url("/images/xgamer-crest-mobile.webp");
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .crest-hero .hero-media,
-  .crest-glow,
-  .crest-shine,
-  .hero-particles span,
-  .hero-join {
+  .broadcast-nav *,
+  .broadcast-nav::before,
+  .editorial-home *,
+  .editorial-home *::before,
+  .editorial-home *::after {
     animation: none !important;
+    transition: none !important;
   }
-  .crest-shine,
-  .hero-particles { display: none; }
 }
 
 /* ── Live now ─────────────────────────────────────────────────────────── */
@@ -2096,13 +2459,6 @@ a.hub-name:hover {
   }
 }
 
-/* Homepage */
-@media (min-width: 768px) {
-  .cinema-hero.crest-hero {
-    height: min(75vh, 780px);
-    min-height: 480px;
-  }
-}
 .whats-on {
   padding-top: 48px;
 }
@@ -2406,27 +2762,6 @@ a.hub-name:hover {
   .trophy-won svg {
     animation: none;
   }
-}
-
-/* XG-003 — Desktop only (≥1024px): show the whole crest, never cropped.
-   The artwork is fitted inside the hero; its own blurred copy fills the sides.
-   Phones and tablets keep the rules above unchanged. */
-@media (min-width: 1024px) {
-  .crest-hero .hero-media::before {
-    content: "";
-    position: absolute;
-    inset: -60px;
-    background: url("/images/xgamer-crest-wide.webp") center / cover no-repeat;
-    filter: blur(48px) brightness(0.45) saturate(1.2);
-    z-index: -4; /* behind the crest (.hero-photo sits at -3) */
-  }
-  .crest-hero .hero-photo {
-    object-fit: contain;
-    object-position: 50% 50%;
-    -webkit-mask-image: linear-gradient(90deg, transparent 2%, #000 22%, #000 78%, transparent 98%);
-    mask-image: linear-gradient(90deg, transparent 2%, #000 22%, #000 78%, transparent 98%);
-  }
-  .crest-glow { top: 50%; width: min(40vw, 560px); }
 }
 
 /* Tournament updates (announcements) */

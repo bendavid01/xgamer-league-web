@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import Image from "next/image";
 import { ArrowUpRight, Trophy } from "lucide-react";
 import HomeIntro from "@/components/HomeIntro";
@@ -13,7 +14,18 @@ import { championTitle } from "@/lib/labels";
 
 export const revalidate = 30;
 
-export default async function Home() {
+export default function Home() {
+  return (
+    <div className="editorial-home">
+      <HomeIntro />
+      <Suspense fallback={null}>
+        <HomeSections />
+      </Suspense>
+    </div>
+  );
+}
+
+async function HomeSections() {
   const [live, list, champions] = await Promise.all([
     getLiveStatus().catch(() => []),
     listTournaments(),
@@ -32,8 +44,7 @@ export default async function Home() {
   const running = list?.live ?? [];
   const upcoming = list?.upcoming ?? [];
   return (
-    <div className="editorial-home">
-      <HomeIntro />
+    <>
       <LiveNow live={liveNow(live)} />
 
       <section
@@ -147,7 +158,7 @@ export default async function Home() {
       <section className="page-shell journey-section">
         <EditorialReveal>
           <div className="section-index">
-            <span>03 / HOW IT WORKS</span>
+            <span>{current.length ? "03" : "02"} / HOW IT WORKS</span>
             <span>FROM SIGN-UP TO KICK-OFF</span>
           </div>
         </EditorialReveal>
@@ -186,7 +197,7 @@ export default async function Home() {
 
       <section className="community-finale page-shell">
         <div className="section-index">
-          <span>04 / COMMUNITY</span>
+          <span>{current.length ? "04" : "03"} / COMMUNITY</span>
           <span>DISCORD · WHATSAPP · YOUTUBE</span>
         </div>
         <EditorialReveal>
@@ -217,6 +228,6 @@ export default async function Home() {
         </div>
         <XMark className="finale-mark" />
       </section>
-    </div>
+    </>
   );
 }

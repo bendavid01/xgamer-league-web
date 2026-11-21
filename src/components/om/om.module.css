@@ -5,6 +5,8 @@
  */
 
 .ws {
+  --om-font-sans: var(--font-broadcast);
+  --om-font-mono: var(--font-mono);
   --om-canvas: #06080f;
   --om-surface: #080a10;
   --om-card: #11151f;

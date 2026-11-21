@@ -15,7 +15,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { tournamentLabel } from "@/lib/labels";
-import { omMono, omSans } from "./fonts";
 import { SECTION_LABEL } from "./labels";
 import OmDrawer from "./OmDrawer";
 import OmQuickJump, { type JumpItem } from "./OmQuickJump";
@@ -150,7 +149,7 @@ export default function OmShell({
 
   return (
     <div
-      className={`om ${s.ws} ${s.frame} ${user ? "" : s.solo} ${omSans.variable} ${omMono.variable}`}
+      className={`om ${s.ws} ${s.frame} ${user ? "" : s.solo}`}
     >
       {user && (
         <aside className={s.sidebar} aria-label="Workspace sections">
