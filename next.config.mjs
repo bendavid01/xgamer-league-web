@@ -22,7 +22,7 @@ const nextConfig = {
   // Matches, Standings, Players and Competitions merged into the Tournaments hub.
   // The query string (?t=<tournament>) is carried over automatically.
   async redirects() {
-    return [
+    const redirects = [
       ["/matches", "fixtures"],
       ["/table", "standings"],
       ["/players", "players"],
@@ -39,6 +39,26 @@ const nextConfig = {
         destination: "/tournaments",
         permanent: true,
       });
+
+    const authUrl = process.env.AUTH_URL ?? "";
+    const previewAuthUrl =
+      process.env.VERCEL_ENV === "preview" &&
+      process.env.VERCEL_GIT_COMMIT_REF === "security/registration-remediation" &&
+      URL.canParse(authUrl)
+        ? new URL(authUrl)
+        : null;
+
+    if (previewAuthUrl?.protocol === "https:") {
+      // Start OAuth on the callback host so the browser sends the state and PKCE cookies.
+      redirects.push({
+        source: "/login",
+        destination: `${previewAuthUrl.origin}/login`,
+        permanent: false,
+        missing: [{ type: "host", value: previewAuthUrl.hostname.replaceAll(".", "\\.") }],
+      });
+    }
+
+    return redirects;
   },
 
   // Keep your Sanity image configuration
