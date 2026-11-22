@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Activity,
+  ArrowUpRight,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -132,6 +133,10 @@ export default function OmShell({
           </button>
         </div>
       )}
+      <Link href="/" className={s.publicLink} onClick={() => setMenu(false)}>
+        <span>Public site</span>
+        <ArrowUpRight size={15} aria-hidden="true" />
+      </Link>
     </nav>
   );
 
@@ -148,9 +153,7 @@ export default function OmShell({
   );
 
   return (
-    <div
-      className={`om ${s.ws} ${s.frame} ${user ? "" : s.solo}`}
-    >
+    <div className={`om ${s.ws} ${s.frame} ${user ? "" : s.solo}`}>
       {user && (
         <aside className={s.sidebar} aria-label="Workspace sections">
           {brand}

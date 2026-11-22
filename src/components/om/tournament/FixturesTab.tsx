@@ -21,7 +21,8 @@ export default function FixturesTab({
     .filter((a) => a.status === "approved" && !a.efootballId)
     .map((a) => a.gaming_name);
   const [reviewing, setReviewing] = useState(false);
-  const [onlyOpen, setOnlyOpen] = useState(false);
+  // null = follow the default (Unplayed while anything is left to score).
+  const [picked, setPicked] = useState<View | null>(null);
   const anyScore = data.fixtures.some((f) => f.home_score !== null);
   const allScored =
     data.fixtures.length > 0 &&
@@ -75,6 +76,15 @@ export default function FixturesTab({
   for (const f of data.fixtures)
     rounds.set(f.round, [...(rounds.get(f.round) ?? []), f]);
   const scored = data.fixtures.filter((f) => f.home_score !== null).length;
+  const remaining = data.fixtures.length - scored;
+  // An empty side can't be shown: all scored → Finished, nothing scored → Unplayed.
+  const view: View = !remaining
+    ? "finished"
+    : !scored
+      ? "unplayed"
+      : (picked ?? "unplayed");
+  const showRound = (all: Match[]) =>
+    all.filter((f) => (f.home_score === null) === (view === "unplayed"));
 
   return (
     <div className="space-y-6">
@@ -251,39 +261,98 @@ export default function FixturesTab({
               <span className={s.num}>{scored}</span> of{" "}
               <span className={s.num}>{data.fixtures.length}</span> scored
             </span>
-            <label className="om-check">
-              <input
-                type="checkbox"
-                checked={onlyOpen}
-                onChange={(e) => setOnlyOpen(e.target.checked)}
-              />{" "}
-              Unplayed only
-            </label>
+            <ViewSwitch
+              name={`fixtures-view-${t.id}`}
+              view={view}
+              remaining={remaining}
+              scored={scored}
+              onChange={setPicked}
+            />
           </div>
-          {[...rounds].map(([round, all]) => {
-            const list = onlyOpen
-              ? all.filter((f) => f.home_score === null)
-              : all;
-            if (!list.length) return null;
-            const left = all.filter((f) => f.home_score === null).length;
-            return (
-              <section key={round} className="panel p-4 md:p-6">
-                <div className={s.roundHead}>
-                  <h3 className="text-lg font-semibold">Round {round}</h3>
-                  <span className={s.badge} data-tone={left ? undefined : "ok"}>
-                    {left ? `${left} to play` : "Complete"}
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {list.map((f) => (
-                    <ScoreRow key={f.id} f={f} t={t} act={act} names={names} />
-                  ))}
-                </div>
-              </section>
-            );
-          })}
+          {/* Keyed by view so the list fades in after the thumb slides. */}
+          <div key={view} className={`${s.fixtureView} space-y-6`}>
+            {[...rounds].map(([round, all]) => {
+              const list = showRound(all);
+              if (!list.length) return null;
+              const left = all.filter((f) => f.home_score === null).length;
+              return (
+                <section key={round} className="panel p-4 md:p-6">
+                  <div className={s.roundHead}>
+                    <h3 className="text-lg font-semibold">Round {round}</h3>
+                    <span
+                      className={s.badge}
+                      data-tone={left ? undefined : "ok"}
+                    >
+                      {left ? `${left} to play` : "Complete"}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {list.map((f) => (
+                      <ScoreRow
+                        key={f.id}
+                        f={f}
+                        t={t}
+                        act={act}
+                        names={names}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
         </>
       )}
+    </div>
+  );
+}
+
+type View = "unplayed" | "finished";
+
+/**
+ * Two-option segmented switch with a sliding thumb. Native radios underneath,
+ * so arrow keys, focus and screen readers work as a normal radio group.
+ */
+function ViewSwitch({
+  name,
+  view,
+  remaining,
+  scored,
+  onChange,
+}: {
+  name: string;
+  view: View;
+  remaining: number;
+  scored: number;
+  onChange: (view: View) => void;
+}) {
+  const options: [View, string, number][] = [
+    ["unplayed", "Unplayed", remaining],
+    ["finished", "Finished", scored],
+  ];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Show fixtures"
+      className={s.segment}
+      data-active={view}
+    >
+      <span className={s.segThumb} aria-hidden="true" />
+      {options.map(([value, label, n]) => (
+        <label key={value} className={s.segOption}>
+          <input
+            type="radio"
+            name={name}
+            value={value}
+            className="sr-only"
+            checked={view === value}
+            disabled={!n}
+            onChange={() => onChange(value)}
+          />
+          <span>{label}</span>
+          <span className={s.segCount}>({n})</span>
+        </label>
+      ))}
     </div>
   );
 }

@@ -11,6 +11,9 @@ const items = [
   ["Community", "/community"],
   ["Rules", "/rules"],
 ];
+/** The Organizer Manager has its own topbar, so the public navbar stays off it. */
+const isWorkspace = (pathname: string) =>
+  pathname === "/admin" || pathname.startsWith("/admin/");
 /** Player profiles live under Tournaments. */
 const isCurrent = (pathname: string, href: string) =>
   href === "/tournaments"
@@ -28,14 +31,18 @@ export default function Navbar({
   const pathname = usePathname();
   const sentinel = useRef<HTMLSpanElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  const hidden = isWorkspace(pathname);
+  // Re-attach after leaving /admin: the sentinel only exists while the navbar renders.
   useEffect(() => {
-    if (!sentinel.current || !("IntersectionObserver" in window)) return;
+    if (hidden || !sentinel.current || !("IntersectionObserver" in window))
+      return;
     const observer = new IntersectionObserver(([entry]) =>
       setScrolled(!entry.isIntersecting),
     );
     observer.observe(sentinel.current);
     return () => observer.disconnect();
-  }, []);
+  }, [hidden]);
+  if (hidden) return null;
   return (
     <>
       <span ref={sentinel} className="nav-sentinel" aria-hidden="true" />

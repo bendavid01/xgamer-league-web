@@ -33,10 +33,10 @@
 .frame {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
-  min-height: calc(100vh - 110px);
-  margin-top: 16px;
+  /* /admin has no public navbar, so the workspace starts at the top of the viewport. */
+  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--om-canvas);
-  border-top: 1px solid var(--om-line);
 }
 /* Signed out / loading: no sidebar, so the content takes the full width. */
 .solo {
@@ -47,9 +47,12 @@
 
 .sidebar {
   position: sticky;
-  top: 108px;
+  top: 0;
   align-self: start;
-  height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
   padding: 20px 14px;
   border-right: 1px solid var(--om-line);
@@ -87,6 +90,36 @@
   display: block;
   font-size: 12px;
   color: var(--om-dim);
+}
+.sidebar .nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+.publicLink {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: auto;
+  padding: 0 12px;
+  border-top: 1px solid var(--om-line);
+  color: #6b7387;
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+/* In the mobile drawer the nav is not a flex column, so give the link room. */
+.drawer .publicLink {
+  margin-top: 20px;
+}
+.publicLink:hover {
+  color: var(--om-cyan-2);
+}
+.publicLink:focus-visible {
+  outline: 2px solid var(--om-cyan-2);
+  outline-offset: 2px;
+  border-radius: 10px;
 }
 .nav ul {
   display: grid;
@@ -181,8 +214,14 @@
   padding: 10px 28px;
   border-bottom: 1px solid var(--om-line);
   background: rgba(8, 10, 16, 0.85);
+  /* Stays in view while scrolling; drawers and quick jump (z-index 80) sit above it. */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
 }
-.menuBtn {
+.topbar .menuBtn {
   display: none;
 }
 .crumbs {
@@ -520,8 +559,10 @@ button.stat:hover {
 .overviewGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-  gap: 18px;
-  margin-top: 22px;
+  /* Each panel keeps its own height, so neither carries empty space. */
+  align-items: start;
+  gap: 16px;
+  margin-top: 20px;
 }
 .panelHead {
   display: flex;
@@ -620,45 +661,151 @@ button.stat:hover {
 .actionList > button {
   justify-content: flex-start;
 }
-.fixtureGroups {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 14px;
-  padding: 16px 18px;
+
+/* Overview KPI row: one even row on wide screens, balanced rows when narrower. */
+.kpiWrap {
+  container-type: inline-size;
 }
-.fixtureGroup {
+.kpis {
   display: grid;
-  gap: 10px;
-  align-content: start;
-  padding: 14px;
+  grid-template-columns: repeat(var(--kpi-cols, 5), minmax(0, 1fr));
+  gap: 12px;
+}
+.kpis[data-n="3"] {
+  --kpi-cols: 3;
+}
+.kpi {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 132px;
+  padding: 16px 16px 14px;
+  overflow: hidden;
   border: 1px solid var(--om-line);
-  border-radius: 12px;
-  background: var(--om-card-2);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 60%),
+    var(--om-card);
+  box-shadow: var(--om-glass);
+  text-align: left;
+  transition: border-color 0.15s;
 }
-.fixtureGroupHead {
-  display: grid;
-  gap: 2px;
+/* Thin accent along the top edge: violet by default, amber when it needs action. */
+.kpi::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--om-violet-2),
+    var(--om-cyan) 70%,
+    transparent
+  );
+  opacity: 0.55;
 }
-.fixtureList {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-size: 14px;
+.kpi[data-tone="warn"] {
+  border-color: rgba(245, 158, 11, 0.35);
 }
-.fixtureList li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+.kpi[data-tone="warn"]::before {
+  background: linear-gradient(90deg, var(--om-amber), transparent);
+  opacity: 0.9;
+}
+.kpi:hover {
+  border-color: var(--om-violet-2);
+}
+.kpi:focus-visible {
+  outline: 2px solid var(--om-cyan-2);
+  outline-offset: 2px;
+}
+.kpiLabel {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.25;
+  color: var(--om-dim);
 }
-.fixtureList li span:last-child {
-  text-align: right;
+.kpiIcon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--om-violet-2);
+  background: rgba(105, 69, 232, 0.14);
 }
-.vs {
-  font-size: 11px;
+.kpi[data-tone="warn"] .kpiIcon {
+  color: var(--om-amber);
+  background: rgba(245, 158, 11, 0.14);
+}
+.kpiValue {
+  margin-top: auto;
+  padding-top: 8px;
+  font-family: var(--om-font-mono), ui-monospace, monospace;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+.kpiHint {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #6b7387;
+}
+/* Five cards that don't fit in one row: three on top, two wider below. */
+@container (max-width: 860px) {
+  .kpis[data-n="5"] {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .kpis[data-n="5"] > .kpi {
+    grid-column: span 2;
+  }
+  .kpis[data-n="5"] > .kpi:nth-child(n + 4) {
+    grid-column: span 3;
+  }
+}
+/* Phones: the headline decision card spans the row, the rest pair up. */
+@container (max-width: 540px) {
+  .kpis,
+  .kpis[data-n="5"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .kpis > .kpi,
+  .kpis[data-n="5"] > .kpi,
+  .kpis[data-n="5"] > .kpi:nth-child(n + 4) {
+    grid-column: span 1;
+  }
+  .kpis > .kpi:first-child {
+    grid-column: 1 / -1;
+    min-height: 0;
+  }
+  .kpi {
+    min-height: 118px;
+    padding: 14px 14px 12px;
+  }
+  .kpiValue {
+    font-size: 26px;
+  }
+}
+.ovRow {
+  min-height: 64px;
+  padding: 12px 14px;
+}
+.rowChevron {
+  flex: none;
   color: #5d6478;
-  text-transform: uppercase;
+}
+.ovRow:hover .rowChevron {
+  color: var(--om-cyan-2);
 }
 .toolbar {
   display: flex;
@@ -666,6 +813,98 @@ button.stat:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+/* Fixtures & Scores: Unplayed / Finished segmented switch with a sliding thumb. */
+.segment {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 300px;
+  padding: 4px;
+  border: 1px solid var(--om-line-2);
+  border-radius: 999px;
+  background: var(--om-card-2);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+.segThumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--om-violet), #4b2bc9);
+  box-shadow:
+    var(--om-glass),
+    0 4px 16px rgba(105, 69, 232, 0.4);
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.segment[data-active="finished"] .segThumb {
+  transform: translateX(100%);
+}
+.segOption {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  color: var(--om-dim);
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.2s;
+}
+.segOption:hover {
+  color: #fff;
+}
+.segOption:has(input:checked) {
+  color: #fff;
+}
+.segOption:has(input:disabled) {
+  cursor: default;
+  opacity: 0.45;
+}
+.segOption:has(input:disabled):hover {
+  color: var(--om-dim);
+}
+.segOption:has(input:focus-visible) {
+  outline: 2px solid var(--om-cyan-2);
+  outline-offset: 2px;
+}
+.segCount {
+  font-family: var(--om-font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.fixtureView {
+  animation: om-view-in 0.24s ease-out both;
+}
+@keyframes om-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .segThumb {
+    transition: none;
+  }
+  .fixtureView {
+    animation: none;
+  }
+}
+@media (max-width: 599px) {
+  .toolbar .segment {
+    width: 100%;
+    min-width: 0;
+  }
 }
 .roundHead {
   display: flex;
@@ -962,7 +1201,8 @@ button.stat:hover {
   color: var(--om-cyan-2);
 }
 .ws :global(.om-bulk) {
-  top: 100px;
+  /* Just below the sticky topbar. */
+  top: 76px;
   border-color: rgba(146, 120, 250, 0.45);
   background: var(--om-card-2);
 }
@@ -1009,6 +1249,19 @@ button.stat:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+@media (max-width: 599px) {
+  .ovRow {
+    flex-wrap: wrap;
+  }
+  .ovRow .rowMeta {
+    justify-content: flex-start;
+    width: 100%;
+  }
+  /* The whole row is the tap target; a wrapped chevron would sit alone. */
+  .ovRow .rowChevron {
+    display: none;
+  }
+}
 @media (max-width: 899px) {
   .frame {
     grid-template-columns: minmax(0, 1fr);
@@ -1016,12 +1269,38 @@ button.stat:hover {
   .sidebar {
     display: none;
   }
-  .menuBtn {
+  .topbar .menuBtn {
     display: inline-grid;
   }
   .topbar {
-    flex-wrap: wrap;
-    padding: 8px 16px;
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-height: 60px;
+    padding: 8px 12px;
+  }
+  /* The sticky topbar stays one row: only the current page, truncated. The
+     sections menu covers the way back. */
+  .crumbs ol {
+    flex-wrap: nowrap;
+  }
+  .crumbs li:not(:last-child) {
+    display: none;
+  }
+  .crumbs li + li::before {
+    content: none;
+  }
+  .crumbs li:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topActions {
+    gap: 2px;
+  }
+  .session {
+    padding-left: 6px;
+    margin-left: 2px;
   }
   .content {
     padding: 20px 16px 48px;

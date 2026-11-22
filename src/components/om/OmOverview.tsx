@@ -1,13 +1,17 @@
 "use client";
+import type { ReactNode } from "react";
 import {
   Activity,
   CalendarClock,
   ChevronRight,
   Inbox,
+  MessageCircle,
+  PenLine,
   Plus,
   ScrollText,
   Search,
   Trophy,
+  type LucideIcon,
 } from "lucide-react";
 import { tournamentLabel } from "@/lib/labels";
 import { PHASE, formatLabel } from "./labels";
@@ -16,6 +20,36 @@ import { pendingIn, unplayedIn, type Snapshots } from "./snapshots";
 import type { Home, TournamentTab } from "./types";
 import { PageHead } from "./ui";
 import s from "./om.module.css";
+
+/** One headline number. The whole card is the button to the place that acts on it. */
+function Kpi({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  tone,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: ReactNode;
+  hint: ReactNode;
+  tone?: "warn";
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className={s.kpi} data-tone={tone} onClick={onClick}>
+      <span className={s.kpiLabel}>
+        <span className={s.kpiIcon} aria-hidden="true">
+          <Icon size={15} />
+        </span>
+        {label}
+      </span>
+      <span className={s.kpiValue}>{value}</span>
+      <span className={s.kpiHint}>{hint}</span>
+    </button>
+  );
+}
 
 export default function OmOverview({
   home,
@@ -63,86 +97,62 @@ export default function OmOverview({
         sub="What needs an organizer right now, across every tournament."
       />
 
-      <div className={s.statGrid}>
-        <button
-          type="button"
-          className={s.stat}
-          data-tone={pending ? "warn" : undefined}
-          onClick={() =>
-            firstPending
-              ? openTournament(firstPending.id, "entries")
-              : openTournament(null)
-          }
-        >
-          <span className={s.statLabel}>
-            <Inbox size={16} aria-hidden="true" /> Pending decisions
-          </span>
-          <span className={s.statValue}>{value(pending)}</span>
-          <span className={s.statHint}>
-            Registrations, new and returning players
-          </span>
-        </button>
-        <button
-          type="button"
-          className={s.stat}
-          onClick={() => openTournament(null)}
-        >
-          <span className={s.statLabel}>
-            <Trophy size={16} aria-hidden="true" /> Active tournaments
-          </span>
-          <span className={s.statValue}>{active.length}</span>
-          <span className={s.statHint}>
-            {home.tournaments.length - active.length} completed
-          </span>
-        </button>
-        <button
-          type="button"
-          className={s.stat}
-          onClick={() =>
-            leagues[0]
-              ? openTournament(leagues[0].t.id, "fixtures")
-              : openTournament(null)
-          }
-        >
-          <span className={s.statLabel}>
-            <CalendarClock size={16} aria-hidden="true" /> Unplayed fixtures
-          </span>
-          <span className={s.statValue}>{value(unplayed)}</span>
-          <span className={s.statHint}>League matches without a score</span>
-        </button>
-        {admin && (
-          <button
-            type="button"
-            className={s.stat}
-            data-tone={queues.contacts?.forMe ? "warn" : undefined}
-            onClick={() => goPlayers("contacts")}
-          >
-            <span className={s.statLabel}>
-              <Inbox size={16} aria-hidden="true" /> WhatsApp changes
-            </span>
-            <span className={s.statValue}>
-              {queues.contacts ? queues.contacts.open : "—"}
-            </span>
-            <span className={s.statHint}>
-              {queues.contacts?.forMe
-                ? `${queues.contacts.forMe} waiting for you as second admin`
-                : "Open number changes"}
-            </span>
-          </button>
-        )}
-        {admin && (
-          <button
-            type="button"
-            className={s.stat}
-            onClick={() => goPlayers("teams")}
-          >
-            <span className={s.statLabel}>
-              <Inbox size={16} aria-hidden="true" /> Team names to review
-            </span>
-            <span className={s.statValue}>{queues.teams ?? "—"}</span>
-            <span className={s.statHint}>Entries with no tournament team</span>
-          </button>
-        )}
+      <div className={s.kpiWrap}>
+        <div className={s.kpis} data-n={admin ? 5 : 3}>
+          <Kpi
+            icon={Inbox}
+            label="Pending decisions"
+            value={value(pending)}
+            hint="Registrations, new and returning players"
+            tone={pending ? "warn" : undefined}
+            onClick={() =>
+              firstPending
+                ? openTournament(firstPending.id, "entries")
+                : openTournament(null)
+            }
+          />
+          <Kpi
+            icon={Trophy}
+            label="Active tournaments"
+            value={active.length}
+            hint={`${home.tournaments.length - active.length} completed`}
+            onClick={() => openTournament(null)}
+          />
+          <Kpi
+            icon={CalendarClock}
+            label="Unplayed fixtures"
+            value={value(unplayed)}
+            hint="League matches without a score"
+            onClick={() =>
+              leagues[0]
+                ? openTournament(leagues[0].t.id, "fixtures")
+                : openTournament(null)
+            }
+          />
+          {admin && (
+            <Kpi
+              icon={MessageCircle}
+              label="WhatsApp changes"
+              value={queues.contacts ? queues.contacts.open : "—"}
+              hint={
+                queues.contacts?.forMe
+                  ? `${queues.contacts.forMe} waiting for you as second admin`
+                  : "Open number changes"
+              }
+              tone={queues.contacts?.forMe ? "warn" : undefined}
+              onClick={() => goPlayers("contacts")}
+            />
+          )}
+          {admin && (
+            <Kpi
+              icon={PenLine}
+              label="Team names to review"
+              value={queues.teams ?? "—"}
+              hint="Entries with no tournament team"
+              onClick={() => goPlayers("teams")}
+            />
+          )}
+        </div>
       </div>
       {snaps.failed.length > 0 && (
         <p className="notice text-amber-200 mt-4">
@@ -156,6 +166,7 @@ export default function OmOverview({
         <section className="panel" aria-labelledby="ov-active">
           <div className={s.panelHead}>
             <h2 id="ov-active">Active tournaments</h2>
+            <span className={s.panelHint}>{active.length} running</span>
           </div>
           {active.length ? (
             <ul className={s.rowList}>
@@ -167,7 +178,7 @@ export default function OmOverview({
                   <li key={t.id}>
                     <button
                       type="button"
-                      className={s.row}
+                      className={`${s.row} ${s.ovRow}`}
                       onClick={() => openTournament(t.id)}
                     >
                       <span className="min-w-0">
@@ -191,7 +202,11 @@ export default function OmOverview({
                         <span className={`status-pill status-${t.status}`}>
                           {PHASE[t.status]}
                         </span>
-                        <ChevronRight size={16} aria-hidden="true" />
+                        <ChevronRight
+                          size={16}
+                          aria-hidden="true"
+                          className={s.rowChevron}
+                        />
                       </span>
                     </button>
                   </li>
@@ -249,58 +264,6 @@ export default function OmOverview({
           </div>
         </section>
       </div>
-
-      <section className="panel mt-6" aria-labelledby="ov-fixtures">
-        <div className={s.panelHead}>
-          <h2 id="ov-fixtures">Unplayed fixtures</h2>
-          <span className={s.panelHint}>Current round of each league</span>
-        </div>
-        {!ready ? (
-          <p className={s.empty}>Loading fixtures…</p>
-        ) : leagues.length ? (
-          <div className={s.fixtureGroups}>
-            {leagues.map(({ t, w }) => {
-              const list = unplayedIn(w!);
-              const round = Math.min(...list.map((f) => f.round));
-              const names = new Map([
-                ...w!.applications.map(
-                  (a) => [a.player_id, a.gaming_name] as const,
-                ),
-                ...w!.standings.map(({ id, name }) => [id, name] as const),
-              ]);
-              const now = list.filter((f) => f.round === round);
-              return (
-                <div key={t.id} className={s.fixtureGroup}>
-                  <div className={s.fixtureGroupHead}>
-                    <strong>{tournamentLabel(t)}</strong>
-                    <span className={s.panelHint}>
-                      Round {round} · {list.length} left in total
-                    </span>
-                  </div>
-                  <ul className={s.fixtureList}>
-                    {now.slice(0, 6).map((f) => (
-                      <li key={f.id}>
-                        <span>{names.get(f.home)}</span>
-                        <span className={s.vs}>vs</span>
-                        <span>{names.get(f.away ?? "")}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    type="button"
-                    className="button-secondary om-small"
-                    onClick={() => openTournament(t.id, "fixtures")}
-                  >
-                    Enter scores
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className={s.empty}>Every league fixture has a score.</p>
-        )}
-      </section>
     </>
   );
 }
