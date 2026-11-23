@@ -326,7 +326,7 @@ function Roster({
                       onClick={() => {
                         if (
                           confirm(
-                            `Remove ${a.gaming_name} from ${data.tournament.name}? This is recorded in the activity log.`,
+                            `Remove ${a.gaming_name} from ${data.tournament.name}? This is logged.`,
                           )
                         )
                           void act(

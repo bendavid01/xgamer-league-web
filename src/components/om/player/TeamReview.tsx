@@ -8,8 +8,8 @@ import { CorrectTeam } from "./PlayerDetails";
 
 /**
  * Players → Team-name review (main admins).
- * Lists entries with no tournament team, with live evidence. Attesting copies the
- * player's current team shown here; nothing can be typed in.
+ * Lists entries with no tournament team and what the database knows about them.
+ * "Confirm team" copies the player's current team shown here; nothing is typed in.
  */
 export default function TeamReview({ changed }: { changed?: () => void }) {
   const [data, setData] = useState<{
@@ -59,10 +59,9 @@ export default function TeamReview({ changed }: { changed?: () => void }) {
           Team names per tournament: review
         </h2>
         <p className="text-slate-400 mt-1 text-sm">
-          Entries with no team recorded for their tournament. The evidence is
-          computed from the database. Attesting copies the current team shown;
-          anything else needs &ldquo;Set with evidence&rdquo;. Each action is
-          recorded in the activity log.
+          Tournament entries with no team name. &ldquo;Confirm team&rdquo; uses
+          the player&apos;s current team; for any other team, use &ldquo;Add
+          missing team&rdquo;. Every change is logged.
         </p>
       </div>
       <Feedback error={error} notice={notice} />
@@ -80,24 +79,23 @@ export default function TeamReview({ changed }: { changed?: () => void }) {
               </span>
             </p>
             <p>
-              Proposed team: <strong>{e.currentTeam ?? "—"}</strong>{" "}
+              Suggested team: <strong>{e.currentTeam ?? "—"}</strong>{" "}
               <span className="text-xs text-slate-500">
-                (the player&apos;s current team, read-only)
+                (the player&apos;s current team)
               </span>
             </p>
             <ul className="text-sm text-slate-400 list-disc pl-5">
-              <li>Tournament entries for this player: {e.evidence.entries}</li>
+              <li>Tournaments this player entered: {e.evidence.entries}</li>
               <li>
-                Registration records: {e.evidence.registration_records}
+                Signup records: {e.evidence.registration_records}
                 {e.evidence.registration_audit_id !== null &&
                   ` (record #${e.evidence.registration_audit_id}${e.evidence.registration_at ? `, ${new Date(e.evidence.registration_at).toLocaleString("en-IN")}` : ""})`}
                 {e.evidence.record_has_team
-                  ? ", a record includes a team"
-                  : ", no team field"}
+                  ? ", one includes a team"
+                  : ", none include a team"}
               </li>
               <li>
-                Current-team edits in OM since registration:{" "}
-                {e.evidence.team_edits}
+                Team changes made here since signup: {e.evidence.team_edits}
               </li>
             </ul>
             {e.eligible ? (
@@ -116,7 +114,7 @@ export default function TeamReview({ changed }: { changed?: () => void }) {
                       confirm: f.get("confirm") === "on",
                       reason: String(f.get("reason") ?? ""),
                     },
-                    `Attested ${e.currentTeam} for ${e.gaming_name} in ${e.label}.`,
+                    `Confirmed ${e.currentTeam} for ${e.gaming_name} in ${e.label}.`,
                   );
                 }}
               >
@@ -135,12 +133,13 @@ export default function TeamReview({ changed }: { changed?: () => void }) {
                     className="control-input !mt-0"
                     aria-label="Reason"
                   />
-                  <button className="button-primary">Attest</button>
+                  <button className="button-primary">Confirm team</button>
                 </div>
               </form>
             ) : (
               <p className="text-sm text-amber-200">
-                Can&apos;t be attested: {e.reasons.join("; ")}.
+                Can&apos;t confirm this one automatically:{" "}
+                {e.reasons.join("; ")}.
               </p>
             )}
             <CorrectTeam
@@ -165,7 +164,10 @@ export default function TeamReview({ changed }: { changed?: () => void }) {
       </fieldset>
       {data && (
         <p className="text-xs text-slate-500">
-          Website display: TEAM_DISPLAY={data.display}.
+          The website currently shows{" "}
+          {data.display === "entry"
+            ? "each tournament's own team names."
+            : "each player's current team everywhere."}
         </p>
       )}
     </section>

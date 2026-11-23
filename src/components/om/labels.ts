@@ -34,7 +34,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "player.edit_name": "Changed gaming name",
   "player.edit_team": "Changed current team",
   "player.edit_efootball": "Changed eFootball ID",
-  "application.team_attest": "Attested tournament team",
+  "application.team_attest": "Confirmed tournament team",
   "application.team_correct": "Corrected tournament team",
   "contact.disclose": "Viewed WhatsApp number",
   "contact.change_start": "Started WhatsApp number change",
@@ -55,19 +55,19 @@ export const ACTION_LABEL: Record<string, string> = {
 export const SOURCE_TAG: Record<TeamSource, string> = {
   registration: "Registration",
   registration_record: "Registration record",
-  organizer_attested: "Attested",
+  organizer_attested: "Confirmed by admin",
   organizer_corrected: "Corrected",
 };
+/** How a WhatsApp number was verified (keys are stored values; only the text is shown). */
 export const METHOD_LABEL: Record<string, string> = {
-  organizer_attested_established_channel:
-    "organizer-attested through the established channel",
-  organizer_attested_independent_evidence:
-    "organizer-attested with independent evidence and a second admin",
+  organizer_attested_established_channel: "via their old WhatsApp",
+  organizer_attested_independent_evidence: "another way, by 2 admins",
 };
+/** Ways to confirm a player's identity for a number change (keys are stored values). */
 export const EVIDENCE_LABEL: Record<string, string> = {
-  efootball_possession: "eFootball account possession (server challenge)",
-  known_person_live_video: "Live video with an admin who knows the player",
-  known_person_in_person: "In person with an admin who knows the player",
+  efootball_possession: "Code on eFootball profile",
+  known_person_live_video: "Video call, admin knows them",
+  known_person_in_person: "In person, admin knows them",
 };
 export const ATTEST_REASON =
   "Historical entry before 007; Owner attestation 13 Nov 2026";

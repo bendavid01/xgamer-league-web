@@ -47,7 +47,7 @@ export default function OmHealth({
     <>
       <PageHead
         title="System Health"
-        sub="Read-only checks of player IDs, tournaments, results, placements, the ranking and the legacy archive. Nothing is changed, merged or deleted from here."
+        sub="Checks player IDs, tournaments, results, placements, the ranking and the old-season archive. It only looks: nothing is changed or deleted from here."
       >
         <button className="button-secondary" onClick={load}>
           <RefreshCw size={16} aria-hidden="true" /> Run again

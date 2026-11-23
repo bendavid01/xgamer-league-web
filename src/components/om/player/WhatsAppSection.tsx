@@ -162,17 +162,16 @@ export default function WhatsAppSection({
         </div>
         <p className="om-hint">
           {shown
-            ? "Visible for 30 seconds. This view is recorded in the activity log."
+            ? "Visible for 30 seconds. Viewing it is logged."
             : contact.attestedAt
-              ? `Organizer-attested ${new Date(contact.attestedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · ${METHOD_LABEL[contact.method ?? ""] ?? contact.method}`
-              : "Legacy number · never organizer-attested"}
+              ? `Verified ${new Date(contact.attestedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · ${METHOD_LABEL[contact.method ?? ""] ?? contact.method}`
+              : "Old number (not verified yet)"}
         </p>
       </div>
       <Feedback error={error} notice={notice} />
       {admin && !contact.editingOn && (
         <p className="om-hint">
-          Changing WhatsApp numbers is switched off until it&apos;s separately
-          approved.
+          Changing WhatsApp numbers is turned off for now.
         </p>
       )}
       {started && (
@@ -180,8 +179,8 @@ export default function WhatsAppSection({
           <p>
             Code for the new number:{" "}
             <strong className="font-mono">{started.code}</strong>
-            {started.newNumber && <> ({started.newNumber})</>}. It&apos;s shown
-            only now.
+            {started.newNumber && <> ({started.newNumber})</>}. You won&apos;t
+            see it again.
           </p>
           <a
             className="button-secondary om-small w-fit"
@@ -193,11 +192,10 @@ export default function WhatsAppSection({
           </a>
           {started.challenge && (
             <p>
-              eFootball challenge:{" "}
+              eFootball check code:{" "}
               <strong className="font-mono">{started.challenge}</strong>. Ask
-              the player to put it in the profile of their registered eFootball
-              account (or a friend-request message from it), then check it
-              yourself in the game.
+              the player to add it to their eFootball profile (or send it in a
+              friend request), then check it yourself in the game.
             </p>
           )}
           <button
@@ -212,14 +210,14 @@ export default function WhatsAppSection({
       {open && (
         <div className="om-subpanel space-y-3">
           <p>
-            <strong>Open change</strong> ·{" "}
+            <strong>Number change in progress</strong> ·{" "}
             {open.route === "established_channel"
-              ? "established channel"
-              : `independent evidence: ${EVIDENCE_LABEL[open.evidenceType ?? ""] ?? open.evidenceType}`}{" "}
+              ? "verifying with their old WhatsApp"
+              : `verifying another way: ${EVIDENCE_LABEL[open.evidenceType ?? ""] ?? open.evidenceType}`}{" "}
             · started by {open.requestedByName ?? "an admin"} ·{" "}
             {open.status === "pending_code"
-              ? `waiting for the code (${open.attemptsLeft} attempts, ${open.resendsLeft} resends left)`
-              : `waiting for a second admin until ${new Date(open.approveBy!).toLocaleString("en-IN")} (Players → WhatsApp changes)`}
+              ? `waiting for the code (${open.attemptsLeft} tries and ${open.resendsLeft} resends left)`
+              : `waiting for another main admin to approve by ${new Date(open.approveBy!).toLocaleString("en-IN")} (Players → WhatsApp changes)`}
           </p>
           {contact.canEdit &&
             open.status === "pending_code" &&
@@ -247,7 +245,7 @@ export default function WhatsAppSection({
                     },
                     open.route === "established_channel"
                       ? "WhatsApp number changed."
-                      : "Code accepted. A second main admin must now approve.",
+                      : "Code accepted. Another main admin now needs to approve.",
                   ).then((r) => r.ok && setStarted(null));
                 }}
               >
@@ -274,17 +272,17 @@ export default function WhatsAppSection({
                       name="challenge"
                       required
                       maxLength={6}
-                      placeholder="Challenge you saw on it"
+                      placeholder="Check code you saw on it"
                       className="control-input !mt-0 font-mono uppercase"
-                      aria-label="Challenge you saw on the eFootball account"
+                      aria-label="Check code you saw on the eFootball account"
                     />
                   </div>
                 )}
                 <label className="flex gap-2 text-sm">
                   <input type="checkbox" name="attest" required />
                   {open.route === "established_channel"
-                    ? "I attest the code came back from the player's current, organizer-attested WhatsApp number."
-                    : "I attest the player sent this code back from the new number."}
+                    ? "I confirm the player sent this code back from their old, verified WhatsApp."
+                    : "I confirm the player sent this code back from their new WhatsApp."}
                 </label>
                 <div className="flex flex-wrap gap-2">
                   <button className="button-primary om-small">
@@ -421,13 +419,13 @@ export default function WhatsAppSection({
             <p className="font-semibold">Change WhatsApp number</p>
             <p className="om-hint">
               {contact.route1Available
-                ? "The current number is organizer-attested: a manual organizer record, not automated proof of ownership."
-                : "Legacy number: a change needs independent evidence and a second main admin."}
+                ? "Their current number was verified by an admin, so you can verify the new one through it."
+                : "Their current number isn't verified yet, so 2 main admins must approve the change."}
             </p>
           </div>
           <fieldset className="space-y-1">
             <legend className="text-sm font-semibold">
-              How is the player identified?
+              How will you confirm it&apos;s really them?
             </legend>
             <label className="flex gap-2 text-sm">
               <input
@@ -437,9 +435,9 @@ export default function WhatsAppSection({
                 disabled={!contact.route1Available}
                 onChange={() => setRoute("established_channel")}
               />
-              Established channel (one admin): the code comes back from the
-              current, organizer-attested number
-              {!contact.route1Available && " (not available: legacy number)"}
+              Verify with their old WhatsApp (1 admin)
+              {!contact.route1Available &&
+                " — unavailable because their current number isn't verified yet"}
             </label>
             <label className="flex gap-2 text-sm">
               <input
@@ -448,7 +446,7 @@ export default function WhatsAppSection({
                 checked={route === "independent_evidence"}
                 onChange={() => setRoute("independent_evidence")}
               />
-              Independent evidence (needs a second main admin)
+              Verify another way (needs 2 main admins)
             </label>
           </fieldset>
           <div className="space-y-1">
@@ -471,7 +469,7 @@ export default function WhatsAppSection({
                 className="control-input !mt-0"
                 value={evidence}
                 onChange={(e) => setEvidence(e.target.value)}
-                aria-label="Evidence type"
+                aria-label="How you confirmed it's them"
               >
                 {Object.entries(EVIDENCE_LABEL).map(([key, text]) => (
                   <option
@@ -483,7 +481,7 @@ export default function WhatsAppSection({
                   >
                     {text}
                     {key === "efootball_possession" && !contact.hasEfootballId
-                      ? " (no eFootball ID on record)"
+                      ? " (no ID saved)"
                       : ""}
                   </option>
                 ))}
@@ -502,10 +500,10 @@ export default function WhatsAppSection({
                 required
                 minLength={20}
                 maxLength={500}
-                rows={3}
-                placeholder="What you checked, when and who did it. No phone numbers."
+                rows={4}
+                placeholder="How you confirmed it's really them (e.g. video call). Don't include phone numbers."
                 className="control-input !mt-0"
-                aria-label="Evidence note"
+                aria-label="How you confirmed it's really them"
               />
             </div>
           )}
@@ -525,8 +523,8 @@ export default function WhatsAppSection({
           <label className="flex gap-2 text-sm">
             <input type="checkbox" name="confirm" required />
             {route === "established_channel"
-              ? "I'll send a code to the new number and ask the player to return it from their current attested number."
-              : "I identified the player as described, and I'll send a code to the new number for them to return from it."}
+              ? "I'll send a code to their new WhatsApp and ask them to send it back from their old, verified number."
+              : "I confirmed this player's identity and will send a code to their new WhatsApp so they can reply and verify it."}
           </label>
           <div className="om-form-actions">
             <button className="button-primary om-small">Start change</button>

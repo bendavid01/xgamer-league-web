@@ -61,12 +61,12 @@ export default function ContactApprovals({
           WhatsApp number changes
         </h2>
         <p className="text-slate-400 mt-1 text-sm">
-          The requesting admin conducts and records the verification. A
-          different main admin reviews that record and the supporting evidence,
-          then approves or rejects the request.
+          The admin who starts a change checks it&apos;s really the player and
+          notes how. A different main admin reads that note, then approves or
+          rejects the change.
           {data &&
             !data.editingOn &&
-            " Number editing is currently switched off."}
+            " Changing numbers is turned off for now."}
         </p>
       </div>
       <Feedback error={error} notice={notice} />
@@ -85,17 +85,17 @@ export default function ContactApprovals({
             </p>
             <p className="text-sm">
               {c.route === "established_channel"
-                ? "Established channel"
-                : `Evidence: ${EVIDENCE_LABEL[c.evidenceType ?? ""] ?? c.evidenceType}${c.evidenceObservedAt ? `, observed ${new Date(c.evidenceObservedAt).toLocaleString("en-IN")}` : ""}${c.challengeConfirmedAt ? " (challenge confirmed)" : ""}`}
+                ? "Verified with their old WhatsApp"
+                : `How they confirmed it: ${EVIDENCE_LABEL[c.evidenceType ?? ""] ?? c.evidenceType}${c.evidenceObservedAt ? `, on ${new Date(c.evidenceObservedAt).toLocaleString("en-IN")}` : ""}${c.challengeConfirmedAt ? " (eFootball code checked)" : ""}`}
             </p>
             {c.evidenceNote && (
               <p className="text-sm text-slate-300">
-                Verification record: {c.evidenceNote}
+                Their note: {c.evidenceNote}
               </p>
             )}
             {c.route === "independent_evidence" && c.codeCheckedAt && (
               <p className="text-sm text-slate-300">
-                Verification code check recorded on{" "}
+                Player sent the code back on{" "}
                 {new Date(c.codeCheckedAt).toLocaleString("en-IN")}.
               </p>
             )}
@@ -105,7 +105,7 @@ export default function ContactApprovals({
             <p className="text-sm text-slate-400">
               {c.status === "pending_code"
                 ? "Waiting for the code from the new number."
-                : `Waiting for a second admin until ${new Date(c.approveBy!).toLocaleString("en-IN")}.`}
+                : `Waiting for another main admin to approve by ${new Date(c.approveBy!).toLocaleString("en-IN")}.`}
             </p>
             {c.status === "awaiting_second_admin" && !c.requestedByMe && (
               <>
@@ -128,11 +128,9 @@ export default function ContactApprovals({
                   }}
                 >
                   <label className="flex gap-2 text-sm">
-                    <input type="checkbox" name="reviewed" required />I have
-                    independently reviewed the requesting administrator&apos;s
-                    verification record and supporting evidence. Based on the
-                    documented checks, I confirm that the required verification
-                    procedure was completed and approve this contact change.
+                    <input type="checkbox" name="reviewed" required />I read how
+                    the other admin confirmed it&apos;s really this player, and
+                    I&apos;m happy to approve the new number.
                   </label>
                   <div className="grid gap-2 md:grid-cols-[1fr_auto]">
                     <input

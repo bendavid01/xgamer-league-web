@@ -96,10 +96,8 @@ export function CorrectWhatsApp({
       <div>
         <p className="font-semibold">Correct WhatsApp number</p>
         <p className="om-hint">
-          Only for a number that was wrong from the start. It replaces the
-          number now, marks it as not organizer-attested and cancels any open
-          number change. If the player switched numbers, use Change WhatsApp
-          number instead.
+          Fix a wrong number entered at signup. Saves immediately. Switched
+          numbers? Use Change WhatsApp number.
         </p>
       </div>
       <div className="om-fix-grid">

@@ -156,7 +156,7 @@ export default function OmOverview({
             key: "contacts",
             label: "Open WhatsApp changes",
             hint: queues.contacts?.forMe
-              ? `${queues.contacts.forMe} waiting for you as second admin`
+              ? `${queues.contacts.forMe} waiting for your approval`
               : "Number changes in progress",
             count: queues.contacts?.open ?? 0,
             go: () => goPlayers("contacts"),
@@ -230,7 +230,7 @@ export default function OmOverview({
               value={queues.contacts ? queues.contacts.open : "—"}
               hint={
                 queues.contacts?.forMe
-                  ? `${queues.contacts.forMe} waiting for you as second admin`
+                  ? `${queues.contacts.forMe} waiting for your approval`
                   : "Open number changes"
               }
               tone={queues.contacts?.forMe ? "warn" : undefined}

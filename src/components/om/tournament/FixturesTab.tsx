@@ -462,7 +462,7 @@ function FinishLeague({
       <h3 className="text-xl font-bold">Confirm final positions</h3>
       <p className="text-slate-400 text-sm">
         Proposed from the final league table. Nothing is published until you
-        confirm. The confirmation is recorded in the activity log.
+        confirm, and confirming is logged.
       </p>
       {tie && (
         <p className="notice text-amber-200">

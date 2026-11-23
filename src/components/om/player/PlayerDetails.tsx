@@ -320,7 +320,7 @@ export default function PlayerDetails({
                 ))}
               </ul>
               <p className="om-hint mt-3">
-                Entries with no team can also be attested from Players →
+                You can also fill in missing team names under Players →
                 Team-name review.
               </p>
             </section>
@@ -464,7 +464,7 @@ function EditField({
   );
 }
 
-/** Set or correct one tournament's team, with a written evidence note. */
+/** Add a missing tournament team or correct one, with where it was confirmed. */
 export function CorrectTeam({
   entry,
   onSave,
@@ -482,7 +482,7 @@ export function CorrectTeam({
   if (!open)
     return (
       <button className="om-link" onClick={() => setOpen(true)}>
-        {entry.team_name ? "Correct" : "Set with evidence"}
+        {entry.team_name ? "Correct" : "Add missing team"}
       </button>
     );
   return (
@@ -514,13 +514,13 @@ export function CorrectTeam({
           required
           minLength={5}
           maxLength={300}
-          placeholder="Evidence"
+          placeholder="Proof (where you confirmed it)"
           className="control-input !mt-0"
-          aria-label="Evidence"
+          aria-label="Proof (where you confirmed it)"
           aria-describedby={evidenceHelp}
         />
         <p id={evidenceHelp} className="om-hint">
-          For example: WhatsApp registration message, 29 Oct.
+          e.g. WhatsApp signup message, 29 Oct
         </p>
       </div>
       <input
