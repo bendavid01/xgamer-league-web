@@ -951,6 +951,9 @@ test(
       tournamentTeams: false,
       efootball: true,
       whatsapp: false,
+      // Main-admin corrections (admin-player-fixes.ts): never for a coordinator.
+      correctWhatsApp: false,
+      clearRejected: false,
     });
     const full = await edits.playerDetails(H, P.bolt.player, as(admin));
     assert.equal(full.canEdit.whatsapp, false);
