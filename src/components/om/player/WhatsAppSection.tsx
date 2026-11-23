@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { ArrowLeftRight, PhoneCall } from "lucide-react";
 import { disclose, useEditSender } from "../client";
+import { CorrectWhatsApp } from "./AdminFixes";
 import { EVIDENCE_LABEL, METHOD_LABEL } from "../labels";
 import type { ContactInfo, EditResult } from "../types";
 import { Feedback } from "../ui";
@@ -54,6 +56,7 @@ export default function WhatsAppSection({
   contact,
   admin,
   removed,
+  canCorrect,
   reload,
 }: {
   tournament: string;
@@ -61,9 +64,15 @@ export default function WhatsAppSection({
   contact: ContactInfo;
   admin: boolean;
   removed: boolean;
+  /** Main admins: "Correct WhatsApp" for a number that was wrong from the start. */
+  canCorrect: boolean;
   reload: () => Promise<void>;
 }) {
   const [shown, setShown] = useState<string | null>(null);
+  // The one admin form open under the action row (none by default).
+  const [panel, setPanel] = useState<"correct" | "change" | null>(null);
+  const correctButton = useRef<HTMLButtonElement>(null);
+  const changeButton = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -105,46 +114,69 @@ export default function WhatsAppSection({
     return r;
   };
 
+  const canChange = contact.canEdit && !open && !removed;
+  const toggle = (which: "correct" | "change") => {
+    setError("");
+    setNotice("");
+    setPanel((p) => (p === which ? null : which));
+  };
+  // Closing a form puts focus back on the button that opened it.
+  const closePanel = () => {
+    const button = panel === "correct" ? correctButton : changeButton;
+    setPanel(null);
+    requestAnimationFrame(() => button.current?.focus());
+  };
+
   return (
-    <div className="space-y-3" aria-busy={busy}>
-      <p className="font-semibold">WhatsApp number</p>
-      <p>
-        <span className="font-mono">{shown ?? contact.masked}</span>{" "}
-        <ContactButton
-          tournament={tournament}
-          playerId={playerId}
-          purpose="tournament_coordination"
-        />
-        {admin && !shown && (
-          <button
-            type="button"
-            className="om-link ml-3"
-            onClick={async () => {
-              const r = await disclose(tournament, playerId, "admin_review");
-              if ("error" in r) return setError(r.error);
-              setShown(r.phone);
-              timer.current = setTimeout(() => setShown(null), 30_000);
-            }}
-          >
-            Show for 30 s
-          </button>
-        )}
-      </p>
-      <p className="text-xs text-slate-400">
-        {contact.attestedAt
-          ? `Organizer-attested on ${new Date(contact.attestedAt).toLocaleString("en-IN")} (${METHOD_LABEL[contact.method ?? ""] ?? contact.method}). This is a manual organizer record, not automated proof of ownership.`
-          : "Legacy number: never organizer-attested. A change needs independent evidence and a second admin."}{" "}
-        Every view of a full number is recorded in the activity log.
-      </p>
+    <section
+      className="om-card om-dcard"
+      aria-labelledby="drawer-contact"
+      aria-busy={busy}
+    >
+      <h3 id="drawer-contact" className="om-dcard-title">
+        Contact
+      </h3>
+      <div className="om-contact">
+        <span className="om-prow-label">WhatsApp number</span>
+        <p className="om-phone font-mono">{shown ?? contact.masked}</p>
+        <div className="om-contact-links">
+          {admin && !shown && (
+            <button
+              type="button"
+              className="om-link"
+              onClick={async () => {
+                const r = await disclose(tournament, playerId, "admin_review");
+                if ("error" in r) return setError(r.error);
+                setShown(r.phone);
+                timer.current = setTimeout(() => setShown(null), 30_000);
+              }}
+            >
+              Show for 30s
+            </button>
+          )}
+          <ContactButton
+            tournament={tournament}
+            playerId={playerId}
+            purpose="tournament_coordination"
+          />
+        </div>
+        <p className="om-hint">
+          {shown
+            ? "Visible for 30 seconds. This view is recorded in the activity log."
+            : contact.attestedAt
+              ? `Organizer-attested ${new Date(contact.attestedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · ${METHOD_LABEL[contact.method ?? ""] ?? contact.method}`
+              : "Legacy number · never organizer-attested"}
+        </p>
+      </div>
       <Feedback error={error} notice={notice} />
       {admin && !contact.editingOn && (
-        <p className="text-sm text-slate-400">
+        <p className="om-hint">
           Changing WhatsApp numbers is switched off until it&apos;s separately
           approved.
         </p>
       )}
       {started && (
-        <div className="om-card space-y-2">
+        <div className="om-subpanel space-y-2">
           <p>
             Code for the new number:{" "}
             <strong className="font-mono">{started.code}</strong>
@@ -178,7 +210,7 @@ export default function WhatsAppSection({
         </div>
       )}
       {open && (
-        <div className="om-card space-y-3">
+        <div className="om-subpanel space-y-3">
           <p>
             <strong>Open change</strong> ·{" "}
             {open.route === "established_channel"
@@ -230,7 +262,7 @@ export default function WhatsAppSection({
                   aria-label="Code returned by the player"
                 />
                 {open.evidenceType === "efootball_possession" && (
-                  <div className="grid gap-2 md:grid-cols-2">
+                  <div className="grid gap-2">
                     <input
                       name="efootballId"
                       required
@@ -297,146 +329,218 @@ export default function WhatsAppSection({
           )}
         </div>
       )}
-      {contact.canEdit && !open && !removed && (
-        <details className="om-card">
-          <summary className="cursor-pointer">Change WhatsApp number</summary>
-          <form
-            className="space-y-3 mt-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget);
-              const independent = route === "independent_evidence";
-              const seen = String(f.get("observedAt") ?? "");
-              void post(
-                "start",
-                {
-                  action: "contact.change_start",
-                  playerId,
-                  expectedContactVersion: contact.version,
-                  newPhone: String(f.get("newPhone") ?? ""),
-                  route,
-                  ...(independent
-                    ? {
-                        evidenceType: evidence,
-                        evidenceNote: String(f.get("evidenceNote") ?? ""),
-                        ...(evidence !== "efootball_possession" && seen
-                          ? { evidenceObservedAt: new Date(seen).toISOString() }
-                          : {}),
-                      }
-                    : {}),
-                  reason: String(f.get("reason") ?? ""),
-                  confirm: f.get("confirm") === "on",
-                },
-                "Change started. Send the code to the new number.",
-              ).then((r) => {
-                if (r.ok && r.data)
-                  setStarted({
-                    code: String(r.data.code),
-                    challenge: (r.data.challenge as string | null) ?? null,
-                    sendUrl: String(r.data.sendUrl),
-                    newNumber: String(r.data.newNumber),
-                  });
-              });
-            }}
-          >
-            <fieldset className="space-y-1">
-              <legend className="text-sm font-semibold">
-                How is the player identified?
-              </legend>
-              <label className="flex gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="route"
-                  checked={route === "established_channel"}
-                  disabled={!contact.route1Available}
-                  onChange={() => setRoute("established_channel")}
-                />
-                Established channel (one admin): the code comes back from the
-                current, organizer-attested number
-                {!contact.route1Available && " (not available: legacy number)"}
-              </label>
-              <label className="flex gap-2 text-sm">
-                <input
-                  type="radio"
-                  name="route"
-                  checked={route === "independent_evidence"}
-                  onChange={() => setRoute("independent_evidence")}
-                />
-                Independent evidence (needs a second main admin)
-              </label>
-            </fieldset>
+      {(canCorrect || canChange) && (
+        <div className="om-action-row">
+          {canCorrect && (
+            <button
+              ref={correctButton}
+              type="button"
+              className="button-secondary om-small om-toggle"
+              aria-expanded={panel === "correct"}
+              aria-controls="drawer-correct-whatsapp"
+              onClick={() => toggle("correct")}
+            >
+              <PhoneCall size={15} aria-hidden="true" /> Correct WhatsApp
+            </button>
+          )}
+          {canChange && (
+            <button
+              ref={changeButton}
+              type="button"
+              className="button-secondary om-small om-toggle"
+              aria-expanded={panel === "change"}
+              aria-controls="drawer-change-whatsapp"
+              onClick={() => toggle("change")}
+            >
+              <ArrowLeftRight size={15} aria-hidden="true" /> Change WhatsApp
+              number
+            </button>
+          )}
+        </div>
+      )}
+      {canCorrect && panel === "correct" && (
+        <CorrectWhatsApp
+          id="drawer-correct-whatsapp"
+          playerId={playerId}
+          cancel={closePanel}
+          saved={async (message) => {
+            setPanel(null);
+            setError("");
+            setNotice(message);
+            await reload();
+          }}
+        />
+      )}
+      {canChange && panel === "change" && (
+        <form
+          id="drawer-change-whatsapp"
+          className="om-subpanel space-y-3"
+          aria-label="Change WhatsApp number"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") closePanel();
+          }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const independent = route === "independent_evidence";
+            const seen = String(f.get("observedAt") ?? "");
+            void post(
+              "start",
+              {
+                action: "contact.change_start",
+                playerId,
+                expectedContactVersion: contact.version,
+                newPhone: String(f.get("newPhone") ?? ""),
+                route,
+                ...(independent
+                  ? {
+                      evidenceType: evidence,
+                      evidenceNote: String(f.get("evidenceNote") ?? ""),
+                      ...(evidence !== "efootball_possession" && seen
+                        ? { evidenceObservedAt: new Date(seen).toISOString() }
+                        : {}),
+                    }
+                  : {}),
+                reason: String(f.get("reason") ?? ""),
+                confirm: f.get("confirm") === "on",
+              },
+              "Change started. Send the code to the new number.",
+            ).then((r) => {
+              if (r.ok) setPanel(null);
+              if (r.ok && r.data)
+                setStarted({
+                  code: String(r.data.code),
+                  challenge: (r.data.challenge as string | null) ?? null,
+                  sendUrl: String(r.data.sendUrl),
+                  newNumber: String(r.data.newNumber),
+                });
+            });
+          }}
+        >
+          <div>
+            <p className="font-semibold">Change WhatsApp number</p>
+            <p className="om-hint">
+              {contact.route1Available
+                ? "The current number is organizer-attested: a manual organizer record, not automated proof of ownership."
+                : "Legacy number: a change needs independent evidence and a second main admin."}
+            </p>
+          </div>
+          <fieldset className="space-y-1">
+            <legend className="text-sm font-semibold">
+              How is the player identified?
+            </legend>
+            <label className="flex gap-2 text-sm">
+              <input
+                type="radio"
+                name="route"
+                checked={route === "established_channel"}
+                disabled={!contact.route1Available}
+                onChange={() => setRoute("established_channel")}
+              />
+              Established channel (one admin): the code comes back from the
+              current, organizer-attested number
+              {!contact.route1Available && " (not available: legacy number)"}
+            </label>
+            <label className="flex gap-2 text-sm">
+              <input
+                type="radio"
+                name="route"
+                checked={route === "independent_evidence"}
+                onChange={() => setRoute("independent_evidence")}
+              />
+              Independent evidence (needs a second main admin)
+            </label>
+          </fieldset>
+          <div className="space-y-1">
             <input
               name="newPhone"
               required
               maxLength={32}
-              placeholder="New WhatsApp number (+44 7911 123456, or 10 digits for India)"
+              placeholder="New WhatsApp number"
               className="control-input !mt-0"
               aria-label="New WhatsApp number"
+              aria-describedby="change-phone-help"
             />
-            {route === "independent_evidence" && (
-              <div className="space-y-2">
-                <select
-                  className="control-input !mt-0"
-                  value={evidence}
-                  onChange={(e) => setEvidence(e.target.value)}
-                  aria-label="Evidence type"
-                >
-                  {Object.entries(EVIDENCE_LABEL).map(([key, text]) => (
-                    <option
-                      key={key}
-                      value={key}
-                      disabled={
-                        key === "efootball_possession" &&
-                        !contact.hasEfootballId
-                      }
-                    >
-                      {text}
-                      {key === "efootball_possession" && !contact.hasEfootballId
-                        ? " (no eFootball ID on record)"
-                        : ""}
-                    </option>
-                  ))}
-                </select>
-                {evidence !== "efootball_possession" && (
-                  <input
-                    type="datetime-local"
-                    name="observedAt"
-                    required
-                    className="control-input !mt-0"
-                    aria-label="When you saw the player"
-                  />
-                )}
-                <textarea
-                  name="evidenceNote"
+            <p id="change-phone-help" className="om-hint">
+              For example +44 7911 123456, or 10 digits for India.
+            </p>
+          </div>
+          {route === "independent_evidence" && (
+            <div className="space-y-2">
+              <select
+                className="control-input !mt-0"
+                value={evidence}
+                onChange={(e) => setEvidence(e.target.value)}
+                aria-label="Evidence type"
+              >
+                {Object.entries(EVIDENCE_LABEL).map(([key, text]) => (
+                  <option
+                    key={key}
+                    value={key}
+                    disabled={
+                      key === "efootball_possession" && !contact.hasEfootballId
+                    }
+                  >
+                    {text}
+                    {key === "efootball_possession" && !contact.hasEfootballId
+                      ? " (no eFootball ID on record)"
+                      : ""}
+                  </option>
+                ))}
+              </select>
+              {evidence !== "efootball_possession" && (
+                <input
+                  type="datetime-local"
+                  name="observedAt"
                   required
-                  minLength={20}
-                  maxLength={500}
-                  placeholder="What you checked, when and who did it. No phone numbers."
                   className="control-input !mt-0"
-                  aria-label="Evidence note"
+                  aria-label="When you saw the player"
                 />
-              </div>
-            )}
-            <input
-              name="reason"
-              required
-              minLength={5}
-              maxLength={300}
-              placeholder="Reason (required, no phone numbers)"
-              className="control-input !mt-0"
-              aria-label="Reason"
-            />
-            <label className="flex gap-2 text-sm">
-              <input type="checkbox" name="confirm" required />
-              {route === "established_channel"
-                ? "I'll send a code to the new number and ask the player to return it from their current attested number."
-                : "I identified the player as described, and I'll send a code to the new number for them to return from it."}
-            </label>
-            <button className="button-primary">Start change</button>
-          </form>
-        </details>
+              )}
+              <textarea
+                name="evidenceNote"
+                required
+                minLength={20}
+                maxLength={500}
+                rows={3}
+                placeholder="What you checked, when and who did it. No phone numbers."
+                className="control-input !mt-0"
+                aria-label="Evidence note"
+              />
+            </div>
+          )}
+          <input
+            name="reason"
+            required
+            minLength={5}
+            maxLength={300}
+            placeholder="Reason (required)"
+            className="control-input !mt-0"
+            aria-label="Reason"
+            aria-describedby="change-reason-help"
+          />
+          <p id="change-reason-help" className="om-hint !mt-1">
+            No phone numbers in the reason.
+          </p>
+          <label className="flex gap-2 text-sm">
+            <input type="checkbox" name="confirm" required />
+            {route === "established_channel"
+              ? "I'll send a code to the new number and ask the player to return it from their current attested number."
+              : "I identified the player as described, and I'll send a code to the new number for them to return from it."}
+          </label>
+          <div className="om-form-actions">
+            <button className="button-primary om-small">Start change</button>
+            <button
+              type="button"
+              className="button-secondary om-small"
+              onClick={closePanel}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
-    </div>
+    </section>
   );
 }
 

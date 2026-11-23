@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { PhoneCall, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Feedback } from "../ui";
 
 /** Sends one main-admin correction; the server answers with { error } on failure. */
@@ -8,7 +8,9 @@ async function call(
   url: string,
   method: "POST" | "DELETE",
   value: Record<string, unknown>,
-): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; data: Record<string, unknown> } | { ok: false; error: string }
+> {
   try {
     const r = await fetch(url, {
       method,
@@ -33,22 +35,25 @@ const reasonProblem = (reason: string) =>
 
 /**
  * Correct WhatsApp (main admins): for a number that was wrong from the start.
- * Collapsed by default so it never competes with the verified change above.
+ * Only the form: the Contact card's action row opens it (WhatsAppSection.tsx),
+ * so it never competes with the verified change.
  */
 export function CorrectWhatsApp({
+  id,
   playerId,
   saved,
+  cancel,
 }: {
+  id?: string;
   playerId: string;
-  /** Reloads the drawer and the Players list. */
-  saved: () => Promise<void>;
+  /** Closes the form, shows the result and reloads the drawer and Players list. */
+  saved: (notice: string) => Promise<void>;
+  cancel: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [touched, setTouched] = useState(false);
 
   const phoneProblem = !phone.trim()
@@ -60,29 +65,15 @@ export function CorrectWhatsApp({
         : "";
   const problem = phoneProblem || reasonProblem(reason);
 
-  if (!open)
-    return (
-      <div className="om-fix">
-        <button
-          type="button"
-          className="button-secondary om-small"
-          aria-expanded="false"
-          onClick={() => {
-            setOpen(true);
-            setNotice("");
-          }}
-        >
-          <PhoneCall size={15} aria-hidden="true" /> Correct WhatsApp
-        </button>
-        {notice && <Feedback error="" notice={notice} />}
-      </div>
-    );
-
   return (
     <form
-      className="om-fix om-card space-y-3"
+      id={id}
+      className="om-fix om-subpanel space-y-3"
       aria-label="Correct WhatsApp number"
       noValidate
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !busy) cancel();
+      }}
       onSubmit={async (e) => {
         e.preventDefault();
         setTouched(true);
@@ -96,24 +87,19 @@ export function CorrectWhatsApp({
         );
         setBusy(false);
         if (!r.ok) return setError(r.error);
-        setPhone("");
-        setReason("");
-        setTouched(false);
-        setOpen(false);
         const cancelled = Number(r.data.cancelledChanges ?? 0);
-        setNotice(
+        await saved(
           `WhatsApp number corrected to ${String(r.data.masked ?? "the new number")}.${cancelled ? " The open number change was cancelled." : ""}`,
         );
-        await saved();
       }}
     >
       <div>
         <p className="font-semibold">Correct WhatsApp number</p>
-        <p className="text-xs text-slate-400">
+        <p className="om-hint">
           Only for a number that was wrong from the start. It replaces the
           number now, marks it as not organizer-attested and cancels any open
-          number change. If the player switched numbers, use the verified change
-          instead.
+          number change. If the player switched numbers, use Change WhatsApp
+          number instead.
         </p>
       </div>
       <div className="om-fix-grid">
@@ -170,11 +156,7 @@ export function CorrectWhatsApp({
           type="button"
           className="button-secondary om-small"
           disabled={busy}
-          onClick={() => {
-            setOpen(false);
-            setError("");
-            setTouched(false);
-          }}
+          onClick={cancel}
         >
           Cancel
         </button>
@@ -217,7 +199,11 @@ export function ClearRejected({
 
   const problem = reasonProblem(reason);
   return (
-    <div className="om-fix space-y-2" role="group" aria-label={`Remove rejected entry in ${label}`}>
+    <div
+      className="om-fix space-y-2"
+      role="group"
+      aria-label={`Remove rejected entry in ${label}`}
+    >
       {step === "reason" ? (
         <form
           className="space-y-2"

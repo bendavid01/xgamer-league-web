@@ -1,8 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { profileHref } from "@/components/PlayerName";
 import AccountAccess from "./AccountAccess";
-import { ClearRejected, CorrectWhatsApp } from "./AdminFixes";
+import { ClearRejected } from "./AdminFixes";
 import Link from "next/link";
 import { useEditSender } from "../client";
 import { SOURCE_TAG } from "../labels";
@@ -34,6 +34,8 @@ export default function PlayerDetails({
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [gone, setGone] = useState(false);
+  // The one profile field being edited (read-first: none by default).
+  const [editing, setEditing] = useState<ProfileField | null>(null);
   const send = useEditSender();
   const load = useCallback(async () => {
     try {
@@ -101,32 +103,31 @@ export default function PlayerDetails({
 
   return (
     <section
-      className="space-y-5"
+      className="om-drawer-stack"
       aria-label="Edit player details"
       aria-busy={busy}
     >
-      {d && (
-        <p className="flex flex-wrap items-center gap-2">
-          <XgId code={d.player.code} />
-          <span className="text-slate-400">
-            Permanent XG ID · never changes
-          </span>
-          {!d.player.removed && profileHref(d.player.code) && (
-            <Link
-              href={`/players/${d.player.code}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="om-link ml-auto"
-            >
-              View public profile ↗
-            </Link>
-          )}
-        </p>
-      )}
-      <p className="text-sm text-slate-400">
-        The XG ID, results, fixtures and standings never change here. Every save
-        needs a reason and is recorded in the activity log.
-      </p>
+      <div className="om-drawer-intro">
+        {d && (
+          <p className="flex flex-wrap items-center gap-2">
+            <XgId code={d.player.code} />
+            <span className="text-slate-400">
+              Permanent XG ID · never changes
+            </span>
+            {!d.player.removed && profileHref(d.player.code) && (
+              <Link
+                href={`/players/${d.player.code}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="om-link ml-auto"
+              >
+                View public profile ↗
+              </Link>
+            )}
+          </p>
+        )}
+        <p className="om-hint">Every save requires a reason and is logged.</p>
+      </div>
       <Feedback error={error} notice={notice} />
       {!d && !error && <p className="text-slate-400">Loading…</p>}
       {d?.account && !d.player.removed && !gone && (
@@ -138,81 +139,100 @@ export default function PlayerDetails({
         />
       )}
       {d && (
-        <fieldset disabled={busy || gone} className="space-y-5">
+        <fieldset disabled={busy || gone} className="om-drawer-stack min-w-0">
           {d.player.removed && (
             <p className="notice">
               This player record was removed, so it can&apos;t be edited.
             </p>
           )}
-          <EditField
-            key={JSON.stringify(["name", d.player.gaming_name])}
-            label="Gaming name"
-            name="name"
-            current={d.player.gaming_name}
-            editable={d.canEdit.name}
-            note="Changes the name shown everywhere. Results stay with the same player."
-            onSave={(value, reason) =>
-              submit(
-                "name",
-                {
-                  action: "player.edit_name",
-                  tournament,
-                  playerId,
-                  expected: d.player.gaming_name,
-                  name: value,
-                  reason,
-                },
-                "Gaming name saved.",
-              )
-            }
-          />
-          <EditField
-            key={JSON.stringify(["team", d.player.team_name])}
-            label="Current team"
-            name="team"
-            current={d.player.team_name}
-            editable={d.canEdit.team}
-            note="The player's team from now on. It never changes a tournament's team."
-            onSave={(value, reason) =>
-              submit(
-                "team",
-                {
-                  action: "player.edit_team",
-                  tournament,
-                  playerId,
-                  expected: d.player.team_name,
-                  team: value,
-                  reason,
-                },
-                "Current team saved.",
-              )
-            }
-          />
-          {d.player.efootballVersion && (
-            <EditField
-              key={d.player.efootballVersion}
-              label="eFootball ID"
-              name="efootball"
-              current={d.player.efootballId ?? null}
-              editable={d.canEdit.efootball}
-              mono
-              note="Must be unique. Stored encrypted; the log never shows it."
-              onSave={(value, reason) =>
-                submit(
-                  `efootball:${d.player.efootballVersion}`,
-                  {
-                    action: "player.edit_efootball",
-                    tournament,
-                    playerId,
-                    expectedVersion: d.player.efootballVersion,
-                    efootballId: value,
-                    reason,
-                  },
-                  "eFootball ID saved.",
-                )
-              }
-            />
-          )}
+          <section
+            className="om-card om-dcard"
+            aria-labelledby="drawer-profile"
+          >
+            <h3 id="drawer-profile" className="om-dcard-title">
+              Profile
+            </h3>
+            <ul className="om-prows">
+              <EditField
+                key={JSON.stringify(["name", d.player.gaming_name])}
+                label="Gaming name"
+                name="name"
+                placeholder="New gaming name"
+                current={d.player.gaming_name}
+                editable={d.canEdit.name}
+                open={editing === "name"}
+                setOpen={(o) => setEditing(o ? "name" : null)}
+                note="Changes the name shown everywhere. Results stay with the same player."
+                onSave={(value, reason) =>
+                  submit(
+                    "name",
+                    {
+                      action: "player.edit_name",
+                      tournament,
+                      playerId,
+                      expected: d.player.gaming_name,
+                      name: value,
+                      reason,
+                    },
+                    "Gaming name saved.",
+                  )
+                }
+              />
+              <EditField
+                key={JSON.stringify(["team", d.player.team_name])}
+                label="Current team"
+                name="team"
+                placeholder="New current team"
+                current={d.player.team_name}
+                editable={d.canEdit.team}
+                open={editing === "team"}
+                setOpen={(o) => setEditing(o ? "team" : null)}
+                note="The player's team from now on. It never changes a tournament's team."
+                onSave={(value, reason) =>
+                  submit(
+                    "team",
+                    {
+                      action: "player.edit_team",
+                      tournament,
+                      playerId,
+                      expected: d.player.team_name,
+                      team: value,
+                      reason,
+                    },
+                    "Current team saved.",
+                  )
+                }
+              />
+              {d.player.efootballVersion && (
+                <EditField
+                  key={d.player.efootballVersion}
+                  label="eFootball ID"
+                  name="efootball"
+                  placeholder="New eFootball ID"
+                  current={d.player.efootballId ?? null}
+                  editable={d.canEdit.efootball}
+                  open={editing === "efootball"}
+                  setOpen={(o) => setEditing(o ? "efootball" : null)}
+                  mono
+                  note="Must be unique. Stored encrypted; the log never shows it."
+                  onSave={(value, reason) =>
+                    submit(
+                      `efootball:${d.player.efootballVersion}`,
+                      {
+                        action: "player.edit_efootball",
+                        tournament,
+                        playerId,
+                        expectedVersion: d.player.efootballVersion,
+                        efootballId: value,
+                        reason,
+                      },
+                      "eFootball ID saved.",
+                    )
+                  }
+                />
+              )}
+            </ul>
+          </section>
           {d.contact && (
             <WhatsAppSection
               tournament={tournament}
@@ -220,24 +240,18 @@ export default function PlayerDetails({
               contact={d.contact}
               admin={d.role === "admin"}
               removed={d.player.removed}
+              canCorrect={!!d.canEdit.correctWhatsApp && !gone}
               reload={async () => {
                 await load();
                 await changed();
               }}
             />
           )}
-          {d.canEdit.correctWhatsApp && !gone && (
-            <CorrectWhatsApp
-              playerId={playerId}
-              saved={async () => {
-                await load();
-                await changed();
-              }}
-            />
-          )}
           {d.canEdit.tournamentTeams && (
-            <div>
-              <h3 className="font-semibold mb-2">Tournament entries</h3>
+            <section aria-labelledby="drawer-entries">
+              <h3 id="drawer-entries" className="om-dcard-title">
+                Tournament entries
+              </h3>
               <ul className="om-entry-list">
                 {d.entries.map((e) => (
                   <li key={e.id} className="om-entry">
@@ -305,18 +319,18 @@ export default function PlayerDetails({
                   </li>
                 ))}
               </ul>
-              <p className="text-xs text-slate-500 mt-2">
+              <p className="om-hint mt-3">
                 Entries with no team can also be attested from Players →
                 Team-name review.
               </p>
-            </div>
+            </section>
           )}
           {d.history.length > 0 && (
-            <details>
-              <summary className="cursor-pointer text-sm">
+            <details className="om-card om-dcard om-history">
+              <summary className="cursor-pointer">
                 Changes to this player ({d.history.length})
               </summary>
-              <ul className="mt-2 text-sm text-slate-400 space-y-1">
+              <ul className="mt-3 text-sm text-slate-400 space-y-1">
                 {d.history.map((h) => (
                   <li key={h.id}>
                     {new Date(h.created_at).toLocaleString("en-IN")} ·{" "}
@@ -332,50 +346,97 @@ export default function PlayerDetails({
   );
 }
 
+type ProfileField = "name" | "team" | "efootball";
+
+/**
+ * One Profile row, read-first: label, value and a compact Edit button. Edit
+ * opens this row's form (new value and reason stacked, so placeholders never
+ * clip); the field's hint shows only while the form is open.
+ */
 function EditField({
   label,
   name,
+  placeholder,
   current,
   editable,
+  open,
+  setOpen,
   note,
   mono,
   onSave,
 }: {
   label: string;
-  name: string;
+  name: ProfileField;
+  placeholder: string;
   current: string | null;
   editable: boolean;
+  open: boolean;
+  setOpen: (open: boolean) => void;
   note: string;
   mono?: boolean;
   onSave: (value: string, reason: string) => Promise<boolean>;
 }) {
+  const editButton = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(open);
+  // Closing the form puts focus back on this row's Edit button.
+  useEffect(() => {
+    if (wasOpen.current && !open) editButton.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+  const formId = `profile-edit-${name}`;
+  const lower = label.toLowerCase();
   return (
-    <form
-      className="space-y-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const form = e.currentTarget;
-        const f = new FormData(form);
-        void onSave(
-          String(f.get("value") ?? ""),
-          String(f.get("reason") ?? ""),
-        ).then((ok) => {
-          if (ok) form.reset();
-        });
-      }}
-    >
-      <p className="font-semibold">{label}</p>
-      <p className={mono ? "font-mono" : ""}>{current ?? "—"}</p>
-      {editable && (
-        <div className="grid gap-2 md:grid-cols-[1fr_1.4fr_auto]">
+    <li className="om-prow">
+      <div className="om-prow-head">
+        <div className="om-prow-main">
+          <span className="om-prow-label">{label}</span>
+          <span className={`om-prow-value ${mono ? "font-mono" : ""}`}>
+            {current ?? "—"}
+          </span>
+        </div>
+        {editable && !open && (
+          <button
+            ref={editButton}
+            type="button"
+            className="button-secondary om-small om-edit-btn"
+            aria-expanded="false"
+            aria-controls={formId}
+            aria-label={`Edit ${lower}`}
+            onClick={() => setOpen(true)}
+          >
+            Edit
+          </button>
+        )}
+      </div>
+      {editable && open && (
+        <form
+          id={formId}
+          className="om-prow-form"
+          aria-label={`Edit ${lower}`}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setOpen(false);
+          }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const f = new FormData(form);
+            void onSave(
+              String(f.get("value") ?? ""),
+              String(f.get("reason") ?? ""),
+            ).then((ok) => {
+              if (ok) setOpen(false);
+            });
+          }}
+        >
           <input
             name="value"
             required
+            autoFocus
             minLength={name === "efootball" ? 6 : 2}
             maxLength={name === "efootball" ? 32 : 40}
-            placeholder={`New ${label.toLowerCase()}`}
+            placeholder={placeholder}
             className={`control-input !mt-0 ${mono ? "font-mono uppercase" : ""}`}
-            aria-label={`New ${label.toLowerCase()}`}
+            aria-label={`New ${lower}`}
           />
           <input
             name="reason"
@@ -384,13 +445,22 @@ function EditField({
             maxLength={300}
             placeholder="Reason (required)"
             className="control-input !mt-0"
-            aria-label={`Reason for changing the ${label.toLowerCase()}`}
+            aria-label={`Reason for changing the ${lower}`}
           />
-          <button className="button-secondary">Save</button>
-        </div>
+          <p className="om-hint">{note}</p>
+          <div className="om-form-actions">
+            <button className="button-primary om-small">Save</button>
+            <button
+              type="button"
+              className="button-secondary om-small"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
-      <p className="text-xs text-slate-500">{note}</p>
-    </form>
+    </li>
   );
 }
 
@@ -408,6 +478,7 @@ export function CorrectTeam({
   }) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
+  const evidenceHelp = useId();
   if (!open)
     return (
       <button className="om-link" onClick={() => setOpen(true)}>
@@ -437,15 +508,21 @@ export function CorrectTeam({
         className="control-input !mt-0"
         aria-label={`Team in ${entry.label}`}
       />
-      <input
-        name="evidence"
-        required
-        minLength={5}
-        maxLength={300}
-        placeholder="Evidence (e.g. WhatsApp registration message, 29 Oct)"
-        className="control-input !mt-0"
-        aria-label="Evidence"
-      />
+      <div className="space-y-1">
+        <input
+          name="evidence"
+          required
+          minLength={5}
+          maxLength={300}
+          placeholder="Evidence"
+          className="control-input !mt-0"
+          aria-label="Evidence"
+          aria-describedby={evidenceHelp}
+        />
+        <p id={evidenceHelp} className="om-hint">
+          For example: WhatsApp registration message, 29 Oct.
+        </p>
+      </div>
       <input
         name="reason"
         required

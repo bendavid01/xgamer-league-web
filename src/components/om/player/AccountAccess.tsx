@@ -80,12 +80,12 @@ export default function AccountAccess({
   };
 
   return (
-    <section className="om-card space-y-3" aria-labelledby="account-access">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 id="account-access" className="font-bold">
+    <section className="om-card om-dcard" aria-labelledby="account-access">
+      <div className="om-dcard-head">
+        <h3 id="account-access" className="om-dcard-title">
           Account access
-        </h4>
-        <span className="text-sm text-slate-400">
+        </h3>
+        <span className="om-hint">
           {account.claimed
             ? account.lastLoginAt
               ? `Login active · last sign-in ${new Date(account.lastLoginAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}`
@@ -93,10 +93,9 @@ export default function AccountAccess({
             : "Login not activated yet"}
         </span>
       </div>
-      <p className="text-sm text-slate-400">
-        Codes are 6 characters, work once and expire after 24 hours. A new code
-        replaces any earlier one of the same kind. Send it only to the
-        player&apos;s verified WhatsApp number.
+      <p className="om-hint">
+        One-time codes, valid 24 hours. Send only to the player&apos;s verified
+        WhatsApp.
       </p>
       <div className="flex flex-wrap gap-2">
         <button
@@ -141,8 +140,8 @@ export default function AccountAccess({
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Shown once. It isn&apos;t stored and disappears when you close this
-            panel.
+            Shown once, works once and replaces any earlier code of this kind.
+            It isn&apos;t stored and disappears when you close this panel.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
