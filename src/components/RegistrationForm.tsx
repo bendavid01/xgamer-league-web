@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useState } from "react";
 
 type Tier = "registered" | "guest";
@@ -62,7 +61,7 @@ export default function RegistrationForm({
 
   return (
     <form
-      className="panel p-6 md:p-10 space-y-6"
+      className="panel reg-card space-y-6"
       onSubmit={async (event) => {
         event.preventDefault();
         if (!enabled || busy) return;
@@ -136,261 +135,279 @@ export default function RegistrationForm({
           group to hear when it opens.
         </p>
       )}
-      <fieldset disabled={busy} className="space-y-5 disabled:opacity-60">
-        <fieldset>
-          <legend className="mb-2 font-semibold">Register as</legend>
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            <label className="flex items-center gap-2">
+      <fieldset disabled={busy} className="space-y-7 disabled:opacity-60">
+        <fieldset className="reg-switch" data-active={kind}>
+          <legend className="sr-only">Register as</legend>
+          <span className="reg-switch-thumb" aria-hidden="true" />
+          {(
+            [
+              ["new", "New Player"],
+              ["existing", "Existing Player"],
+            ] as const
+          ).map(([value, label]) => (
+            <label key={value} className="reg-switch-option">
               <input
                 type="radio"
                 name="registrationKind"
-                value="new"
-                checked={kind === "new"}
+                value={value}
+                checked={kind === value}
+                className="sr-only"
                 onChange={() => {
-                  setKind("new");
+                  setKind(value);
                   setResult(null);
                 }}
               />
-              New Player
+              {label}
             </label>
-            <label className="flex items-center gap-2">
+          ))}
+        </fieldset>
+
+        <section className="reg-section" aria-labelledby="reg-account">
+          <h2 id="reg-account" className="reg-section-title">
+            <span aria-hidden="true">1.</span> Player Account
+          </h2>
+          {kind === "new" && (
+            <fieldset className="tier-choice">
+              <legend className="reg-label">How do you want to play?</legend>
+              <div className="tier-grid">
+                <label className="tier-option">
+                  <input
+                    type="radio"
+                    name="tier"
+                    value="registered"
+                    checked={tier === "registered"}
+                    onChange={() => {
+                      setTier("registered");
+                      setResult(null);
+                    }}
+                  />
+                  <span>
+                    <strong>
+                      Registered XG Player{" "}
+                      <span className="tier-tag">Recommended</span>
+                    </strong>
+                    <span className="block text-sm text-slate-400 mt-1">
+                      Once approved: a permanent XG ID, public profile, career
+                      stats and a Player Hub login.
+                    </span>
+                  </span>
+                </label>
+                <label className="tier-option">
+                  <input
+                    type="radio"
+                    name="tier"
+                    value="guest"
+                    checked={tier === "guest"}
+                    onChange={() => {
+                      setTier("guest");
+                      setResult(null);
+                    }}
+                  />
+                  <span>
+                    <strong>Single-Tournament Guest</strong>
+                    <span className="block text-sm text-slate-400 mt-1">
+                      Play this tournament only. No account, no XG ID.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          )}
+          {kind === "new" && tier === "guest" && (
+            <p className="guest-warning" role="note">
+              <strong>Playing as a Guest?</strong> Your name will appear only
+              on this tournament&apos;s fixtures and standings. You will not
+              receive a permanent XG ID, public profile page, career stats, or
+              all-time rankings—stats only track once you hold an approved XG
+              ID.
+            </p>
+          )}
+          {kind === "existing" ? (
+            <label className="block">
+              Permanent XG ID
               <input
-                type="radio"
-                name="registrationKind"
-                value="existing"
-                checked={kind === "existing"}
-                onChange={() => {
-                  setKind("existing");
-                  setResult(null);
-                }}
+                key="xgId"
+                required
+                name="xgId"
+                maxLength={16}
+                className="control-input"
+                autoComplete="off"
+                placeholder="XG-0007"
+                aria-describedby="xgid-hint"
               />
-              Existing Player
+              <span id="xgid-hint" className="reg-hint">
+                The ID on your player profile. An organizer checks it against
+                your WhatsApp number.
+              </span>
+            </label>
+          ) : (
+            <div
+              className={
+                tier === "registered" ? "grid gap-5 sm:grid-cols-2" : undefined
+              }
+            >
+              <label className="block">
+                Gaming name
+                <input
+                  key="playerName"
+                  required
+                  name="playerName"
+                  minLength={2}
+                  maxLength={40}
+                  className="control-input"
+                  autoComplete="nickname"
+                  placeholder="e.g. Arjun Nair"
+                  aria-describedby="name-hint"
+                />
+                <span id="name-hint" className="reg-hint">
+                  Your in-game name, used on fixtures and the tournament roster.
+                </span>
+              </label>
+              {tier === "registered" && (
+                <label className="block">
+                  Display nickname
+                  <input
+                    required
+                    name="displayNickname"
+                    minLength={2}
+                    maxLength={24}
+                    className="control-input"
+                    autoComplete="off"
+                    placeholder="e.g. The Wall"
+                    aria-describedby="nickname-hint"
+                  />
+                  <span id="nickname-hint" className="reg-hint">
+                    Your public profile handle (2–24 characters). Locked once
+                    you&apos;re approved.
+                  </span>
+                </label>
+              )}
+            </div>
+          )}
+          {kind === "new" && tier === "registered" && (
+            <div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <label className="block">
+                  Password
+                  <input
+                    required
+                    name="password"
+                    type="password"
+                    minLength={8}
+                    maxLength={128}
+                    className="control-input"
+                    autoComplete="new-password"
+                    aria-describedby="password-hint"
+                  />
+                </label>
+                <label className="block">
+                  Confirm password
+                  <input
+                    required
+                    name="confirmPassword"
+                    type="password"
+                    minLength={8}
+                    maxLength={128}
+                    className="control-input"
+                    autoComplete="new-password"
+                    aria-describedby="password-hint"
+                  />
+                </label>
+              </div>
+              <p id="password-hint" className="reg-hint">
+                At least 8 characters. Once approved, you sign in to the Player
+                Hub with your XG ID and this password.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section className="reg-section" aria-labelledby="reg-entry">
+          <h2 id="reg-entry" className="reg-section-title">
+            <span aria-hidden="true">2.</span> Tournament Entry
+          </h2>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <label className="block">
+              Team name
+              <input
+                required
+                name="teamName"
+                minLength={2}
+                maxLength={40}
+                className="control-input"
+                autoComplete="off"
+                placeholder="Your eFootball team"
+              />
+            </label>
+            <label className="block">
+              WhatsApp number
+              {kind === "existing" ? (
+                <input
+                  key="existingPhone"
+                  required
+                  name="phone"
+                  type="tel"
+                  autoComplete="tel"
+                  maxLength={32}
+                  className="control-input"
+                  aria-describedby="phone-hint"
+                />
+              ) : (
+                <span className="phone-field">
+                  <span className="phone-prefix" aria-hidden="true">
+                    +91
+                  </span>
+                  <input
+                    required
+                    name="phone"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    minLength={10}
+                    maxLength={10}
+                    pattern="[6-9][0-9]{9}"
+                    title="10-digit Indian mobile number"
+                    className="control-input"
+                    placeholder="9876543210"
+                    aria-describedby="phone-hint"
+                    onInput={(e) => {
+                      // Digits only; a pasted +91 / 0 prefix is dropped.
+                      const el = e.currentTarget;
+                      let d = el.value.replace(/\D/g, "");
+                      if (d.length > 10 && d.startsWith("91")) d = d.slice(2);
+                      if (d.length > 10 && d.startsWith("0")) d = d.slice(1);
+                      el.value = d.slice(0, 10);
+                    }}
+                  />
+                </span>
+              )}
+              <span id="phone-hint" className="reg-hint">
+                {kind === "existing"
+                  ? "A number you control. Include the country code outside India."
+                  : "A 10-digit Indian mobile number you control."}
+              </span>
             </label>
           </div>
-        </fieldset>
-        {kind === "new" && (
-          <fieldset className="tier-choice">
-            <legend className="mb-2 font-semibold">
-              How do you want to play?
-            </legend>
-            <label className="tier-option">
-              <input
-                type="radio"
-                name="tier"
-                value="registered"
-                checked={tier === "registered"}
-                onChange={() => {
-                  setTier("registered");
-                  setResult(null);
-                }}
-              />
-              <span>
-                <strong>
-                  Registered XG Player{" "}
-                  <span className="tier-tag">Recommended</span>
-                </strong>
-                <span className="block text-sm text-slate-400">
-                  Once approved: a permanent XG ID, public profile, career stats
-                  and a player hub login.
-                </span>
-              </span>
-            </label>
-            <label className="tier-option">
-              <input
-                type="radio"
-                name="tier"
-                value="guest"
-                checked={tier === "guest"}
-                onChange={() => {
-                  setTier("guest");
-                  setResult(null);
-                }}
-              />
-              <span>
-                <strong>Single-Tournament Guest</strong>
-                <span className="block text-sm text-slate-400">
-                  Play this tournament only. No account.
-                </span>
-              </span>
-            </label>
-          </fieldset>
-        )}
-        {kind === "new" && tier === "guest" && (
-          <p className="guest-warning" role="note">
-            <strong>Playing as a Guest?</strong> Your name will appear only on
-            this tournament&apos;s fixtures and standings. You will not receive
-            a permanent XG ID, public profile page, career stats, or all-time
-            rankings—stats only track once you hold an approved XG ID.
-          </p>
-        )}
-        {kind === "existing" && (
-          <p className="text-sm text-slate-400">
-            Have a player login?{" "}
-            <Link href="/login" className="insight-link">
-              Sign in at /login
-            </Link>{" "}
-            for 1-click entry.
-          </p>
-        )}
-        {kind === "existing" ? (
-          <label className="block">
-            Permanent XG ID
-            <input
-              key="xgId"
-              required
-              name="xgId"
-              maxLength={16}
-              className="control-input"
-              autoComplete="off"
-              placeholder="XG-0007"
-            />
-          </label>
-        ) : (
-          <label className="block">
-            Gaming name
-            <input
-              key="playerName"
-              required
-              name="playerName"
-              minLength={2}
-              maxLength={40}
-              className="control-input"
-              autoComplete="nickname"
-              placeholder="The name you play as"
-            />
-          </label>
-        )}
-        {kind === "new" && tier === "registered" && (
-          <>
-            <label className="block">
-              Display nickname
-              <input
-                required
-                name="displayNickname"
-                minLength={2}
-                maxLength={24}
-                className="control-input"
-                autoComplete="nickname"
-                aria-describedby="nickname-hint"
-              />
-              <span
-                id="nickname-hint"
-                className="block mt-2 text-sm text-slate-400"
-              >
-                Shown on your profile. It locks once your account is approved.
-              </span>
-            </label>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <label className="block">
-                Password
-                <input
-                  required
-                  name="password"
-                  type="password"
-                  minLength={8}
-                  maxLength={128}
-                  className="control-input"
-                  autoComplete="new-password"
-                />
-              </label>
-              <label className="block">
-                Confirm password
-                <input
-                  required
-                  name="confirmPassword"
-                  type="password"
-                  minLength={8}
-                  maxLength={128}
-                  className="control-input"
-                  autoComplete="new-password"
-                />
-              </label>
-            </div>
-            <p className="text-sm text-slate-400">
-              At least 8 characters. Once you&apos;re approved you sign in with
-              your XG ID and this password. Share your eFootball ID with the
-              organizer after approval, as before.
-            </p>
-          </>
-        )}
-        <label className="block">
-          Team name
-          <input
-            required
-            name="teamName"
-            minLength={2}
-            maxLength={40}
-            className="control-input"
-            autoComplete="off"
-            placeholder="Your eFootball team"
-          />
-        </label>
-        <label className="block">
-          WhatsApp number
-          {kind === "existing" ? (
-            <input
-              key="existingPhone"
-              required
-              name="phone"
-              type="tel"
-              autoComplete="tel"
-              maxLength={32}
-              className="control-input"
-              aria-describedby="phone-hint"
-            />
-          ) : (
-            <span className="phone-field">
-              <span className="phone-prefix" aria-hidden="true">
-                +91
-              </span>
-              <input
-                required
-                name="phone"
-                type="tel"
-                inputMode="numeric"
-                autoComplete="tel-national"
-                minLength={10}
-                maxLength={10}
-                pattern="[6-9][0-9]{9}"
-                title="10-digit Indian mobile number"
-                className="control-input"
-                placeholder="9876543210"
-                aria-describedby="phone-hint"
-                onInput={(e) => {
-                  // Digits only; a pasted +91 / 0 prefix is dropped.
-                  const el = e.currentTarget;
-                  let d = el.value.replace(/\D/g, "");
-                  if (d.length > 10 && d.startsWith("91")) d = d.slice(2);
-                  if (d.length > 10 && d.startsWith("0")) d = d.slice(1);
-                  el.value = d.slice(0, 10);
-                }}
-              />
-            </span>
-          )}
-          <span id="phone-hint" className="block mt-2 text-sm text-slate-400">
-            {kind === "existing"
-              ? "Use a number you control. Include the country code if it’s outside India."
-              : "Use a 10-digit Indian mobile number you control."}
-          </span>
-        </label>
         <div hidden aria-hidden="true">
           <label>
             Website
             <input name="website" tabIndex={-1} autoComplete="off" />
           </label>
         </div>
-        <label className="flex gap-3 text-sm leading-relaxed text-slate-300">
-          <input
-            required
-            name="consent"
-            type="checkbox"
-            className="mt-1 h-4 w-4 shrink-0"
-          />
-          I agree to XGamer storing my details privately to confirm my entry and
-          send match updates. My player and team name may appear on the website.
-        </label>
+          <label className="flex gap-3 text-sm leading-relaxed text-slate-300">
+            <input
+              required
+              name="consent"
+              type="checkbox"
+              className="mt-1 h-4 w-4 shrink-0"
+            />
+            I agree to XGamer storing my details privately to confirm my entry
+            and send match updates. My player and team name may appear on the
+            website.
+          </label>
+        </section>
         <button
-          className="button-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+          className="button-primary reg-submit w-full disabled:opacity-50 disabled:cursor-not-allowed"
           disabled={!enabled}
         >
           {busy

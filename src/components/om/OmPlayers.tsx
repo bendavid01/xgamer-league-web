@@ -85,6 +85,7 @@ export default function OmPlayers({
             tournament={player.tournament}
             playerId={player.id}
             changed={async () => changed()}
+            retarget={(t) => setPlayer(t ? { ...player, tournament: t } : null)}
           />
         )}
       </OmDrawer>
@@ -135,7 +136,49 @@ function Directory({
           players may be missing. Press Refresh to try again.
         </p>
       )}
-      <div className="overflow-x-auto">
+      {/* Phones and small tablets: one tappable card per player. */}
+      <ul className={s.dirCards} aria-label="Players">
+        {shown.map((p) => {
+          const latest = p.entries[0];
+          return (
+            <li key={p.id}>
+              <button
+                type="button"
+                className={s.dirCard}
+                onClick={() =>
+                  open({ id: p.id, tournament: latest.tournament, name: p.name })
+                }
+              >
+                <span className={s.dirCardMain}>
+                  <span className={s.dirCardTop}>
+                    <XgId code={p.code} />
+                    <strong className={s.dirCardName}>{p.name}</strong>
+                  </span>
+                  <span className={s.rowSub}>
+                    {p.currentTeam ?? "No current team"}
+                  </span>
+                  <span className={s.dirCardMeta}>
+                    <span className={`om-status om-${latest.status}`}>
+                      {latest.status}
+                    </span>
+                    <span className={s.dirCardLabel}>{latest.label}</span>
+                    <span className={s.dirCardCount}>
+                      {p.entries.length} tournament
+                      {p.entries.length === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                </span>
+                <ChevronRight
+                  size={18}
+                  aria-hidden="true"
+                  className={s.rowChevron}
+                />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className={`overflow-x-auto ${s.dirTableWrap}`}>
         <table className={`control-table ${s.numTable} ${s.dirTable}`}>
           <thead>
             <tr>

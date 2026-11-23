@@ -295,7 +295,7 @@ function Roster({
                     </button>
                   )}
                 </td>
-                <td>
+                <td data-label="WhatsApp">
                   {a.contact && (
                     <span className="whitespace-nowrap">
                       <span className="font-mono">{a.contact}</span>{" "}
@@ -310,7 +310,7 @@ function Roster({
                 <td>
                   <span className={`om-status om-${a.status}`}>{a.status}</span>
                 </td>
-                <td>
+                <td data-label="eFootball ID">
                   <span className="font-mono">{a.efootballId ?? "—"}</span>
                 </td>
                 {admin && (

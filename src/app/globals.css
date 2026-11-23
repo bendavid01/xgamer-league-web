@@ -3284,3 +3284,217 @@ a:hover .champ-chev, a:focus-visible .champ-chev { transform: translateX(3px); c
 .tier-tag { margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #7ce8f6; background: rgb(56 189 248 / 14%); vertical-align: middle; }
 .guest-warning { padding: 12px 14px; border: 1px solid rgb(252 211 77 / 40%); border-left-width: 4px; border-radius: 10px; color: #fde68a; background: rgb(245 158 11 / 8%); line-height: 1.55; }
 .guest-warning strong { color: #fcd34d; }
+
+/* Navbar account link: "Login" (quiet outline) or "Dashboard" (cyan accent). */
+.nav-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgba(190, 204, 220, 0.28);
+  border-radius: 40px;
+  color: #e6eef7;
+  font-size: 0.875rem;
+  font-weight: 650;
+  white-space: nowrap;
+  transition:
+    border-color 0.16s,
+    background-color 0.16s,
+    color 0.16s;
+}
+.nav-account:hover,
+.nav-account:focus-visible {
+  border-color: rgba(124, 232, 246, 0.7);
+  background: rgba(56, 189, 248, 0.06);
+}
+.nav-account[data-signed-in="true"] {
+  border-color: rgba(56, 189, 248, 0.55);
+  color: var(--broadcast-cyan, #38bdf8);
+  background: rgba(56, 189, 248, 0.08);
+}
+.broadcast-nav .nav-account[aria-current="page"]::after {
+  content: none;
+}
+.nav-account-mobile {
+  justify-content: center;
+  margin-top: 8px;
+}
+
+/* ── /register layout and form (Phase 2 polish) ───────────────────────── */
+.register-page {
+  padding-top: clamp(40px, 7vw, 88px);
+  padding-bottom: 72px;
+}
+.register-layout {
+  display: grid;
+  gap: 32px;
+  margin-top: 8px;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .register-layout {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.25fr);
+    gap: 48px;
+  }
+  /* The guide stays beside the form while it scrolls (below the sticky navbar). */
+  .register-aside {
+    position: sticky;
+    top: 104px;
+  }
+}
+.reg-card {
+  min-width: 0;
+  padding: 24px 20px 32px;
+}
+@media (min-width: 768px) {
+  .reg-card {
+    padding: 36px 40px 44px;
+  }
+}
+.reg-section {
+  display: grid;
+  gap: 20px;
+  padding-top: 24px;
+  border-top: 1px solid #1e293b;
+}
+.reg-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #a5f3fc;
+}
+.reg-section-title span {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  color: #67e8f9;
+}
+.reg-label {
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.reg-hint {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+.tier-grid {
+  display: grid;
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .tier-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.tier-grid .tier-option {
+  height: 100%;
+  padding: 14px 16px;
+}
+.reg-submit {
+  margin-top: 4px;
+}
+
+/* New / Existing player: segmented pill switch with a sliding thumb. */
+.reg-switch {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 4px;
+  border: 1px solid #1e3a4c;
+  border-radius: 999px;
+  background: #07131d;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.reg-switch-thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.28), rgba(105, 69, 232, 0.32));
+  box-shadow: inset 0 0 0 1px rgba(124, 232, 246, 0.45);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reg-switch[data-active="existing"] .reg-switch-thumb {
+  transform: translateX(100%);
+}
+.reg-switch-option {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.2s;
+}
+.reg-switch-option:hover,
+.reg-switch-option:has(input:checked) {
+  color: #f8fafc;
+}
+.reg-switch-option:has(input:focus-visible) {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reg-switch-thumb {
+    transition: none;
+  }
+}
+
+/* Registration closed: one intentional card instead of a dead form. */
+.reg-closed {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+.reg-closed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 5px 12px;
+  border: 1px solid rgba(252, 211, 77, 0.4);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.1);
+}
+.reg-closed-title {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 30px);
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.reg-closed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+}
+.reg-closed-actions > * {
+  gap: 8px;
+}
+@media (max-width: 479px) {
+  .reg-closed-actions > * {
+    width: 100%;
+  }
+}

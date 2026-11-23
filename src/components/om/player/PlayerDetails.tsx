@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { profileHref } from "@/components/PlayerName";
 import AccountAccess from "./AccountAccess";
+import { ClearRejected, CorrectWhatsApp } from "./AdminFixes";
 import Link from "next/link";
 import { useEditSender } from "../client";
 import { SOURCE_TAG } from "../labels";
@@ -17,15 +18,22 @@ export default function PlayerDetails({
   tournament,
   playerId,
   changed,
+  retarget,
 }: {
   tournament: string;
   playerId: string;
   changed: () => Promise<void>;
+  /**
+   * Opens the drawer in another tournament's context (or closes it with null)
+   * after the entry it was opened from is removed.
+   */
+  retarget?: (tournament: string | null) => void;
 }) {
   const [d, setD] = useState<PlayerDetailsData | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [gone, setGone] = useState(false);
   const send = useEditSender();
   const load = useCallback(async () => {
     try {
@@ -70,6 +78,27 @@ export default function PlayerDetails({
     return r.ok;
   };
 
+  const afterClear = async (entry: { tournament: string; label: string }) => {
+    setError("");
+    if (entry.tournament !== tournament) {
+      setNotice(`Removed the rejected entry in ${entry.label}.`);
+      await load();
+      await changed();
+      return;
+    }
+    // The drawer was opened from that entry: move to another one or close.
+    await changed();
+    const next = d?.entries.find(
+      (e) =>
+        !e.removed && !e.tournamentDeleted && e.tournament !== entry.tournament,
+    );
+    if (retarget) return retarget(next?.tournament ?? null);
+    setGone(true);
+    setNotice(
+      `Removed the rejected entry in ${entry.label}. Close this panel to continue.`,
+    );
+  };
+
   return (
     <section
       className="space-y-5"
@@ -100,7 +129,7 @@ export default function PlayerDetails({
       </p>
       <Feedback error={error} notice={notice} />
       {!d && !error && <p className="text-slate-400">Loading…</p>}
-      {d?.account && !d.player.removed && (
+      {d?.account && !d.player.removed && !gone && (
         <AccountAccess
           playerId={playerId}
           name={d.player.gaming_name}
@@ -109,7 +138,7 @@ export default function PlayerDetails({
         />
       )}
       {d && (
-        <fieldset disabled={busy} className="space-y-5">
+        <fieldset disabled={busy || gone} className="space-y-5">
           {d.player.removed && (
             <p className="notice">
               This player record was removed, so it can&apos;t be edited.
@@ -197,64 +226,85 @@ export default function PlayerDetails({
               }}
             />
           )}
+          {d.canEdit.correctWhatsApp && !gone && (
+            <CorrectWhatsApp
+              playerId={playerId}
+              saved={async () => {
+                await load();
+                await changed();
+              }}
+            />
+          )}
           {d.canEdit.tournamentTeams && (
             <div>
-              <h3 className="font-semibold mb-2">Team in each tournament</h3>
-              <div className="overflow-x-auto">
-                <table className="control-table">
-                  <thead>
-                    <tr>
-                      <th>Tournament</th>
-                      <th>Team</th>
-                      <th>Source</th>
-                      <th className="sr-only">Correct</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {d.entries.map((e) => (
-                      <tr key={e.id}>
-                        <td>
-                          {e.label}
-                          <span className="block text-xs text-slate-500">
-                            {e.removed ? "removed entry" : e.status}
-                          </span>
-                        </td>
-                        <td>{e.team_name ?? "Not recorded"}</td>
-                        <td>
+              <h3 className="font-semibold mb-2">Tournament entries</h3>
+              <ul className="om-entry-list">
+                {d.entries.map((e) => (
+                  <li key={e.id} className="om-entry">
+                    <div className="om-entry-head">
+                      <span className="min-w-0 font-semibold">{e.label}</span>
+                      <span
+                        className={`om-status om-${e.removed ? "withdrawn" : e.status}`}
+                      >
+                        {e.removed ? "removed" : e.status}
+                      </span>
+                    </div>
+                    <dl className="om-entry-facts">
+                      <div>
+                        <dt>Team</dt>
+                        <dd>{e.team_name ?? "Not recorded"}</dd>
+                      </div>
+                      <div>
+                        <dt>Source</dt>
+                        <dd>
                           {e.team_name_source
                             ? SOURCE_TAG[e.team_name_source]
                             : "—"}
-                        </td>
-                        <td>
-                          {!e.removed && !e.tournamentDeleted && (
-                            <CorrectTeam
-                              key={JSON.stringify([
-                                e.team_name,
-                                e.team_name_source,
-                              ])}
-                              entry={e}
-                              onSave={(v) =>
-                                submit(
-                                  `correct-${e.id}`,
-                                  {
-                                    action: "application.team_correct",
-                                    tournament: e.tournament,
-                                    applicationId: e.id,
-                                    expectedTeam: e.team_name,
-                                    expectedSource: e.team_name_source,
-                                    ...v,
-                                  },
-                                  `Team saved for ${e.label}.`,
-                                )
-                              }
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Matches</dt>
+                        <dd>{e.matches}</dd>
+                      </div>
+                    </dl>
+                    {!e.removed && !e.tournamentDeleted && (
+                      <div className="om-entry-actions">
+                        <CorrectTeam
+                          key={JSON.stringify([
+                            e.team_name,
+                            e.team_name_source,
+                          ])}
+                          entry={e}
+                          onSave={(v) =>
+                            submit(
+                              `correct-${e.id}`,
+                              {
+                                action: "application.team_correct",
+                                tournament: e.tournament,
+                                applicationId: e.id,
+                                expectedTeam: e.team_name,
+                                expectedSource: e.team_name_source,
+                                ...v,
+                              },
+                              `Team saved for ${e.label}.`,
+                            )
+                          }
+                        />
+                        {d.canEdit.clearRejected &&
+                          e.status === "rejected" &&
+                          e.matches === 0 && (
+                            <ClearRejected
+                              playerId={playerId}
+                              entryId={e.id}
+                              label={e.label}
+                              cleared={() => afterClear(e)}
                             />
                           )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
               <p className="text-xs text-slate-500 mt-2">
                 Entries with no team can also be attested from Players →
                 Team-name review.
@@ -366,7 +416,7 @@ export function CorrectTeam({
     );
   return (
     <form
-      className="space-y-2 min-w-[16rem]"
+      className="space-y-2 w-full"
       onSubmit={(e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);

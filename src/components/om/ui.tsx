@@ -39,7 +39,11 @@ export function Tabs({
           aria-selected={t.key === value}
           tabIndex={t.key === value ? 0 : -1}
           className={s.tab}
-          onClick={() => onChange(t.key)}
+          onClick={(e) => {
+            // On phones the strip scrolls: bring a half-hidden tab fully into view.
+            e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
+            onChange(t.key);
+          }}
           onKeyDown={(e) => {
             if (e.key === "ArrowRight") move(i + 1);
             else if (e.key === "ArrowLeft") move(i - 1);

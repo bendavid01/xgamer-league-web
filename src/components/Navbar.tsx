@@ -1,10 +1,11 @@
 "use client";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X, ArrowUpRight } from "lucide-react";
+import { Menu, X, ArrowUpRight, LayoutDashboard, LogIn } from "lucide-react";
 import Brand from "@/components/Brand";
+import { hasPlayerHint } from "@/components/playerHint";
 const items = [
   ["Tournaments", "/tournaments"],
   ["Champions", "/champions"],
@@ -14,6 +15,7 @@ const items = [
 /** Private workspaces (Organizer Manager, player hub) have their own chrome. */
 export const isWorkspace = (pathname: string) =>
   ["/admin", "/dashboard"].some((w) => pathname === w || pathname.startsWith(w + "/"));
+const noSubscription = () => () => {};
 /** Player profiles live under Tournaments. */
 const isCurrent = (pathname: string, href: string) =>
   href === "/tournaments"
@@ -32,6 +34,17 @@ export default function Navbar({
   const sentinel = useRef<HTMLSpanElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const hidden = isWorkspace(pathname);
+  // "Dashboard" for a signed-in XG player, "Login" otherwise. Read from a
+  // display-only cookie after hydration, so public pages stay static.
+  // Re-read on every render (each navigation re-renders the navbar).
+  const signedIn = useSyncExternalStore(
+    noSubscription,
+    hasPlayerHint,
+    () => false,
+  );
+  const account = signedIn
+    ? { name: "Dashboard", href: "/dashboard", Icon: LayoutDashboard }
+    : { name: "Login", href: "/login", Icon: LogIn };
   // Re-attach after leaving /admin: the sentinel only exists while the navbar renders.
   useEffect(() => {
     if (hidden || !sentinel.current || !("IntersectionObserver" in window))
@@ -95,12 +108,22 @@ export default function Navbar({
               </span>
             </Link>
           )}
-          <Link
-            href="/register"
-            className="button-primary hidden lg:inline-flex text-sm"
-          >
-            Register now <ArrowUpRight size={16} />
-          </Link>
+          <div className="hidden lg:flex items-center gap-2">
+            <Link
+              href={account.href}
+              className="nav-account"
+              data-signed-in={signedIn}
+              aria-current={pathname === account.href ? "page" : undefined}
+            >
+              <account.Icon size={16} aria-hidden="true" /> {account.name}
+            </Link>
+            <Link
+              href="/register"
+              className="button-primary inline-flex text-sm"
+            >
+              Register now <ArrowUpRight size={16} />
+            </Link>
+          </div>
           <button
             ref={toggle}
             aria-label={open ? "Close navigation" : "Open navigation"}
@@ -138,6 +161,15 @@ export default function Navbar({
                     </Link>
                   ),
                 )}
+                <Link
+                  href={account.href}
+                  onClick={() => setOpen(false)}
+                  aria-current={pathname === account.href ? "page" : undefined}
+                  className="nav-account nav-account-mobile"
+                  data-signed-in={signedIn}
+                >
+                  <account.Icon size={16} aria-hidden="true" /> {account.name}
+                </Link>
               </div>
             </motion.div>
           )}

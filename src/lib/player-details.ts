@@ -8,7 +8,7 @@ import { efootballIdInput, registrationInput } from "./registration";
 import { playerCode } from "./codes";
 import { tournamentLabel } from "./labels";
 import { teamDisplay } from "./team-display";
-import { contactSummary } from "./contact-change";
+import { contactEditingOn, contactSummary } from "./contact-change";
 import { lockAuditRequest } from "./audit-request";
 import { lockPlayerName } from "./contact-lock";
 import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
@@ -435,9 +435,14 @@ export async function playerDetails(
   if (!p) throw new HttpError(404, "This player isn't in this tournament.");
   const entries = admin
     ? await sql`select a.id,a.status,a.deleted_at is not null as removed,a.team_name,a.team_name_source,
-          t.id as tournament_id,t.name,t.competition,t.season,t.deleted_at is not null as tournament_deleted
+          t.id as tournament_id,t.name,t.competition,t.season,t.deleted_at is not null as tournament_deleted,
+          (select count(*) from fixture f where f.tournament_id=a.tournament_id
+            and (f.home=a.player_id or f.away=a.player_id))::int as matches
         from application a join tournament t on t.id=a.tournament_id
-        where a.player_id=${playerId} order by a.created_at`
+        -- A removed rejected entry was cleared by a main admin (admin-player-fixes.ts):
+        -- the audit keeps it, the drawer doesn't.
+        where a.player_id=${playerId} and not (a.deleted_at is not null and a.status='rejected')
+        order by a.created_at`
     : [];
   const history = admin
     ? await sql`select id,created_at,actor_name,action,summary,before_value,after_value
@@ -446,12 +451,13 @@ export async function playerDetails(
     : [];
   const contact =
     admin || registrations ? await contactSummary(playerId, user) : null;
+  const mainAdmin = canReviewRegistration(user);
   return {
     role: user.role,
     contact,
     // Sign-in state for the Account Access codes. Main admins only: they alone
     // can issue claim and reset codes. Never includes the password hash.
-    account: canReviewRegistration(user)
+    account: mainAdmin
       ? {
           type: p.player_type as "registered" | "guest",
           claimed: !!p.claimed,
@@ -468,6 +474,9 @@ export async function playerDetails(
       tournamentTeams: admin,
       efootball: (admin || registrations) && !p.deleted_at,
       whatsapp: !!contact?.canEdit && !p.deleted_at,
+      // Main-admin corrections (admin-player-fixes.ts).
+      correctWhatsApp: mainAdmin && contactEditingOn() && !p.deleted_at,
+      clearRejected: mainAdmin,
     },
     player: {
       id: p.id as string,
@@ -494,6 +503,7 @@ export async function playerDetails(
       tournamentDeleted: e.tournament_deleted as boolean,
       team_name: (e.team_name as string | null) ?? null,
       team_name_source: (e.team_name_source as TeamSource | null) ?? null,
+      matches: e.matches as number,
     })),
     history: history.map((h) => ({
       id: Number(h.id),

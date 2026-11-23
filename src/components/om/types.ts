@@ -198,6 +198,10 @@ export type PlayerDetailsData = {
     tournamentTeams: boolean;
     efootball: boolean;
     whatsapp: boolean;
+    /** Main admins: replace a wrong number directly. */
+    correctWhatsApp?: boolean;
+    /** Main admins: remove rejected entries with no matches. */
+    clearRejected?: boolean;
   };
   player: {
     id: string;
@@ -218,6 +222,8 @@ export type PlayerDetailsData = {
     tournamentDeleted: boolean;
     team_name: string | null;
     team_name_source: TeamSource | null;
+    /** Fixtures involving the player in that tournament. */
+    matches: number;
   }[];
   history: {
     id: number;

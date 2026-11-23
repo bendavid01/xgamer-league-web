@@ -5,6 +5,7 @@ import RegistrationForm from "@/components/RegistrationForm";
 import { tournamentLabel } from "@/lib/labels";
 import { openTournaments, type OpenTournament } from "@/lib/registration";
 import { communityLinks } from "@/lib/community";
+import { ArrowUpRight, CalendarClock, LogIn, Trophy } from "lucide-react";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Register",
@@ -61,8 +62,11 @@ export default async function Register({
   const chosen =
     open.length === 1 ? open[0] : open.find((t) => t.id === requested);
   const choose = open.length > 1 && !chosen;
+  const closed = open.length === 0;
+  const discord =
+    communityLinks.find((c) => c.name === "Discord") ?? communityLinks[0];
   return (
-    <div className="page-shell py-12">
+    <div className="page-shell register-page">
       <PageTitle
         label="JOIN THE ARENA"
         title={chosen ? tournamentLabel(chosen) : "Earn your place."}
@@ -100,8 +104,8 @@ export default async function Register({
           </div>
         </section>
       ) : (
-        <div className="grid lg:grid-cols-[1fr_1.2fr] gap-10 mt-10 items-start">
-          <aside className="space-y-5">
+        <div className="register-layout">
+          <aside className="register-aside space-y-5">
             {chosen && (
               <dl className="register-facts panel p-5">
                 {details(chosen).map(([k, v]) => (
@@ -116,22 +120,25 @@ export default async function Register({
               <li>
                 <strong>Register</strong>
                 <span>
-                  Enter your player name or existing XG ID, tournament team and
-                  WhatsApp number.
+                  New players choose Registered XG Player (recommended) or a
+                  one-tournament Guest entry. Returning players enter their XG
+                  ID. Both add a team and WhatsApp number.
                 </span>
               </li>
               <li>
-                <strong>Get confirmed</strong>
+                <strong>Get approved</strong>
                 <span>
-                  Share your application reference or existing XG ID privately
-                  with an organizer on Discord to verify your request.
+                  Share your application reference privately with an organizer
+                  on Discord. Approved Registered players automatically unlock
+                  their permanent XG ID and Player Hub login.
                 </span>
               </li>
               <li>
                 <strong>Play</strong>
                 <span>
-                  Share your eFootball ID with the organizer, then check your
-                  fixtures here.
+                  Sign in to the Player Hub for fixtures, results and 1-click
+                  entry to future tournaments. Share your eFootball ID with the
+                  organizer when asked.
                 </span>
               </li>
             </ol>
@@ -141,7 +148,7 @@ export default async function Register({
               </Link>
             )}
             <a
-              href={communityLinks[0].href}
+              href={discord.href}
               target="_blank"
               rel="noopener noreferrer"
               className="insight-link block"
@@ -149,7 +156,45 @@ export default async function Register({
               Questions? Ask on Discord ↗
             </a>
           </aside>
-          <RegistrationForm tournament={chosen?.id ?? null} />
+          {closed ? (
+            <section
+              className="panel reg-card reg-closed"
+              aria-labelledby="closed-title"
+            >
+              <span className="reg-closed-badge">
+                <CalendarClock size={15} aria-hidden="true" /> Registration
+                Closed
+              </span>
+              <h2 id="closed-title" className="reg-closed-title">
+                No tournament is open for entries right now.
+              </h2>
+              <p className="text-slate-400 leading-relaxed">
+                The next season is announced on Discord and in the WhatsApp
+                group first. Already have an XG ID? Your Player Hub keeps your
+                fixtures, results and history, and opens 1-click entry the
+                moment registration reopens.
+              </p>
+              <div className="reg-closed-actions">
+                <Link href="/login" className="button-primary">
+                  <LogIn size={16} aria-hidden="true" /> Sign in to Player Hub
+                </Link>
+                <Link href="/tournaments" className="button-secondary">
+                  <Trophy size={16} aria-hidden="true" /> View Tournaments
+                </Link>
+                <a
+                  href={discord.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="button-secondary"
+                >
+                  Join Discord <ArrowUpRight size={16} aria-hidden="true" />
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              </div>
+            </section>
+          ) : (
+            <RegistrationForm tournament={chosen?.id ?? null} />
+          )}
         </div>
       )}
     </div>

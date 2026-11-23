@@ -1434,3 +1434,402 @@ button.stat:hover {
   color: var(--om-amber);
   background: rgba(245, 158, 11, 0.14);
 }
+
+/* ─────────────── Players directory: cards on phones and small tablets ─────────────── */
+
+.dirCards {
+  display: none;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+.dirCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 72px;
+  padding: 12px;
+  border-radius: 12px;
+  text-align: left;
+}
+.dirCards li + li {
+  border-top: 1px solid var(--om-line);
+}
+.dirCard:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+.dirCard:focus-visible {
+  outline: 2px solid var(--om-cyan-2);
+  outline-offset: -2px;
+}
+.dirCard:hover .rowChevron {
+  color: var(--om-cyan-2);
+}
+.dirCardMain {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+.dirCardTop {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.dirCardName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  color: #fff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dirCardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--om-dim);
+}
+.dirCardLabel {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dirCardCount {
+  font-family: var(--om-font-mono), monospace;
+  font-size: 12px;
+}
+@media (max-width: 768px) {
+  .dirCards {
+    display: block;
+  }
+  .dirTableWrap {
+    display: none;
+  }
+}
+
+/* ─────────────── Player drawer: entries and main-admin corrections ─────────────── */
+
+.ws :global(.om-entry-list) {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ws :global(.om-entry) {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--om-line);
+  border-radius: 12px;
+  background: var(--om-card-2);
+}
+.ws :global(.om-entry-head) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  overflow-wrap: anywhere;
+}
+.ws :global(.om-entry-facts) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.ws :global(.om-entry-facts dt) {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7387;
+}
+.ws :global(.om-entry-facts dd) {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.ws :global(.om-entry-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px 18px;
+}
+.ws :global(.om-entry-actions > *) {
+  min-width: 0;
+  max-width: 100%;
+}
+/* An opened form (team correction, removal) takes the whole row. */
+.ws :global(.om-entry-actions > form),
+.ws :global(.om-entry-actions > .om-fix) {
+  flex-basis: 100%;
+}
+.ws :global(.om-withdrawn),
+.ws :global(.om-waitlisted) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #c9cfdd;
+}
+.ws :global(.om-danger-link) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--om-red);
+}
+.ws :global(.button-primary.om-danger) {
+  background: linear-gradient(180deg, #e11d48, #be123c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.ws :global(.om-fix) {
+  min-width: 0;
+}
+.ws :global(.om-fix-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.ws :global(.om-fix-field) {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+}
+.ws :global(.om-fix-field small) {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--om-dim);
+}
+
+/* Table scrollers contain everything inside them, including visually hidden
+   (absolutely positioned) header cells, which otherwise escape the scroller
+   and widen the whole page on phones. */
+.ws :global(.overflow-x-auto) {
+  position: relative;
+  max-width: 100%;
+}
+
+/* ─────────────── Phones: stacked cards for the audit log and the roster ─────────────── */
+
+@media (max-width: 768px) {
+  /* Audit Log: what + when, who, then the affected player and tournament. */
+  .ws :global(.om-log) {
+    display: block;
+    width: 100%;
+  }
+  .ws :global(.om-log thead) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .ws :global(.om-log tbody) {
+    display: block;
+  }
+  .ws :global(.om-log tr) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "what when"
+      "who who"
+      "affected affected"
+      "tournament tournament"
+      "details details";
+    gap: 4px 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--om-line);
+  }
+  .ws :global(.om-log td) {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+  }
+  .ws :global(.om-log td:nth-child(1)) {
+    grid-area: when;
+    font-family: var(--om-font-mono), monospace;
+    font-size: 12px;
+    color: var(--om-dim);
+  }
+  .ws :global(.om-log td:nth-child(2)) {
+    grid-area: who;
+    color: var(--om-dim);
+  }
+  .ws :global(.om-log td:nth-child(3)) {
+    grid-area: what;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+  }
+  .ws :global(.om-log td:nth-child(4)) {
+    grid-area: affected;
+  }
+  .ws :global(.om-log td:nth-child(5)) {
+    grid-area: tournament;
+  }
+  .ws :global(.om-log td:nth-child(6)) {
+    grid-area: details;
+    margin-top: 4px;
+  }
+  .ws :global(.om-log td[data-label])::before {
+    content: attr(data-label) " · ";
+    color: #6b7387;
+  }
+  .ws :global(.om-log pre) {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Entries & Roster: one card per entry. The header keeps only "select all". */
+  .ws :global(.om-table) {
+    display: block;
+    width: 100%;
+  }
+  .ws :global(.om-table thead),
+  .ws :global(.om-table tbody) {
+    display: block;
+  }
+  .ws :global(.om-table thead tr) {
+    display: flex;
+    align-items: center;
+    padding: 4px 12px 8px;
+    border-bottom: 1px solid var(--om-line-2);
+  }
+  .ws :global(.om-table thead th) {
+    display: none;
+  }
+  .ws :global(.om-table thead th:first-child) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    border: 0;
+    letter-spacing: 0.04em;
+  }
+  .ws :global(.om-table thead th:first-child)::after {
+    content: "Select all shown";
+  }
+  .ws :global(.om-table tbody tr) {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "check player status"
+      ". contact contact"
+      ". efootball remove";
+    align-items: center;
+    gap: 6px 10px;
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--om-line);
+  }
+  .ws :global(.om-table tbody td) {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    overflow-wrap: anywhere;
+  }
+  .ws :global(.om-table tbody td:nth-child(1)) {
+    grid-area: check;
+    align-self: start;
+    padding-top: 2px;
+  }
+  .ws :global(.om-table tbody td:nth-child(2)) {
+    grid-area: player;
+  }
+  .ws :global(.om-table tbody td:nth-child(3)) {
+    grid-area: contact;
+    font-size: 13px;
+  }
+  .ws :global(.om-table tbody td:nth-child(4)) {
+    grid-area: status;
+    align-self: start;
+  }
+  .ws :global(.om-table tbody td:nth-child(5)) {
+    grid-area: efootball;
+    font-size: 13px;
+  }
+  .ws :global(.om-table tbody td:nth-child(6)) {
+    grid-area: remove;
+  }
+  .ws :global(.om-table td[data-label])::before {
+    content: attr(data-label) " ";
+    margin-right: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #6b7387;
+  }
+  .ws :global(.om-table .whitespace-nowrap) {
+    white-space: normal;
+  }
+  .ws :global(.om-table .om-danger) {
+    min-height: 40px;
+  }
+}
+
+/* Touch screens: inline text actions get a taller hit area without moving text. */
+@media (pointer: coarse) {
+  .ws :global(.om-link) {
+    padding-block: 12px;
+    margin-block: -12px;
+  }
+  .ws :global(.om-danger-link) {
+    min-height: 44px;
+  }
+}
+
+/* Phones: tighter tabs, so short strips fit and long ones scroll inside the strip. */
+@media (max-width: 599px) {
+  .tab {
+    padding: 0 12px;
+    font-size: 13.5px;
+  }
+  .tabs {
+    scroll-padding-inline: 12px;
+  }
+}
+@media (max-width: 599px) {
+  /* Lifecycle: wraps into rows instead of scrolling sideways. */
+  .lifecycle {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 8px;
+    padding: 14px;
+    overflow: visible;
+  }
+  .lcStep {
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .lcStep:not(:last-child)::after {
+    content: none;
+  }
+  .lcDot {
+    flex: none;
+  }
+  .lcLabel {
+    min-width: 0;
+    padding-right: 0;
+    font-size: 11.5px;
+    line-height: 1.25;
+  }
+}

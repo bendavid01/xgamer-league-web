@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Lock } from "lucide-react";
+import { clearPlayerHint } from "../playerHint";
 import s from "./player.module.css";
 
 type Mode = "signin" | "claim";
@@ -32,6 +33,8 @@ export default function LoginPortal({ available }: { available: boolean }) {
   const [mode, setMode] = useState<Mode>("signin");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Signed-in players are redirected away from /login, so any navbar hint is stale.
+  useEffect(() => clearPlayerHint(), []);
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();

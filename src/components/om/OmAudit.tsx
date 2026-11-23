@@ -82,8 +82,8 @@ export default function OmAudit({ rows }: { rows: AuditRow[] }) {
                       )}
                     </td>
                     <td>{whatOf(a)}</td>
-                    <td>{a.affected ?? "—"}</td>
-                    <td>{a.tournament_name ?? "—"}</td>
+                    <td data-label="Affected">{a.affected ?? "—"}</td>
+                    <td data-label="Tournament">{a.tournament_name ?? "—"}</td>
                     <td>
                       <details>
                         <summary>Before / after</summary>

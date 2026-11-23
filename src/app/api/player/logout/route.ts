@@ -1,5 +1,8 @@
 import { allowedOrigin, endpoint, HttpError, response } from "@/lib/api";
-import { clearedSessionCookie } from "@/lib/player-auth";
+import {
+  clearedSessionCookie,
+  clearedSessionHintCookie,
+} from "@/lib/player-auth";
 
 /** POST → clears the player session cookie. Sessions are stateless; nothing else to end. */
 export async function POST(request: Request) {
@@ -8,6 +11,7 @@ export async function POST(request: Request) {
       throw new HttpError(403, "Invalid request origin.");
     const res = response({ ok: true });
     res.headers.append("Set-Cookie", clearedSessionCookie());
+    res.headers.append("Set-Cookie", clearedSessionHintCookie());
     return res;
   });
 }

@@ -4,7 +4,12 @@ import {
   redeemOneTimeCode,
   requirePlayerAuthConfigured,
 } from "@/lib/player-account";
-import { sessionCookie, signSession } from "@/lib/player-auth";
+import {
+  SESSION_SECONDS,
+  sessionCookie,
+  sessionHintCookie,
+  signSession,
+} from "@/lib/player-auth";
 
 /**
  * POST { xgId, code, newPassword, displayNickname? } → redeems an organizer's claim
@@ -24,6 +29,10 @@ export async function POST(request: Request) {
     const who = await redeemOneTimeCode(parsed.data, requestIp(request));
     const res = response({ ok: true, xgId: who.xgId });
     res.headers.append("Set-Cookie", sessionCookie(signSession(who, who.iat)));
+    res.headers.append(
+      "Set-Cookie",
+      sessionHintCookie(who.iat + SESSION_SECONDS),
+    );
     return res;
   });
 }

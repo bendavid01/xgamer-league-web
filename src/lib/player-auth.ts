@@ -198,6 +198,24 @@ export const clearedSessionCookie = (
 ) =>
   `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure(env)}`;
 
+/**
+ * A display hint for the public navbar ("Dashboard" instead of "Login"), so
+ * public pages stay static and never touch the database. It holds only the
+ * session's expiry time: no identity, nothing signed, and it grants nothing.
+ * /dashboard still verifies the real session and sends anyone else to /login,
+ * which clears a stale hint.
+ */
+export const SESSION_HINT_COOKIE = "xg_player_hint";
+export const sessionHintCookie = (
+  exp: number,
+  env: Record<string, string | undefined> = process.env,
+) =>
+  `${SESSION_HINT_COOKIE}=${Math.floor(exp)}; Path=/; SameSite=Lax; Max-Age=${SESSION_SECONDS}${secure(env)}`;
+export const clearedSessionHintCookie = (
+  env: Record<string, string | undefined> = process.env,
+) =>
+  `${SESSION_HINT_COOKIE}=; Path=/; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure(env)}`;
+
 /** The signed-in player from the cookie alone. Database checks follow in player-account.ts. */
 export function playerSessionFrom(request: Request) {
   const session = verifySession(readCookie(request, SESSION_COOKIE));

@@ -217,6 +217,9 @@ test(
     assert.equal(signedIn.status, 200);
     const cookie = signedIn.headers.get("set-cookie")!;
     assert.match(cookie, /; Path=\/; HttpOnly; SameSite=Lax; Max-Age=604800/);
+    // The navbar hint: the expiry only, readable by the page, never identity.
+    const [, hint] = signedIn.headers.getSetCookie();
+    assert.match(hint, /^xg_player_hint=\d+; Path=\/; SameSite=Lax; Max-Age=604800$/);
     activated = { xgId: result.code, playerId: player.id, password, token: tokenOf(signedIn)! };
   },
 );
@@ -276,6 +279,7 @@ test("the player hub reads only the session's own data; logout clears the cookie
   const out = await routes.logout(post("/api/player/logout", {}, activated.token));
   assert.equal(out.status, 200);
   assert.match(out.headers.get("set-cookie")!, /^xg_player_session=; .*Max-Age=0/);
+  assert.match(out.headers.getSetCookie()[1], /^xg_player_hint=; .*Max-Age=0/);
 });
 
 test("five wrong passwords lock the XG ID for 15 minutes; success resets the count", { skip }, async () => {
