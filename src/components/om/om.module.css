@@ -2063,3 +2063,116 @@ button.stat:hover {
     line-height: 1.25;
   }
 }
+
+/* ─────────────── Sign-in gate (/admin before the workspace opens) ─────────────── */
+
+.gate {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px 16px;
+  background: var(--om-canvas);
+}
+.gateCard {
+  width: 100%;
+  max-width: 440px;
+  padding: 26px 24px 18px;
+  border: 1px solid var(--om-line-2);
+  border-radius: 18px;
+  background: var(--om-card);
+  box-shadow: var(--om-glass);
+}
+.gateCard .brand {
+  padding: 0 0 18px;
+}
+.gateTitle {
+  margin: 0 0 10px;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.gateText {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--om-dim);
+}
+.gateText strong,
+.gateText code {
+  color: var(--om-text);
+}
+.gateText code {
+  font-family: var(--om-font-mono), monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.gateAlert {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(252, 211, 77, 0.3);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--om-amber);
+  background: rgba(252, 211, 77, 0.08);
+}
+.gateActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.discordBtn,
+.gateSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.discordBtn {
+  border: 0;
+  color: #fff;
+  background: #5865f2;
+}
+.discordBtn:hover {
+  background: #4752c4;
+}
+.gateSecondary {
+  border: 1px solid var(--om-line-2);
+  color: var(--om-text);
+  background: transparent;
+}
+.gateSecondary:hover {
+  border-color: var(--om-cyan-2);
+}
+.gateLink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--om-line);
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7387;
+  transition: color 0.15s;
+}
+.gateLink:hover {
+  color: var(--om-cyan-2);
+}
+.discordBtn:focus-visible,
+.gateSecondary:focus-visible,
+.gateLink:focus-visible {
+  outline: 2px solid var(--om-cyan-2);
+  outline-offset: 2px;
+}

@@ -19,6 +19,7 @@ import { tournamentLabel } from "@/lib/labels";
 import { SECTION_LABEL } from "./labels";
 import OmDrawer from "./OmDrawer";
 import OmQuickJump, { type JumpItem } from "./OmQuickJump";
+import OrganizerSignInButton from "./OrganizerSignInButton";
 import type { Section } from "./types";
 import type { Om } from "./useOm";
 import s from "./om.module.css";
@@ -54,10 +55,13 @@ export default function OmShell({
   setJump,
   jumpItems,
   jumpLoading,
+  signInAction,
   signOutAction,
   children,
 }: {
   om: Om;
+  /** Server action from /admin that starts Discord sign-in back to /admin. */
+  signInAction: () => Promise<void>;
   /** Server action from /admin that calls the existing Auth.js signOut. */
   signOutAction: () => Promise<void>;
   /** The section being shown (already checked against this organizer's access). */
@@ -251,14 +255,25 @@ export default function OmShell({
           {!user && !om.error && <p className="notice">Loading…</p>}
           {om.error && (
             <div role="alert" className="notice text-amber-200 mb-6">
-              {om.error}
-              {!user && (
-                <Link
-                  className="button-secondary mt-4 flex w-fit"
-                  href="/login"
-                >
-                  Sign in with Discord
-                </Link>
+              {om.signedOut ? (
+                <>
+                  Your organizer session has ended. Sign in with Discord to
+                  continue.
+                  {/* Straight back into Discord sign-in; never the player /login. */}
+                  <div className="mt-4">
+                    <OrganizerSignInButton action={signInAction} />
+                  </div>
+                </>
+              ) : om.denied && !user ? (
+                <>
+                  <strong>Not authorized for Organizer Manager.</strong>{" "}
+                  {om.error}
+                  <form action={signOutAction} className="mt-4">
+                    <button className="button-secondary">Sign out</button>
+                  </form>
+                </>
+              ) : (
+                om.error
               )}
             </div>
           )}

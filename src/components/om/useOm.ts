@@ -22,6 +22,16 @@ function readUrl(): { section: Section; tid: string | null } {
     tid: null,
   };
 }
+/** An /api/admin refusal with its HTTP status (401: the Discord session has ended). */
+class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
+
 const urlFor = (section: Section, tid: string | null) =>
   tid
     ? `/admin?t=${encodeURIComponent(tid)}`
@@ -39,6 +49,8 @@ export function useOm() {
   const [homeData, setHome] = useState<Home | null>(null);
   const [work, setWork] = useState<Workspace | null>(null);
   const [error, setError] = useState("");
+  /** HTTP status of the request behind `error` (0 when it wasn't an API refusal). */
+  const [errorStatus, setErrorStatus] = useState(0);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   /** Bumped after every successful change or refresh, so derived views refetch. */
@@ -50,9 +62,13 @@ export function useOm() {
       { cache: "no-store" },
     );
     const value = await r.json();
-    if (!r.ok) throw new Error(value.error);
+    if (!r.ok) throw new ApiError(value.error, r.status);
     if (tid) setWork(value);
     else setHome(value);
+  }, []);
+  const fail = useCallback((e: unknown) => {
+    setError((e as Error).message);
+    setErrorStatus(e instanceof ApiError ? e.status : 0);
   }, []);
 
   // First load, and browser back/forward between sections and tournaments.
@@ -69,7 +85,7 @@ export function useOm() {
           await load(tid);
         }
       } catch (e) {
-        if (active) setError((e as Error).message);
+        if (active) fail(e);
       }
     };
     void first();
@@ -80,14 +96,14 @@ export function useOm() {
       setSection(sec);
       setOpen(tid);
       setWork(null);
-      void load(tid).catch((e) => setError((e as Error).message));
+      void load(tid).catch(fail);
     };
     window.addEventListener("popstate", onPop);
     return () => {
       active = false;
       window.removeEventListener("popstate", onPop);
     };
-  }, [load]);
+  }, [load, fail]);
 
   const show = async (sec: Section, tid: string | null) => {
     setError("");
@@ -99,7 +115,7 @@ export function useOm() {
     try {
       await load(tid);
     } catch (e) {
-      setError((e as Error).message);
+      fail(e);
     }
   };
   /** Open a tournament (or the tournament list when null). */
@@ -125,7 +141,7 @@ export function useOm() {
         ),
       });
       const result = await r.json();
-      if (!r.ok) throw new Error(result.error);
+      if (!r.ok) throw new ApiError(result.error, r.status);
       if (value.action === "delete_tournament") {
         await navigate(null);
       } else if (
@@ -149,7 +165,7 @@ export function useOm() {
       else if (done) setNotice(done);
       return true;
     } catch (e) {
-      setError((e as Error).message);
+      fail(e);
       return false;
     } finally {
       setBusy(false);
@@ -163,7 +179,7 @@ export function useOm() {
       setVersion((v) => v + 1);
       setNotice("Up to date.");
     } catch (e) {
-      setError((e as Error).message);
+      fail(e);
     }
   };
 
@@ -176,6 +192,10 @@ export function useOm() {
     homeData,
     work,
     error,
+    /** The organizer's Discord session ended (or was never there): offer sign-in again. */
+    signedOut: !!error && errorStatus === 401,
+    /** /api/admin refused this account (403). With no workspace loaded: no Organizer Manager access. */
+    denied: !!error && errorStatus === 403,
     notice,
     busy,
     version,

@@ -28,8 +28,10 @@ import { useOm } from "@/components/om/useOm";
  * All behaviour lives in src/components/om/; this file only wires it together.
  */
 export default function ControlCenter({
+  signInAction,
   signOutAction,
 }: {
+  signInAction: () => Promise<void>;
   signOutAction: () => Promise<void>;
 }) {
   const om = useOm();
@@ -125,6 +127,7 @@ export default function ControlCenter({
       setJump={openJump}
       jumpItems={jumpItems}
       jumpLoading={snaps.loading}
+      signInAction={signInAction}
       signOutAction={signOutAction}
     >
       {section === "overview" && home && (
