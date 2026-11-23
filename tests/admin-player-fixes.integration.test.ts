@@ -346,3 +346,50 @@ test("Remove rejected entry: non-main-admins get 403", { skip }, async () => {
   const [row] = await sql`select deleted_at from application where id=${ghost}`;
   assert.equal(row.deleted_at, null);
 });
+
+test("a cleared rejected entry is gone from the Player Hub, public profile and OM", { skip }, async () => {
+  const { hubData } = await import("../src/lib/player-account");
+  const { getProfile } = await import("../src/lib/profile");
+  const { snapshot } = await import("../src/lib/control");
+  const p = await player("Hub Visibility");
+  const ghost = await entry(p.id, OLD, "rejected");
+  await entry(p.id, OPEN, "approved");
+  const [hubPlayer] = await sql<import("../src/lib/player-account").HubPlayer[]>`
+    select id,public_no,gaming_name,team_name,display_nickname,nickname_locked,efootball_cipher
+    from player where id=${p.id}`;
+  const inOld = async () => (await snapshot(OLD, asAdmin)).applications.some((a) => a.player_id === p.id);
+
+  // Before: the hub and OM list the rejected entry; the public profile never does.
+  assert.deepEqual((await hubData(hubPlayer)).entries.map((e) => [e.tournamentId, e.status]).sort(), [
+    [OLD, "rejected"],
+    [OPEN, "approved"],
+  ]);
+  assert.equal(await inOld(), true);
+  const profileBefore = await getProfile(p.code);
+  assert.ok(profileBefore);
+  assert.ok(!JSON.stringify(profileBefore).includes("Fixes Old Cup"));
+
+  await fixes.clearRejectedEntry(p.id, ghost, { reason: "Old registration" }, asAdmin);
+
+  // After: gone from the hub's entries, OM's tournament roster and the drawer.
+  const hub = await hubData(hubPlayer);
+  assert.deepEqual(hub.entries.map((e) => [e.tournamentId, e.status]), [[OPEN, "approved"]]);
+  assert.ok(!JSON.stringify(hub).includes("Fixes Old Cup"));
+  assert.equal(await inOld(), false);
+  assert.deepEqual((await details(OPEN, p.id, asAdmin)).entries.map((e) => e.tournament), [OPEN]);
+  // The public profile and its counts are unchanged.
+  const profileAfter = await getProfile(p.code);
+  assert.deepEqual(profileAfter?.totals, profileBefore.totals);
+  assert.ok(!JSON.stringify(profileAfter).includes("Fixes Old Cup"));
+});
+
+test("Remove rejected entry: a podium place counts as playing (409)", { skip }, async () => {
+  const p = await player("Podium Rejected");
+  const ghost = await entry(p.id, OLD, "rejected");
+  await sql`insert into podium(tournament_id,place,player_id) values(${OLD},3,${p.id})`;
+  await assert.rejects(
+    fixes.clearRejectedEntry(p.id, ghost, { reason: "Old registration" }, asAdmin),
+    rejects(409, /matches/),
+  );
+  await sql`delete from podium where tournament_id=${OLD} and player_id=${p.id}`;
+});

@@ -22,8 +22,12 @@ import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
  *    any number, like every other contact action.
  * 2. Remove a rejected entry: hides a rejected tournament entry that never
  *    played a match (for example an old registration carried over to a
- *    reserved founding ID). The row is soft-deleted and keeps status
- *    "rejected"; the audit keeps the history.
+ *    reserved founding ID). The row is soft-deleted (application.deleted_at,
+ *    a column since 001) and keeps status "rejected"; the audit keeps the
+ *    history. Every reader already skips deleted entries: the Player Hub, the
+ *    OM snapshots and directory, and the public profile (participantIds, which
+ *    never listed rejected entries). The OM drawer hides rejected ones that are
+ *    deleted. "No matches" means no fixture, qualification or podium row.
  *
  * Both read only the Discord organizer session (never the player cookie) and
  * answer 403 to anyone who isn't a configured main admin, signed in or not.
@@ -235,6 +239,9 @@ export async function clearRejectedEntry(
       select ((select count(*) from fixture where tournament_id=${ref.tournament_id}
                 and (home=${playerId} or away=${playerId}))
             + (select count(*) from qualification where tournament_id=${ref.tournament_id}
+                and player_id=${playerId})
+            -- A podium place also puts the tournament on the public profile.
+            + (select count(*) from podium where tournament_id=${ref.tournament_id}
                 and player_id=${playerId}))::int as matches`;
     if (played.matches > 0)
       throw new HttpError(

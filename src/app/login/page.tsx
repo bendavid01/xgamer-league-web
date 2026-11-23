@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { signIn } from "@/auth";
 import LoginPortal, { MemberPreview } from "@/components/player/LoginPortal";
 import s from "@/components/player/player.module.css";
 import { playerAuthConfigured, playerFromCookie } from "@/lib/player-account";
@@ -20,12 +18,6 @@ export default async function Login() {
   if (token && (await playerFromCookie(token).catch(() => null)))
     redirect("/dashboard");
 
-  const discord =
-    !!process.env.AUTH_SECRET &&
-    !!process.env.AUTH_DISCORD_ID &&
-    !!process.env.AUTH_DISCORD_SECRET &&
-    !!process.env.DATABASE_URL;
-
   return (
     <div className={`${s.pw} ${s.login}`}>
       <div className={s.loginInner}>
@@ -41,23 +33,6 @@ export default async function Login() {
           <LoginPortal available={playerAuthConfigured()} />
           <MemberPreview />
         </div>
-        {/* Organizers use Discord, through the existing Auth.js flow. */}
-        <footer className={s.organizer}>
-          {discord ? (
-            <form
-              action={async () => {
-                "use server";
-                await signIn("discord", { redirectTo: "/admin" });
-              }}
-            >
-              <button className={s.organizerLink}>Organizer access</button>
-            </form>
-          ) : (
-            <Link href="/admin" className={s.organizerLink}>
-              Organizer access
-            </Link>
-          )}
-        </footer>
       </div>
     </div>
   );

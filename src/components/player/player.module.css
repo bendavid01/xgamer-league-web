@@ -183,7 +183,8 @@
 .login {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 48px 16px 32px;
+  /* Clear room under the floating public navbar before the heading and cards. */
+  padding: clamp(56px, 8vw, 104px) 16px 72px;
   background:
     radial-gradient(
       60rem 30rem at 15% -10%,
@@ -376,21 +377,6 @@
   margin-right: 8px;
   color: var(--pw-violet-2);
 }
-.organizer {
-  margin-top: 40px;
-  text-align: center;
-}
-.organizerLink {
-  min-height: 32px;
-  font-size: 12px;
-  color: #4b5264;
-}
-.organizerLink:hover,
-.organizerLink:focus-visible {
-  color: var(--pw-dim);
-  text-decoration: underline;
-}
-
 /* ─────────────── /dashboard ─────────────── */
 
 .hub {
