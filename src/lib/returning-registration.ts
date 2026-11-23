@@ -262,7 +262,7 @@ async function addVerifiedEntry(
     { id: string; contact_hash: string }[]
   >`
     select id,contact_hash from player
-    where public_no=${publicNo} and deleted_at is null for update`;
+    where public_no=${publicNo} and player_type='registered' and deleted_at is null for update`;
   if (!player) throw new HttpError(404, "No active player has that XG ID.");
   if (
     !fingerprintsMatch(

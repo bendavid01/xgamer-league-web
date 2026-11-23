@@ -16,8 +16,12 @@ import { maskPhone } from "./phone";
 import { AUDIT_TEXT_ERROR, auditNote, auditText } from "./audit-text";
 import { tournamentParticipants } from "./tournament-participants";
 import { pendingReturningRegistrations } from "./returning-registration";
-import { pendingNewPlayerRegistrations } from "./new-player-registration";
 import {
+  nextXgIdPreview,
+  pendingNewPlayerRegistrations,
+} from "./new-player-registration";
+import {
+  canReviewRegistration,
   registrationReviewReason,
   recheckRegistrationReviewer,
   requireRegistrationReviewer,
@@ -206,8 +210,8 @@ export function slugFor(name: string) {
 /* ─────────────────────────── Reads ─────────────────────────── */
 
 /** OM home: every tournament (no player counts) plus shared areas for admins. */
-export async function home() {
-  const user = await actor("workspace", "*");
+export async function home(resolve = actor) {
+  const user = await resolve("workspace", "*");
   const sql = db();
   const tournaments =
     await sql`select id,name,competition,season,published,status,format,knockout,qualifiers,legs,created_at from tournament where deleted_at is null order by created_at desc`;
@@ -220,7 +224,39 @@ export async function home() {
     user.role === "admin"
       ? await sql`select discord_id,operations,active from coordinator order by discord_id`
       : [];
-  return { user: publicUser(user), tournaments, deleted, audit, coordinators };
+  return {
+    user: publicUser(user),
+    tournaments,
+    deleted,
+    audit,
+    coordinators,
+    // Overview: the latest activity and what waits for a main admin's review.
+    recentActivity: audit.slice(0, 5),
+    playerApprovals: canReviewRegistration(user)
+      ? await playerApprovalCounts()
+      : null,
+  };
+}
+
+/**
+ * Pending registration reviews across live tournaments. "accounts" are
+ * registered applicants who set a password at signup: approving them activates
+ * an XG player login at once.
+ */
+async function playerApprovalCounts() {
+  const sql = db();
+  const [fresh] = await sql<
+    { registered: number; accounts: number; guests: number }[]
+  >`select
+      count(*) filter (where r.registration_tier='registered')::int as registered,
+      count(*) filter (where r.registration_tier='registered' and r.pending_password_hash is not null)::int as accounts,
+      count(*) filter (where r.registration_tier='guest')::int as guests
+    from new_player_registration_request r join tournament t on t.id=r.tournament_id
+    where r.status='pending' and t.deleted_at is null`;
+  const [returning] = await sql<{ n: number }[]>`select count(*)::int as n
+    from returning_registration_request r join tournament t on t.id=r.tournament_id
+    where r.status='pending' and t.deleted_at is null`;
+  return { ...fresh, returning: returning.n };
 }
 
 /** `resolve` is the signed-in organizer check (injectable for integration tests). */
@@ -261,11 +297,17 @@ export async function snapshot(tournament: string, resolve = actor) {
     pendingReturningRegistrations(user, tournament),
     pendingNewPlayerRegistrations(user, tournament),
   ]);
+  // Reviewers see which XG ID the next approval would take. A preview only:
+  // the real number is assigned inside the approval transaction.
+  const nextAvailableXgId = newPlayerRequests
+    ? await nextXgIdPreview(sql)
+    : undefined;
   return {
     user: publicUser(user),
     tournament: t,
     returningRequests,
     newPlayerRequests,
+    nextAvailableXgId,
     applications: applications.map((a) => ({
       id: a.id,
       player_id: a.player_id,

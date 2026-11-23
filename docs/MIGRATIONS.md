@@ -1,6 +1,6 @@
 # Database migrations: numbers and status
 
-SQL migration numbers are a separate series from feature IDs (for example, feature XG-008's schema is SQL migration 010). Files live in `migrations/`, are applied once each in name order, and are recorded with their SHA-256 in `xgamer_migration`. An applied file is never edited; changes go into a new migration.
+SQL migration numbers are a separate series from feature IDs (for example, feature XG-008's schema is SQL migrations 013 and 014). Files live in `migrations/`, are applied once each in name order, and are recorded with their SHA-256 in `xgamer_migration`. An applied file is never edited; changes go into a new migration.
 
 **Production rule:** builds only check the schema; they never apply a migration. Migrations reach production through the Neon SQL Editor packet procedure (preflight, target and ledger guard, one transaction with the ledger rows, post-check), each separately authorized. `MIGRATE_ON_BUILD` no longer does anything. A build that sees it prints a warning and ignores it, on Vercel and everywhere else, and the build script does not import the migration runner. `npm run db:migrate` remains for local databases.
 
@@ -11,11 +11,17 @@ SQL migration numbers are a separate series from feature IDs (for example, featu
 | 007 | `007_application_team_name` | yes | pending | SHA-256 `bbc004390ba1b09cbc7ce09c2fc644192e7d081d92e54a3bfaec397655f5ea41`; never edited |
 | 008 | `008_team_name_provenance` | yes | pending | Schema only: the four team-name provenance labels. Needs 007. |
 | 009 | `009_contact_change` | yes | pending | Schema only: `contact_version` (default 1), organizer-attestation fields, `contact_change`. Needs 001 and 003. |
-| **010** | **`010_player_accounts`** | **reserved** | — | Feature XG-008 (player accounts). Must not add `contact_version` again (009 does). Must keep all four team-name labels in any redefinition of `application_team_name_source_check`. |
+| **010** | — | **retired, never used** | — | Was reserved for feature XG-008 (player accounts). 011 and 012 shipped first, and migrations run (and the preflight checks the ledger) in name order, so a later 010 would sit out of order. XG-008 is 013 and 014 instead. The number is never reused. |
 | 011 | `011_returning_player_registration` | yes | pending | Adds a detached request queue. No backfill or change to existing player, application, result or audit rows. No dependency on 010. |
 | 012 | `012_new_player_registration_approval` | yes | pending | Adds a private queue for first-time players. No backfill, renumbering or changes to existing entries. No dependency on 010. |
+| 013 | `013_player_accounts` | yes | pending | Feature XG-008. Player type (registered/guest), display nickname and lock, `player_credential` (scrypt hash, lockout counter), `player_one_time_code` (keyed hashes only). Schema only: existing players stay registered with no credential. Does not add `contact_version`; does not redefine `application_team_name_source_check`. Needs 009. |
+| 014 | `014_registration_tiers` | yes | pending | Registration tier, pending password hash and nickname on the first-time queue. Existing pending requests become registered with no password. Decisions clear the account details (checked by constraints). Needs 012 and 013. |
 
 **Release packet for registration:** 007 → 008 → 009 → 011 → 012 in one transaction for a database still on 001–006, with five ledger rows. The build check requires the full schema for this code. Production remains approval-gated.
+
+**Player accounts packet (XG-008):** 013 → 014 in one transaction after the registration packet, with two ledger rows, preceded by the same read-only preflight. Code that needs them must not be deployed to production before the packet: the production build check stops on pending migrations.
+
+**Player accounts (013/014):** Guests have no XG ID. Their `public_no` is negative and comes from `player_guest_no_seq`, so the XG ID identity sequence is never consumed by a guest and its definition is unchanged (`player_guest_number` ties the sign to `player_type`). A registered applicant's password is hashed with scrypt at submission; approval moves the hash into `player_credential` in the approval transaction, rejection erases it. One-time claim and reset codes are stored as HMAC hashes keyed from `PRIVATE_DATA_KEY`; rotating that key invalidates outstanding codes. Player sessions are signed with `PLAYER_SESSION_SECRET`.
 
 **Attestation fields (009):** `player.contact_verified_at` and `contact_verification_method` record a manual organizer attestation in OM. They are not automated proof of WhatsApp ownership and never authorization for player login.
 

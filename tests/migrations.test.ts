@@ -140,6 +140,8 @@ test("G6: the release ledger includes the returning-player migration and verifie
       "009_contact_change",
       "011_returning_player_registration",
       "012_new_player_registration_approval",
+      "013_player_accounts",
+      "014_registration_tiers",
     ],
     changed: [],
     recognized: ["006_mcp_oauth"],
@@ -218,6 +220,10 @@ test("M5: checksums ignore CRLF checkouts and keep every previously issued LF ha
       "d179cc982a00a3d1b585e0a5c5d779d94052db02d1640f60408bb5a05259d450",
     "012_new_player_registration_approval":
       "d946cfe3750594eb42bc380a7e874726d3d2006fe0e18129de6b4e1e4d6a4012",
+    "013_player_accounts":
+      "1fc7e8803df3762fd9d2d9dc0f6bd6ec1431e552a1c9eb288207dacafcbf93ef",
+    "014_registration_tiers":
+      "e7c024ef06cfc56509ba79d2b81a2b9ff35995b6b7e8020c786fea72b5a3f74e",
   };
   assert.deepEqual(
     Object.fromEntries(files.map((f) => [f.name, f.hash])),

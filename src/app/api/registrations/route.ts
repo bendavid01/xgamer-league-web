@@ -1,7 +1,7 @@
 import { body, endpoint, HttpError, response } from "@/lib/api";
 import {
+  newPlayerRegistrationInput,
   registrationConfigured,
-  registrationInput,
   register,
 } from "@/lib/registration";
 import {
@@ -31,12 +31,18 @@ export async function POST(request: Request) {
       await submitReturningRegistration(parsed.data, ip);
       return response({ ok: true }, 202);
     }
-    const parsed = registrationInput.safeParse(raw);
-    if (!parsed.success)
+    const parsed = newPlayerRegistrationInput.safeParse(raw);
+    if (!parsed.success) {
+      // Account fields explain themselves (password length, nickname rules).
+      const account = parsed.error.issues.find((i) =>
+        ["password", "displayNickname", "tier"].includes(String(i.path[0])),
+      );
       throw new HttpError(
         400,
-        "Check your player name, team name, phone number and the consent box.",
+        account?.message ??
+          "Check your player name, team name, phone number and the consent box.",
       );
+    }
     return response(await register(parsed.data, ip), 202);
   });
 }

@@ -81,9 +81,12 @@ export const listTournaments = cache(
 
 export type PublicPlayer = {
   id: string;
+  /** XG ID, or GUEST_CODE for a guest (no profile page). */
   code: string;
   name: string;
   team: string | null;
+  /** Guests count in this tournament's fixtures and standings like anyone else. */
+  isGuest: boolean;
 };
 export type PublicFixture = {
   id: string;
@@ -116,11 +119,12 @@ export const getTournament = cache(async (id: string) => {
       (n) => podiumRows.find((r) => r.place === n)?.player_id ?? null,
     );
     const players: PublicPlayer[] = (await tournamentParticipants(sql, [id])).map(
-      ({ id, name, no, team, entry_team }) => ({
+      ({ id, name, no, team, entry_team, guest }) => ({
         id,
         name,
         code: playerCode(no),
         team: tournamentTeam(team, entry_team),
+        isGuest: guest,
       }),
     );
     const updates = await sql<
@@ -174,9 +178,11 @@ export const getChampions = cache(async () => {
         player: string;
         current_team: string | null;
         entry_team: string | null;
+        guest: boolean;
       })[]
     >`select t.id,t.name,t.competition,t.season,extract(epoch from ph.updated_at)::int as photo,
-        po.place,p.public_no as no,p.gaming_name as player,p.team_name as current_team,a.team_name as entry_team
+        po.place,p.public_no as no,p.gaming_name as player,p.team_name as current_team,a.team_name as entry_team,
+        p.player_type='guest' as guest
       from tournament t join podium po on po.tournament_id=t.id join player p on p.id=po.player_id
       left join application a on a.tournament_id=t.id and a.player_id=p.id
       left join tournament_photo ph on ph.tournament_id=t.id
@@ -196,6 +202,7 @@ export const getChampions = cache(async () => {
           code: string;
           name: string;
           team: string | null;
+          isGuest: boolean;
         }[];
       }
     >();
@@ -214,6 +221,7 @@ export const getChampions = cache(async () => {
         code: playerCode(r.no),
         name: r.player,
         team: tournamentTeam(r.current_team, r.entry_team),
+        isGuest: r.guest,
       });
       out.set(r.id, entry);
     }

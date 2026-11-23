@@ -33,6 +33,8 @@ export const KNOWN_MIGRATIONS = [
   "009_contact_change",
   "011_returning_player_registration",
   "012_new_player_registration_approval",
+  "013_player_accounts",
+  "014_registration_tiers",
 ];
 
 const n = (v: unknown) => Number(v ?? 0);
@@ -48,9 +50,10 @@ export async function healthReport(): Promise<Section[]> {
   const sections: Section[] = [];
 
   /* ── 1. Permanent player IDs ── */
+  // Guests (013) have no XG ID: their internal numbers are negative and separate.
   const [ids] = await sql`select count(*) total, count(public_no) numbered,
       count(distinct public_no) distinct_nos, min(public_no) lo, max(public_no) hi,
-      count(*) filter (where deleted_at is not null) removed from player`;
+      count(*) filter (where deleted_at is not null) removed from player where public_no > 0`;
   const [seqName] =
     await sql`select pg_get_serial_sequence('player','public_no') as name`;
   let next: number | null = null;

@@ -153,3 +153,12 @@ export async function actor(
     throw new HttpError(403, "This operation is not assigned to you.");
   return user;
 }
+
+/** The client address for rate limits: Vercel's forwarded address in deployments, "local" otherwise. */
+export function requestIp(request: Request) {
+  const ip = process.env.VERCEL
+    ? request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()
+    : "local";
+  if (!ip) throw new HttpError(503, "Abuse protection is unavailable.");
+  return ip;
+}

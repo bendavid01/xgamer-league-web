@@ -73,7 +73,8 @@ export type HallEntry = {
   competition: string | null;
   season: number | null;
   photo: number | null;
-  places: ({ code: string; name: string; team: string | null } | null)[];
+  /** A guest is shown by name (isGuest) with no profile link. */
+  places: ({ code: string; name: string; team: string | null; isGuest: boolean } | null)[];
 };
 
 export const getRecords = cache(async () => {
@@ -155,6 +156,8 @@ export function compute(
     team: string | null;
     /** The team used in that tournament; null when it wasn't recorded. */
     entry_team?: string | null;
+    /** Guests play in tournament tables only: never in all-time boards or totals. */
+    guest?: boolean;
   }[],
   fixtures: {
     tournament_id: string;
@@ -176,13 +179,14 @@ export function compute(
   const label = new Map(tournaments.map((t) => [t.id, tournamentLabel(t)]));
   const people = new Map<
     string,
-    { code: string; name: string; team: string | null; in: Set<string> }
+    { code: string; name: string; team: string | null; guest: boolean; in: Set<string> }
   >();
   for (const e of entries) {
     const p = people.get(e.id) ?? {
       code: playerCode(e.no),
       name: e.name,
       team: e.team,
+      guest: !!e.guest,
       in: new Set<string>(),
     };
     p.in.add(e.tournament_id);
@@ -199,7 +203,11 @@ export function compute(
       a.slot - b.slot,
   );
 
-  const players: PlayerRecord[] = [...people].map(([id, p]) => {
+  const isGuest = (id: string) => !!people.get(id)?.guest;
+  // All-time boards are for XG players. A guest's matches still count for their
+  // registered opponents, exactly as in the tournament table.
+  const registered = [...people].filter(([, p]) => !p.guest);
+  const players: PlayerRecord[] = registered.map(([id, p]) => {
     let won = 0,
       drawn = 0,
       lost = 0,
@@ -283,7 +291,7 @@ export function compute(
       a.name.localeCompare(b.name),
   );
 
-  const matches: MatchRecord[] = games.map((g) => {
+  const matches: MatchRecord[] = games.filter((g) => !isGuest(g.home) && !isGuest(g.away)).map((g) => {
     const homeWins = g.home_score >= g.away_score;
     return {
       tournament: label.get(g.tournament_id)!,
@@ -340,6 +348,7 @@ export function compute(
           ? {
               code: p.code,
               name: p.name,
+              isGuest: p.guest,
               team: tournamentTeam(
                 p.team,
                 teamAt.get(`${t.id}:${id}`) ?? null,
@@ -359,7 +368,7 @@ export function compute(
       tournaments: tournaments.length,
       matches: games.length,
       goals: games.reduce((s, g) => s + g.home_score + g.away_score, 0),
-      players: people.size,
+      players: registered.length,
     },
   };
 }

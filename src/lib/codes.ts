@@ -1,6 +1,9 @@
-/** Permanent public player ID, e.g. XG-0007. */
+/** Shown instead of an XG ID for a guest, who never has one. Not a valid XG ID. */
+export const GUEST_CODE = "GUEST";
+
+/** Permanent public player ID, e.g. XG-0007. Guests (negative internal numbers) have none. */
 export const playerCode = (n: number | null | undefined) =>
-  n ? `XG-${String(n).padStart(4, "0")}` : "XG-????";
+  n && n < 0 ? GUEST_CODE : n ? `XG-${String(n).padStart(4, "0")}` : "XG-????";
 
 /** "XG-0007" / "xg-7" → 7. */
 export const codeNumber = (code: string) => {

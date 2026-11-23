@@ -3,6 +3,8 @@ import type { TransactionSql } from "postgres";
 import { db } from "./db";
 import { fingerprint } from "./private-data";
 import { HttpError } from "./api";
+import { hashPassword, nicknameInput, passwordInput } from "./player-auth";
+import { nicknameAvailable } from "./player-nickname";
 
 /**
  * Indian mobile numbers only. The form sends 10 digits; pasted "+91…" or "0…" forms are
@@ -36,6 +38,33 @@ export const registrationInput = z.object({
   website: z.string().max(0),
   tournament: z.string().regex(/^[a-z0-9-]{3,80}$/),
 });
+
+/**
+ * First-time applications choose a tier. "registered" sets a password and
+ * nickname now and gets an XG ID when an organizer approves; "guest" plays this
+ * tournament only and never gets an XG ID or account. No tier keeps the earlier
+ * form working: a registered application whose account is claimed later.
+ */
+export const newPlayerRegistrationInput = registrationInput
+  .extend({
+    tier: z.enum(["registered", "guest"]).optional(),
+    password: passwordInput.optional(),
+    displayNickname: nicknameInput.optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.tier === "registered" && (!v.password || !v.displayNickname))
+      ctx.addIssue({
+        code: "custom",
+        path: ["password"],
+        message: "Registered players choose a password and a nickname.",
+      });
+    if (v.tier !== "registered" && (v.password || v.displayNickname))
+      ctx.addIssue({
+        code: "custom",
+        path: ["tier"],
+        message: "Only registered players set a password and nickname.",
+      });
+  });
 
 export const efootballIdInput = z
   .string()
@@ -101,12 +130,22 @@ export const newPlayerContactProof = (tournament: string, phone: string) =>
   fingerprint("xg:new-player-registration:v1:" + JSON.stringify([tournament, phone]));
 
 export async function register(
-  input: z.infer<typeof registrationInput>,
+  input: z.infer<typeof newPlayerRegistrationInput>,
   ip: string,
 ) {
   const phone = normalizePhone(input.phone);
   if (!phone) throw new HttpError(400, "Check the mobile number and try again.");
   await checkRegistrationLimit(ip);
+  const tier = input.tier ?? "registered";
+  // Only the scrypt hash is kept, and only until an organizer decides.
+  const passwordHash = input.password
+    ? await hashPassword(input.password)
+    : null;
+  const nickname = input.displayNickname ?? null;
+  // A hint only: approval re-checks under a lock and keeps the account without
+  // the nickname if someone took it meanwhile.
+  if (nickname && !(await nicknameAvailable(nickname)))
+    throw new HttpError(409, "That nickname is taken. Choose another.");
   return db().begin(async (tx) => {
     const tournament = await lockOpenRegistration(tx, input.tournament);
     // Intake records a claim without revealing whether the number is on file.
@@ -119,8 +158,10 @@ export async function register(
     if (pending) return { reference: pending.id };
     await requirePendingRoom(tx, "new", tournament);
     const [created] = await tx<{ id: string }[]>`
-      insert into new_player_registration_request(tournament_id,gaming_name,team_name,contact_proof,consent_version)
-      values(${tournament},${input.playerName},${input.teamName},${proof},'2026-10-v3')
+      insert into new_player_registration_request(tournament_id,gaming_name,team_name,contact_proof,consent_version,
+        registration_tier,pending_password_hash,pending_nickname)
+      values(${tournament},${input.playerName},${input.teamName},${proof},'2026-10-v3',
+        ${tier},${passwordHash},${nickname})
       on conflict(tournament_id,contact_proof,gaming_name,team_name) where status='pending'
       do nothing returning id`;
     if (!created)

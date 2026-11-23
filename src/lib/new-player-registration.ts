@@ -11,9 +11,11 @@ import { playerCode } from "./codes";
 import {
   contactReservedByOpenChange,
   lockContactNumber,
+  lockNickname,
   lockPlayerName,
 } from "./contact-lock";
 import { db } from "./db";
+import { nicknameTaken } from "./player-nickname";
 import { encrypt, fingerprint } from "./private-data";
 import { newPlayerContactProof, registrationInput } from "./registration";
 import {
@@ -41,6 +43,12 @@ export type PendingNewPlayerRegistration = {
   name: string;
   team: string;
   createdAt: string;
+  /** "registered" gets an XG ID on approval; "guest" plays this tournament only. */
+  tier: "registered" | "guest";
+  /** A registered applicant who set a password: their account is active on approval. */
+  accountReady: boolean;
+  /** The nickname they asked for, locked on approval if still free. */
+  nickname: string | null;
   /** Every same-name record (each must be confirmed), then up to 5 same-team ones. */
   possibleMatches: PossibleMatch[];
   /** Same-team records not listed. Team names are often real clubs, so informational. */
@@ -96,7 +104,7 @@ async function possibleMatches(
       select id,
         btrim(regexp_replace(lower(normalize(gaming_name, NFKC)), '[[:space:]]+', ' ', 'g')) as n,
         btrim(regexp_replace(lower(normalize(coalesce(team_name, ''), NFKC)), '[[:space:]]+', ' ', 'g')) as tm
-      from player
+      from player where player_type = 'registered'
     ), teams as (
       select distinct player_id,
         btrim(regexp_replace(lower(normalize(team_name, NFKC)), '[[:space:]]+', ' ', 'g')) as tm
@@ -118,7 +126,7 @@ async function possibleMatches(
       select m.*, pl.public_no, pl.gaming_name, pl.team_name, pl.deleted_at is not null as retired,
         row_number() over (partition by m.request_id, m.same_name order by pl.public_no) as rank_in_kind,
         (count(*) filter (where not m.same_name) over (partition by m.request_id))::int as team_only_total
-      from m join player pl on pl.id = m.player_id
+      from m join player pl on pl.id = m.player_id and pl.player_type = 'registered'
     )
     select request_id, public_no, gaming_name, team_name, retired, same_name, same_team, team_only_total
     from ranked where same_name or rank_in_kind <= ${SHOWN_TEAM_MATCHES}
@@ -154,9 +162,14 @@ export async function pendingNewPlayerRegistrations(
       gaming_name: string;
       team_name: string;
       created_at: Date;
+      registration_tier: "registered" | "guest";
+      account_ready: boolean;
+      pending_nickname: string | null;
     }[]
   >`
-    select id,gaming_name,team_name,created_at from new_player_registration_request
+    select id,gaming_name,team_name,created_at,registration_tier,
+      pending_password_hash is not null as account_ready,pending_nickname
+    from new_player_registration_request
     where tournament_id=${tournament} and status='pending' order by created_at,id`;
   const matches = requests.length
     ? await possibleMatches(sql, tournament)
@@ -169,10 +182,30 @@ export async function pendingNewPlayerRegistrations(
       name: r.gaming_name,
       team: r.team_name,
       createdAt: r.created_at.toISOString(),
+      tier: r.registration_tier,
+      accountReady: r.account_ready,
+      nickname: r.pending_nickname,
       possibleMatches: found.list,
       moreMatches: Math.max(found.teamOnlyTotal - shownTeamOnly, 0),
     };
   });
+}
+
+/**
+ * The XG ID the next approved registered player would get, for the review screen.
+ * A preview only: the number is taken from the identity sequence inside the
+ * approval transaction, so a concurrent approval or a rolled-back one can make
+ * the real number differ. Nothing is reserved by reading it.
+ */
+export async function nextXgIdPreview(sql: Sql = db()) {
+  const [seq] = await sql<
+    { name: string | null }[]
+  >`select pg_get_serial_sequence('player','public_no') as name`;
+  if (!seq?.name || !/^[a-z0-9_."]+$/i.test(seq.name)) return null;
+  const [s] = await sql.unsafe<{ last_value: string; is_called: boolean }[]>(
+    `select last_value, is_called from ${seq.name}`,
+  );
+  return s ? playerCode(Number(s.last_value) + (s.is_called ? 1 : 0)) : null;
 }
 
 const { tournament, phone } = registrationInput.shape;
@@ -249,9 +282,13 @@ export async function executeNewPlayerRegistration(
         contact_proof: string;
         created_at: Date;
         consent_version: string;
+        registration_tier: "registered" | "guest";
+        pending_password_hash: string | null;
+        pending_nickname: string | null;
       }[]
     >`
-      select id,gaming_name,team_name,contact_proof,created_at,consent_version
+      select id,gaming_name,team_name,contact_proof,created_at,consent_version,
+        registration_tier,pending_password_hash,pending_nickname
       from new_player_registration_request
       where id=${c.reference} and tournament_id=${t} and status='pending' for update`;
     if (!request)
@@ -261,11 +298,13 @@ export async function executeNewPlayerRegistration(
       );
     if (c.action === "newPlayer.reject") {
       recheckRegistrationReviewer(organizer);
+      // The password hash and nickname go with the rest of the applicant's details.
       await tx`update new_player_registration_request set status='rejected',
-        decided_at=now(),gaming_name=null,team_name=null,contact_proof=null where id=${request.id}`;
+        decided_at=now(),gaming_name=null,team_name=null,contact_proof=null,
+        pending_password_hash=null,pending_nickname=null where id=${request.id}`;
       await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,after_value)
         values(${organizer.id},${auditText(organizer.name ?? null)},'admin','newPlayer.reject',${request.id},${t},
-          'Rejected new-player application',${tx.json({ reason: c.reason })})`;
+          'Rejected new-player application',${tx.json({ reason: c.reason, tier: request.registration_tier })})`;
       return { ok: true as const };
     }
 
@@ -282,10 +321,18 @@ export async function executeNewPlayerRegistration(
     const contactHash = fingerprint("whatsapp:" + c.verifiedPhone);
     // Serializes with number changes and other approvals of this number (L1).
     await lockContactNumber(tx, contactHash);
-    // Retired identities also reserve their existing contact numbers.
-    const [existing] =
-      await tx`select 1 from player where contact_hash=${contactHash}`;
-    if (existing) throw contactConflict();
+    const guest = request.registration_tier === "guest";
+    // Retired identities also reserve their existing contact numbers. A guest
+    // applicant whose number belongs to an earlier guest record is that guest
+    // again: the new entry links to it, still without an XG ID.
+    const [existing] = await tx<
+      { id: string; player_type: string; deleted_at: Date | null }[]
+    >`select id,player_type,deleted_at from player where contact_hash=${contactHash}`;
+    const returningGuest =
+      guest && existing?.player_type === "guest" && !existing.deleted_at
+        ? existing
+        : null;
+    if (existing && !returningGuest) throw contactConflict();
     if (await contactReservedByOpenChange(tx, contactHash))
       throw new HttpError(
         409,
@@ -309,26 +356,70 @@ export async function executeNewPlayerRegistration(
           .join(", ")}. If the applicant already has an XG ID, reject this application and add them under Returning players. If each is a different person, confirm that and approve again.`,
       );
 
+    // A nickname chosen at signup is locked on approval if it is still free; if
+    // someone took it meanwhile the account is activated without one (the
+    // player picks another later) rather than holding up the approval.
+    let nickname: string | null = null;
+    if (request.pending_nickname) {
+      await lockNickname(tx, request.pending_nickname);
+      if (!(await nicknameTaken(tx, request.pending_nickname)))
+        nickname = request.pending_nickname;
+    }
+
     // Every lock is held: confirm the reviewer is still a main admin before writing.
     recheckRegistrationReviewer(organizer);
+    // The XG ID is taken from the identity sequence here, inside the approval,
+    // and never earlier. Guests get a negative internal number from their own
+    // sequence instead, so they never use up or reveal an XG ID.
     // The unique player contact still guards anything the lock does not cover.
-    const [player] = await tx<{ id: string; public_no: number }[]>`
-      insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_at,consent_version)
-      values(${request.gaming_name},${request.team_name},${contactHash},${encrypt(c.verifiedPhone)},
-        ${request.created_at},${request.consent_version})
-      on conflict(contact_hash) do nothing returning id,public_no`;
+    const [player] = returningGuest
+      ? await tx<{ id: string; public_no: number }[]>`
+          select id,public_no from player where id=${returningGuest.id}`
+      : guest
+        ? await tx<{ id: string; public_no: number }[]>`
+          insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_at,consent_version,player_type,public_no)
+          values(${request.gaming_name},${request.team_name},${contactHash},${encrypt(c.verifiedPhone)},
+            ${request.created_at},${request.consent_version},'guest',-nextval('player_guest_no_seq'))
+          on conflict(contact_hash) do nothing returning id,public_no`
+        : await tx<{ id: string; public_no: number }[]>`
+          insert into player(gaming_name,team_name,contact_hash,contact_cipher,consent_at,consent_version,
+            display_nickname,nickname_locked)
+          values(${request.gaming_name},${request.team_name},${contactHash},${encrypt(c.verifiedPhone)},
+            ${request.created_at},${request.consent_version},${nickname},${!!nickname})
+          on conflict(contact_hash) do nothing returning id,public_no`;
     if (!player) throw contactConflict();
+    // The password set at signup becomes the account's password now, in the
+    // same transaction: the player can sign in the moment this commits.
+    const accountActivated = !guest && !!request.pending_password_hash;
+    if (accountActivated)
+      await tx`insert into player_credential(player_id,password_hash,password_changed_at)
+        values(${player.id},${request.pending_password_hash},now())`;
     const [entry] = await tx<{ id: string }[]>`
       insert into application(tournament_id,player_id,status,verified_at,team_name,team_name_source)
-      values(${t},${player.id},'approved',now(),${request.team_name},'registration') returning id`;
+      values(${t},${player.id},'approved',now(),${request.team_name},'registration')
+      on conflict(tournament_id,player_id) do nothing returning id`;
+    if (!entry)
+      throw new HttpError(
+        409,
+        "This guest already has an entry for this tournament.",
+      );
     await tx`update new_player_registration_request set status='approved',
-      decided_at=now(),application_id=${entry.id},gaming_name=null,team_name=null,contact_proof=null where id=${request.id}`;
+      decided_at=now(),application_id=${entry.id},gaming_name=null,team_name=null,contact_proof=null,
+      pending_password_hash=null,pending_nickname=null where id=${request.id}`;
 
     const code = playerCode(player.public_no);
+    const summary = guest
+      ? "Approved guest application"
+      : "Approved new-player application";
     await tx`insert into audit_event(actor,actor_name,actor_role,action,entity,tournament_id,summary,affected,after_value)
       values(${organizer.id},${auditText(organizer.name ?? null)},'admin','application.create',${entry.id},${t},
-        'Approved new-player application',${code},${tx.json({
+        ${summary},${code},${tx.json({
           playerId: player.id,
+          tier: request.registration_tier,
+          guest_record_reused: !!returningGuest,
+          account_activated: accountActivated,
+          nickname_locked: !!nickname,
+          nickname_unavailable: !!request.pending_nickname && !nickname,
           team: auditRegistrationTeam(request.team_name),
           status: "approved",
           method: "new_player_approval",
@@ -346,6 +437,9 @@ export async function executeNewPlayerRegistration(
       code,
       playerId: player.id,
       applicationId: entry.id,
+      tier: request.registration_tier,
+      accountActivated,
+      nickname,
     };
   });
 }

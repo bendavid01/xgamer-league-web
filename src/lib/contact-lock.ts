@@ -26,16 +26,31 @@ export async function lockContactNumber(tx: TransactionSql, contactHash: string)
  * lock. A gaming-name change (player-details.ts) takes it for the new name too, so
  * an approval cannot miss a rename committed while it was checking.
  *
- * The name lock is always taken last, after every row and number lock
- * (approval: tournament → request → number → name; rename: tournament → player
- * → entry → name), and nothing waits for another lock while holding it, so no
- * cycle is possible.
+ * The name lock is taken after every row and number lock (approval: tournament
+ * → request → number → name; rename: tournament → player → entry → name). The
+ * only lock ever taken after it is the nickname lock below, which is always the
+ * very last, so no cycle is possible.
  */
 const NAME_LOCK_CLASS = 2026111502;
 
 export async function lockPlayerName(tx: TransactionSql, gamingName: string) {
   await tx`select pg_advisory_xact_lock(${NAME_LOCK_CLASS}::int, hashtext('name:' ||
     btrim(regexp_replace(lower(normalize(${gamingName}::text, NFKC)), '[[:space:]]+', ' ', 'g'))))`;
+}
+
+/**
+ * Setting a player's display nickname takes this lock on the nickname (case
+ * folded) before checking that no one else uses it: a new-player approval and a
+ * claim-code redemption could otherwise both pass the check. The unique index
+ * player_display_nickname_ci still guards the write.
+ *
+ * It is always taken last, after every row, number and name lock, and nothing
+ * waits for another lock while holding it, so no cycle is possible.
+ */
+const NICKNAME_LOCK_CLASS = 2026112301;
+
+export async function lockNickname(tx: TransactionSql, nickname: string) {
+  await tx`select pg_advisory_xact_lock(${NICKNAME_LOCK_CLASS}::int, hashtext('nickname:' || lower(${nickname}::text)))`;
 }
 
 /**

@@ -15,7 +15,8 @@ export type CareerMatch = {
   tournament: string;
   tournamentLabel: string;
   round: number;
-  opponent: { code: string; name: string };
+  /** A guest opponent has GUEST_CODE and no profile page. */
+  opponent: { code: string; name: string; isGuest: boolean };
   home: boolean;
   gf: number | null;
   ga: number | null;
@@ -58,7 +59,8 @@ export const getProfile = cache(async (code: string) => {
   >`select id,gaming_name as name,deleted_at is not null as retired,
       case when deleted_at is null then team_name end as team,
       case when deleted_at is null then to_char(consent_at,'YYYY-MM-DD') end as since
-    from player where public_no=${no}`;
+    from player where public_no=${no} and player_type='registered'`;
+  // Guests have no XG ID and no public dossier.
   if (!player) return null;
 
   const tournaments = await sql<
@@ -110,7 +112,10 @@ export const getProfile = cache(async (code: string) => {
   const entrants = ids.length ? await tournamentParticipants(sql, ids) : [];
 
   const people = new Map(
-    entrants.map((e) => [e.id, { code: playerCode(e.no), name: e.name }]),
+    entrants.map((e) => [
+      e.id,
+      { code: playerCode(e.no), name: e.name, isGuest: e.guest },
+    ]),
   );
   const order = new Map(ids.map((id, i) => [id, i]));
   const labels = new Map(tournaments.map((t) => [t.id, tournamentLabel(t)]));
@@ -171,6 +176,7 @@ export const getProfile = cache(async (code: string) => {
       const opp = people.get(home ? f.away : f.home) ?? {
         code: "XG-????",
         name: "Player",
+        isGuest: false,
       };
       return {
         id: f.id,
@@ -203,11 +209,13 @@ export const getProfile = cache(async (code: string) => {
     .filter((c) => c.finished && c.position)
     .map((c) => c.position!);
 
+  // Keyed by opponent and name: every guest shares GUEST_CODE.
   const h2h = new Map<
     string,
     {
       code: string;
       name: string;
+      isGuest: boolean;
       p: number;
       w: number;
       d: number;
@@ -217,7 +225,10 @@ export const getProfile = cache(async (code: string) => {
     }
   >();
   for (const m of playedMatches) {
-    const r = h2h.get(m.opponent.code) ?? {
+    const key = m.opponent.isGuest
+      ? `guest:${m.opponent.name}`
+      : m.opponent.code;
+    const r = h2h.get(key) ?? {
       ...m.opponent,
       p: 0,
       w: 0,
@@ -232,7 +243,7 @@ export const getProfile = cache(async (code: string) => {
     if (m.outcome === "W") r.w++;
     else if (m.outcome === "D") r.d++;
     else r.l++;
-    h2h.set(m.opponent.code, r);
+    h2h.set(key, r);
   }
 
   return {

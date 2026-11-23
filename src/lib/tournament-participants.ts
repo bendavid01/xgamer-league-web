@@ -26,9 +26,11 @@ export function tournamentParticipants(sql: ISql, ids: string[]) {
       name: string;
       team: string | null;
       entry_team: string | null;
+      /** A guest plays in this tournament's tables but has no XG ID or public profile. */
+      guest: boolean;
     }[]
   >`select h.tournament_id,p.id,p.public_no as no,p.gaming_name as name,
-      p.team_name as team,a.team_name as entry_team
+      p.team_name as team,a.team_name as entry_team,p.player_type='guest' as guest
     from (${participantIds(sql)}) h join player p on p.id=h.player_id
     left join application a on a.tournament_id=h.tournament_id and a.player_id=h.player_id
     where h.tournament_id=any(${ids}) order by p.gaming_name,p.id`;

@@ -1,7 +1,8 @@
 -- Registration release preflight (L3). READ ONLY: it changes nothing.
 --
 -- Run the whole file against the target database BEFORE applying the release packet
--- (007 -> 008 -> 009 -> 011 -> 012). It returns one row per check with status
+-- (007 -> 008 -> 009 -> 011 -> 012), and again before the player-accounts packet
+-- (013 -> 014). It returns one row per check with status
 -- 'pass', 'warn' or 'fail'. Any 'fail' means: stop, do not apply, report it.
 --
 -- It is safe on a database without the migration ledger: the ledger is read through
@@ -26,7 +27,9 @@ with expected(name, lf_hash, crlf_hash) as (values
   ('008_team_name_provenance', 'ef7e292c35ac579b37964406ff5bf9f149fd78fec841e83054f1d9f4494b20d1', '68a176bd9898123b6555eb301d4a3ff59878d07526e8707ba52830173d68b15b'),
   ('009_contact_change', 'af65cfb2a18f63b07ec3cdc7c1945ac18c44a0ae1a46c503742ddb2567f73097', 'a34ea5a21be419c8ce1b816eae9b8b0400b28d8f2bda549a0ec6a00ee3b91f87'),
   ('011_returning_player_registration', 'd179cc982a00a3d1b585e0a5c5d779d94052db02d1640f60408bb5a05259d450', '179dbc300cd658ce0a80eeadecee997c836fadf53c4856cb251345405fe447dd'),
-  ('012_new_player_registration_approval', 'd946cfe3750594eb42bc380a7e874726d3d2006fe0e18129de6b4e1e4d6a4012', '6801254160983b814deb0d947071b2d7f604b38042b25a59e5cf7e3749a6eed0')
+  ('012_new_player_registration_approval', 'd946cfe3750594eb42bc380a7e874726d3d2006fe0e18129de6b4e1e4d6a4012', '6801254160983b814deb0d947071b2d7f604b38042b25a59e5cf7e3749a6eed0'),
+  ('013_player_accounts', '1fc7e8803df3762fd9d2d9dc0f6bd6ec1431e552a1c9eb288207dacafcbf93ef', '5d5b8d0cf0186350134b02eeea480c0c56ff5400c2aa8bc1025effc38b0c67de'),
+  ('014_registration_tiers', 'e7c024ef06cfc56509ba79d2b81a2b9ff35995b6b7e8020c786fea72b5a3f74e', '6c17e8b7f4c4d4aad1f30f034655c375644fbee90c4b4d52f27aa08f139e9e22')
 ),
 -- Objects each pending migration creates. They must not exist before it is applied.
 created(migration, object) as (values
@@ -39,7 +42,12 @@ created(migration, object) as (values
   ('011_returning_player_registration', 'public.returning_registration_pending_queue'),
   ('012_new_player_registration_approval', 'public.new_player_registration_request'),
   ('012_new_player_registration_approval', 'public.new_player_registration_pending_claim'),
-  ('012_new_player_registration_approval', 'public.new_player_registration_pending_queue')
+  ('012_new_player_registration_approval', 'public.new_player_registration_pending_queue'),
+  ('013_player_accounts', 'public.player_credential'),
+  ('013_player_accounts', 'public.player_one_time_code'),
+  ('013_player_accounts', 'public.player_one_time_code_active'),
+  ('013_player_accounts', 'public.player_display_nickname_ci'),
+  ('013_player_accounts', 'public.player_guest_no_seq')
 ),
 -- Columns this code reads, added by pending migrations with "add column if not exists".
 added(migration, tbl, col) as (values
@@ -47,11 +55,17 @@ added(migration, tbl, col) as (values
   ('007_application_team_name', 'application', 'team_name_source'),
   ('009_contact_change', 'player', 'contact_version'),
   ('009_contact_change', 'player', 'contact_verified_at'),
-  ('009_contact_change', 'player', 'contact_verification_method')
+  ('009_contact_change', 'player', 'contact_verification_method'),
+  ('013_player_accounts', 'player', 'player_type'),
+  ('013_player_accounts', 'player', 'display_nickname'),
+  ('013_player_accounts', 'player', 'nickname_locked'),
+  ('014_registration_tiers', 'new_player_registration_request', 'registration_tier'),
+  ('014_registration_tiers', 'new_player_registration_request', 'pending_password_hash'),
+  ('014_registration_tiers', 'new_player_registration_request', 'pending_nickname')
 ),
 -- Every index, constraint (NOT NULL included), column default (identity columns
 -- included), trigger (with its enabled state) and function of these migrations,
--- as PostgreSQL 18 prints it once 001-012 are applied, with the migration that
+-- as PostgreSQL 18 prints it once 001-014 are applied, with the migration that
 -- last sets it. An applied migration's definitions must all be present: a name
 -- alone is not enough, because "create ... if not exists" keeps an index of the
 -- same name with other columns, another predicate or no uniqueness, and a
@@ -335,7 +349,56 @@ defs(migration, kind, tbl, name, def) as (values
   ('012_new_player_registration_approval', 'u', 'new_player_registration_request', 'new_player_registration_request_application_id_key', 'UNIQUE (application_id)'),
   ('012_new_player_registration_approval', 'default', 'new_player_registration_request', 'created_at', 'created_at DEFAULT now()'),
   ('012_new_player_registration_approval', 'default', 'new_player_registration_request', 'id', 'id DEFAULT gen_random_uuid()'),
-  ('012_new_player_registration_approval', 'default', 'new_player_registration_request', 'status', 'status DEFAULT ''pending''::text')
+  ('012_new_player_registration_approval', 'default', 'new_player_registration_request', 'status', 'status DEFAULT ''pending''::text'),
+  ('013_player_accounts', 'index', 'player_credential', 'player_credential_pkey', 'CREATE UNIQUE INDEX player_credential_pkey ON public.player_credential USING btree (player_id)'),
+  ('013_player_accounts', 'c', 'player_credential', 'player_credential_check', 'CHECK (((password_hash IS NULL) = (password_changed_at IS NULL)))'),
+  ('013_player_accounts', 'c', 'player_credential', 'player_credential_failed_attempts_check', 'CHECK (((failed_attempts >= 0) AND (failed_attempts <= 5)))'),
+  ('013_player_accounts', 'c', 'player_credential', 'player_credential_password_hash_check', 'CHECK ((password_hash ~ ''^scrypt\$[0-9]+\$[0-9]+\$[0-9]+\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$''::text))'),
+  ('013_player_accounts', 'f', 'player_credential', 'player_credential_player_id_fkey', 'FOREIGN KEY (player_id) REFERENCES player(id) ON DELETE CASCADE'),
+  ('013_player_accounts', 'n', 'player_credential', 'player_credential_created_at_not_null', 'NOT NULL created_at'),
+  ('013_player_accounts', 'n', 'player_credential', 'player_credential_failed_attempts_not_null', 'NOT NULL failed_attempts'),
+  ('013_player_accounts', 'n', 'player_credential', 'player_credential_player_id_not_null', 'NOT NULL player_id'),
+  ('013_player_accounts', 'n', 'player_credential', 'player_credential_updated_at_not_null', 'NOT NULL updated_at'),
+  ('013_player_accounts', 'p', 'player_credential', 'player_credential_pkey', 'PRIMARY KEY (player_id)'),
+  ('013_player_accounts', 'default', 'player_credential', 'created_at', 'created_at DEFAULT now()'),
+  ('013_player_accounts', 'default', 'player_credential', 'failed_attempts', 'failed_attempts DEFAULT 0'),
+  ('013_player_accounts', 'default', 'player_credential', 'updated_at', 'updated_at DEFAULT now()'),
+  ('013_player_accounts', 'index', 'player_one_time_code', 'player_one_time_code_active', 'CREATE UNIQUE INDEX player_one_time_code_active ON public.player_one_time_code USING btree (player_id, purpose) WHERE ((used_at IS NULL) AND (revoked_at IS NULL))'),
+  ('013_player_accounts', 'index', 'player_one_time_code', 'player_one_time_code_pkey', 'CREATE UNIQUE INDEX player_one_time_code_pkey ON public.player_one_time_code USING btree (id)'),
+  ('013_player_accounts', 'c', 'player_one_time_code', 'player_one_time_code_check', 'CHECK ((expires_at > created_at))'),
+  ('013_player_accounts', 'c', 'player_one_time_code', 'player_one_time_code_check1', 'CHECK (((used_at IS NULL) OR (revoked_at IS NULL)))'),
+  ('013_player_accounts', 'c', 'player_one_time_code', 'player_one_time_code_code_hash_check', 'CHECK ((code_hash ~ ''^[a-f0-9]{64}$''::text))'),
+  ('013_player_accounts', 'c', 'player_one_time_code', 'player_one_time_code_created_by_admin_check', 'CHECK ((created_by_admin ~ ''^[0-9]{17,20}$''::text))'),
+  ('013_player_accounts', 'c', 'player_one_time_code', 'player_one_time_code_purpose_check', 'CHECK ((purpose = ANY (ARRAY[''claim''::text, ''reset''::text])))'),
+  ('013_player_accounts', 'f', 'player_one_time_code', 'player_one_time_code_player_id_fkey', 'FOREIGN KEY (player_id) REFERENCES player(id) ON DELETE CASCADE'),
+  ('013_player_accounts', 'n', 'player_one_time_code', 'player_one_time_code_code_hash_not_null', 'NOT NULL code_hash'),
+  ('013_player_accounts', 'n', 'player_one_time_code', 'player_one_time_code_created_at_not_null', 'NOT NULL created_at'),
+  ('013_player_accounts', 'n', 'player_one_time_code', 'player_one_time_code_created_by_admin_not_null', 'NOT NULL created_by_admin'),
+  ('013_player_accounts', 'n', 'player_one_time_code', 'player_one_time_code_expires_at_not_null', 'NOT NULL expires_at'),
+  ('013_player_accounts', 'n', 'player_one_time_code', 'player_one_time_code_id_not_null', 'NOT NULL id'),
+  ('013_player_accounts', 'n', 'player_one_time_code', 'player_one_time_code_player_id_not_null', 'NOT NULL player_id'),
+  ('013_player_accounts', 'n', 'player_one_time_code', 'player_one_time_code_purpose_not_null', 'NOT NULL purpose'),
+  ('013_player_accounts', 'p', 'player_one_time_code', 'player_one_time_code_pkey', 'PRIMARY KEY (id)'),
+  ('013_player_accounts', 'default', 'player_one_time_code', 'created_at', 'created_at DEFAULT now()'),
+  ('013_player_accounts', 'default', 'player_one_time_code', 'id', 'id DEFAULT gen_random_uuid()'),
+  ('013_player_accounts', 'index', 'player', 'player_display_nickname_ci', 'CREATE UNIQUE INDEX player_display_nickname_ci ON public.player USING btree (lower(display_nickname)) WHERE (display_nickname IS NOT NULL)'),
+  ('013_player_accounts', 'c', 'player', 'player_display_nickname_length', 'CHECK (((display_nickname IS NULL) OR ((char_length(display_nickname) >= 2) AND (char_length(display_nickname) <= 24))))'),
+  ('013_player_accounts', 'c', 'player', 'player_guest_no_nickname', 'CHECK (((player_type = ''registered''::text) OR (display_nickname IS NULL)))'),
+  ('013_player_accounts', 'c', 'player', 'player_guest_number', 'CHECK (((player_type = ''guest''::text) = (public_no < 0)))'),
+  ('013_player_accounts', 'c', 'player', 'player_nickname_lock', 'CHECK (((NOT nickname_locked) OR (display_nickname IS NOT NULL)))'),
+  ('013_player_accounts', 'c', 'player', 'player_type_check', 'CHECK ((player_type = ANY (ARRAY[''registered''::text, ''guest''::text])))'),
+  ('013_player_accounts', 'n', 'player', 'player_nickname_locked_not_null', 'NOT NULL nickname_locked'),
+  ('013_player_accounts', 'n', 'player', 'player_player_type_not_null', 'NOT NULL player_type'),
+  ('013_player_accounts', 'default', 'player', 'nickname_locked', 'nickname_locked DEFAULT false'),
+  ('013_player_accounts', 'default', 'player', 'player_type', 'player_type DEFAULT ''registered''::text'),
+  ('014_registration_tiers', 'c', 'new_player_registration_request', 'new_player_registration_account_pair', 'CHECK (((pending_password_hash IS NULL) = (pending_nickname IS NULL)))'),
+  ('014_registration_tiers', 'c', 'new_player_registration_request', 'new_player_registration_account_purged', 'CHECK (((status = ''pending''::text) OR ((pending_password_hash IS NULL) AND (pending_nickname IS NULL))))'),
+  ('014_registration_tiers', 'c', 'new_player_registration_request', 'new_player_registration_guest_no_account', 'CHECK (((registration_tier = ''registered''::text) OR ((pending_password_hash IS NULL) AND (pending_nickname IS NULL))))'),
+  ('014_registration_tiers', 'c', 'new_player_registration_request', 'new_player_registration_nickname_length', 'CHECK (((pending_nickname IS NULL) OR ((char_length(pending_nickname) >= 2) AND (char_length(pending_nickname) <= 24))))'),
+  ('014_registration_tiers', 'c', 'new_player_registration_request', 'new_player_registration_password_hash', 'CHECK (((pending_password_hash IS NULL) OR (pending_password_hash ~ ''^scrypt\$[0-9]+\$[0-9]+\$[0-9]+\$[A-Za-z0-9_-]{22}\$[A-Za-z0-9_-]{86}$''::text)))'),
+  ('014_registration_tiers', 'c', 'new_player_registration_request', 'new_player_registration_tier_check', 'CHECK ((registration_tier = ANY (ARRAY[''registered''::text, ''guest''::text])))'),
+  ('014_registration_tiers', 'n', 'new_player_registration_request', 'new_player_registration_request_registration_tier_not_null', 'NOT NULL registration_tier'),
+  ('014_registration_tiers', 'default', 'new_player_registration_request', 'registration_tier', 'registration_tier DEFAULT ''registered''::text')
 ),
 ledger_xml as (
   select case when to_regclass('public.xgamer_migration') is null then '<table/>'::xml

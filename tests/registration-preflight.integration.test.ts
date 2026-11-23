@@ -219,7 +219,7 @@ const defKey = (d: { kind: string; tbl: string; def: string }) =>
   `${d.kind}|${d.tbl}|${d.def}`;
 
 test(
-  "the preflight's expected definitions are exactly what 001–012 create, each owned by the migration that last sets it",
+  "the preflight's expected definitions are exactly what 001–014 create, each owned by the migration that last sets it",
   { skip },
   async () => {
     const url = new URL(base!);
