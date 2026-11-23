@@ -61,6 +61,7 @@ let getTournament: typeof import("../src/lib/tournaments").getTournament;
 let getProfile: typeof import("../src/lib/profile").getProfile;
 let getRecords: typeof import("../src/lib/records").getRecords;
 let players: { id: string; public_no: number }[];
+let preMigration: Awaited<ReturnType<typeof historyRows>>;
 let historicalBefore: Awaited<ReturnType<typeof history>>;
 let ledger: Awaited<
   ReturnType<typeof import("../src/lib/migrations").readLedger>
@@ -127,18 +128,27 @@ before(async () => {
   await sql`insert into audit_event(actor,action,entity,tournament_id,summary)
     values(${admin.id},'application.create',${pastEntry.id},${PAST},'Historical entry')`;
 
-  historicalBefore = await history();
+  preMigration = await historyRows();
   await applyMigrations(sql, files, () => {});
   ledger = await readLedger(sql);
+  // The current standings loader reads player_type, introduced in 013.
+  historicalBefore = await history();
+  assert.deepEqual(
+    historicalBefore.standings.map((row) => ({
+      id: row.id,
+      isGuest: "isGuest" in row ? row.isGuest : undefined,
+    })),
+    players.slice(0, 2).map(({ id }) => ({ id, isGuest: false })),
+  );
 });
 
 after(async () => {
   if (sql) await sql.end();
 });
 
-async function history() {
+async function historyRows() {
   return {
-    players: await sql`select * from player order by id`,
+    players: [...(await sql`select * from player order by id`)],
     sequence: await sql`select last_value from player_public_no_seq`,
     apps: await sql`select * from application where tournament_id=${PAST} order by id`,
     fixtures: await sql`select * from fixture order by id`,
@@ -147,8 +157,14 @@ async function history() {
       await sql`select * from qualification order by tournament_id,rank`,
     audit:
       await sql`select * from audit_event where tournament_id=${PAST} order by id`,
-    standings: (await getTournament(PAST))?.standings,
   };
+}
+
+async function history() {
+  const rows = await historyRows();
+  const standings = (await getTournament(PAST))?.standings;
+  assert.ok(standings?.length, "Historical standings must load");
+  return { ...rows, standings };
 }
 
 function jsonRequest(
@@ -217,7 +233,15 @@ test(
   async () => {
     assert.ok(ledger.some((m) => m.name === "011_returning_player_registration"));
     assert.ok(!ledger.some((m) => m.name.startsWith("010")));
-    assert.deepEqual(await history(), historicalBefore);
+    assert.deepEqual(await historyRows(), {
+      ...preMigration,
+      players: preMigration.players.map((player) => ({
+        ...player,
+        player_type: "registered",
+        display_nickname: null,
+        nickname_locked: false,
+      })),
+    });
   },
 );
 

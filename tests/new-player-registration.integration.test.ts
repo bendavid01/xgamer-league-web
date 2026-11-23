@@ -43,6 +43,7 @@ let getTournament: typeof import("../src/lib/tournaments").getTournament;
 let getRecords: typeof import("../src/lib/records").getRecords;
 let legacy: { player: string; entry: string; number: number }[];
 let preMigration: Awaited<ReturnType<typeof wholeData>>;
+let preMigrationHistory: Awaited<ReturnType<typeof historyRows>>;
 let historical: Awaited<ReturnType<typeof history>>;
 
 before(async () => {
@@ -111,8 +112,17 @@ before(async () => {
   await sql`insert into audit_event(actor,action,entity,tournament_id,summary)
     values(${admin.id},'score',${PAST},${PAST},'Synthetic historical score')`;
   preMigration = await wholeData();
-  historical = await history();
+  preMigrationHistory = await historyRows();
   await applyMigrations(sql, files, () => {});
+  // Current standings and ranking loaders require the Phase 2 schema.
+  historical = await history();
+  assert.deepEqual(
+    historical.standings.map((row) => ({
+      id: row.id,
+      isGuest: "isGuest" in row ? row.isGuest : undefined,
+    })),
+    legacy.map(({ player }) => ({ id: player, isGuest: false })),
+  );
 });
 
 after(async () => {
@@ -126,13 +136,13 @@ const sequence = async () =>
 async function wholeData() {
   return {
     sequence: await sequence(),
-    players: await sql`select * from player order by id`,
+    players: [...(await sql`select * from player order by id`)],
     entries: await sql`select * from application order by id`,
     audit: await sql`select * from audit_event order by id`,
   };
 }
 
-async function history() {
+async function historyRows() {
   return {
     entries:
       await sql`select * from application where tournament_id=${PAST} order by id`,
@@ -144,11 +154,19 @@ async function history() {
       await sql`select * from qualification where tournament_id=${PAST} order by rank`,
     audits:
       await sql`select * from audit_event where tournament_id=${PAST} order by id`,
-    standings: (await getTournament(PAST))?.standings,
-    ranking: (await getRecords())?.players.filter((p) =>
-      legacy.some((l) => l.player === p.id),
-    ),
   };
+}
+
+async function history() {
+  const rows = await historyRows();
+  const standings = (await getTournament(PAST))?.standings;
+  const ranking = (await getRecords())?.players.filter((p) =>
+    legacy.some((l) => l.player === p.id),
+  );
+  assert.ok(standings?.length, "Historical standings must load");
+  assert.ok(ranking, "Historical rankings must load");
+  assert.equal(ranking.length, legacy.length);
+  return { ...rows, standings, ranking };
 }
 
 function payload(i: number, extra: Record<string, unknown> = {}) {
@@ -241,8 +259,16 @@ test(
         (m) => m.name === "012_new_player_registration_approval",
       ),
     );
-    assert.deepEqual(await wholeData(), preMigration);
-    assert.deepEqual(await history(), historical);
+    assert.deepEqual(await wholeData(), {
+      ...preMigration,
+      players: preMigration.players.map((player) => ({
+        ...player,
+        player_type: "registered",
+        display_nickname: null,
+        nickname_locked: false,
+      })),
+    });
+    assert.deepEqual(await historyRows(), preMigrationHistory);
   },
 );
 
@@ -311,17 +337,25 @@ test(
     );
     const queue = (await control.snapshot(CUP, async () => admin))
       .newPlayerRequests!;
+    const request = queue.find((r) => r.reference === ref);
+    assert.ok(request);
     assert.deepEqual(
-      Object.keys(queue.find((r) => r.reference === ref)!).sort(),
+      Object.keys(request).sort(),
       [
+        "accountReady",
         "createdAt",
         "moreMatches",
         "name",
+        "nickname",
         "possibleMatches",
         "reference",
         "team",
+        "tier",
       ],
     );
+    assert.equal(request.accountReady, false);
+    assert.equal(request.nickname, null);
+    assert.equal(request.tier, "registered");
     assert.ok(!JSON.stringify(queue).includes(String(payload(13).phone)));
     for (const who of [coordinator, { ...admin, id: coordinator.id }]) {
       await assert.rejects(
@@ -422,7 +456,7 @@ test(
     assert.equal(event.actor, otherAdmin.id);
     assert.equal(event.entity, ref);
     assert.equal(event.action, "newPlayer.reject");
-    assert.deepEqual(event.after_value, { reason });
+    assert.deepEqual(event.after_value, { reason, tier: "registered" });
   },
 );
 
@@ -569,7 +603,7 @@ test(
     assert.equal(await sequence(), before);
     // These changes concern the older pending cup only.
     const after = await history();
-    const expected = historical.ranking?.map((p) => ({
+    const expected = historical.ranking.map((p) => ({
       ...p,
       tournaments: p.tournaments + (p.id === legacy[0].player ? 1 : 0),
     }));
