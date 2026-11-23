@@ -3257,3 +3257,30 @@ a:hover .champ-chev, a:focus-visible .champ-chev { transform: translateX(3px); c
 .om-link { color: rgb(103 232 249); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; background: none; border: 0; padding: 0; cursor: pointer; }
 .om-link:disabled { opacity: .6; cursor: default; }
 .om-source { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid rgb(71 85 105); font-size: 11px; color: rgb(148 163 184); }
+
+/* Single-tournament guests: real name as plain text, with this quiet label. */
+.guest-badge {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 0 6px;
+  border: 1px solid rgb(148 163 184 / 35%);
+  border-radius: 999px;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 16px;
+  text-transform: uppercase;
+  vertical-align: middle;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+/* /register: the two first-time tiers. */
+.tier-choice { display: grid; gap: 10px; }
+.tier-option { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid #1e293b; border-radius: 12px; cursor: pointer; }
+.tier-option:has(input:checked) { border-color: #38bdf8; background: rgb(56 189 248 / 7%); }
+.tier-option input { margin-top: 4px; flex: none; }
+.tier-tag { margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; color: #7ce8f6; background: rgb(56 189 248 / 14%); vertical-align: middle; }
+.guest-warning { padding: 12px 14px; border: 1px solid rgb(252 211 77 / 40%); border-left-width: 4px; border-radius: 10px; color: #fde68a; background: rgb(245 158 11 / 8%); line-height: 1.55; }
+.guest-warning strong { color: #fcd34d; }

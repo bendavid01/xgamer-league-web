@@ -14,12 +14,12 @@ import {
   Zap,
 } from "lucide-react";
 import { Unavailable } from "@/components/LeagueUI";
+import { PlayerCode, PlayerName, profileHref } from "@/components/PlayerName";
 import { LaurelTrophy, PodiumSteps } from "@/components/ChampionsArt";
 import {
   DEFENCE_MIN_MATCHES,
   getChampionsTournament,
   type Holders,
-  type Who,
 } from "@/lib/champions";
 import { codeNumber } from "@/lib/codes";
 import { STATUS_LABEL } from "@/lib/tournaments";
@@ -76,8 +76,8 @@ export default async function TournamentChampions({
   const t = data.tournament;
   const tab: Tab = TABS.find((x) => x.key === raw)?.key ?? "podium";
   const byId = new Map(data.players.map((p) => [p.id, p]));
-  const statsHref = (p: Who) =>
-    `/players/${p.code}?t=${encodeURIComponent(t.id)}`;
+  // Guests have no profile: their names render as plain text (PlayerName).
+  const statsQuery = `?t=${encodeURIComponent(t.id)}`;
   const finished = t.status === "completed";
   // Permanent ID order.
   const roster = [...data.players].sort(
@@ -164,13 +164,18 @@ export default async function TournamentChampions({
                           {PLACE_LABEL[n]}
                         </span>
                         <strong className="champ-place-name">{p.name}</strong>
-                        <span className="champ-code">{p.code}</span>
+                        <PlayerCode code={p.code} className="champ-code" />
                         {p.team && (
                           <span className="champ-place-team">{p.team}</span>
                         )}
-                        <Link href={statsHref(p)} className="champ-action">
-                          View Player Stats
-                        </Link>
+                        {profileHref(p.code) && (
+                          <Link
+                            href={profileHref(p.code, statsQuery)!}
+                            className="champ-action"
+                          >
+                            View Player Stats
+                          </Link>
+                        )}
                       </div>
                       <span
                         className={`champ-step champ-step-${n}`}
@@ -224,14 +229,24 @@ export default async function TournamentChampions({
                     const status = data.status[p.id];
                     return (
                       <li key={p.id}>
-                        <Link href={statsHref(p)} className="champ-roster-row">
+                        <PlayerName
+                          code={p.code}
+                          name={p.name}
+                          query={statsQuery}
+                          badge={false}
+                          className="champ-roster-row"
+                        >
                           <span className="champ-roster-n">{i + 1}</span>
                           <span className="champ-avatar" aria-hidden="true">
                             {initials(p.name)}
                           </span>
                           <span className="champ-roster-name">
                             {p.name}{" "}
-                            <span className="champ-code">({p.code})</span>
+                            {p.isGuest ? (
+                              <PlayerCode code={p.code} />
+                            ) : (
+                              <span className="champ-code">({p.code})</span>
+                            )}
                           </span>
                           <span className="champ-roster-line">
                             {l.played} played · {l.won}W {l.drawn}D {l.lost}L ·
@@ -243,13 +258,15 @@ export default async function TournamentChampions({
                           >
                             {status}
                           </span>
-                          <span className="champ-roster-go">
-                            <span className="champ-roster-go-text">
-                              View Player Details
+                          {!p.isGuest && (
+                            <span className="champ-roster-go">
+                              <span className="champ-roster-go-text">
+                                View Player Details
+                              </span>
+                              <ChevronRight aria-hidden="true" />
                             </span>
-                            <ChevronRight aria-hidden="true" />
-                          </span>
-                        </Link>
+                          )}
+                        </PlayerName>
                       </li>
                     );
                   })}
@@ -290,7 +307,7 @@ export default async function TournamentChampions({
                 desc="Most goals scored"
                 holders={r.topScorer}
                 unit="goals"
-                href={statsHref}
+                query={statsQuery}
               />
               <RecordCard
                 tone="green"
@@ -305,7 +322,7 @@ export default async function TournamentChampions({
                 }
                 unit="conceded per match"
                 empty={`Insufficient matches (needs ${r.defenceMin}+)`}
-                href={statsHref}
+                query={statsQuery}
               />
               <RecordCard
                 tone="orange"
@@ -314,7 +331,7 @@ export default async function TournamentChampions({
                 desc="Consecutive wins (round order)"
                 holders={r.longestStreak}
                 unit="wins in a row"
-                href={statsHref}
+                query={statsQuery}
               />
               <article className="champ-record tone-yellow">
                 <RecordTop
@@ -330,10 +347,12 @@ export default async function TournamentChampions({
                           {v.winnerGoals}–{v.loserGoals}
                         </span>
                         <span className="block">
-                          <Link href={statsHref(v.winner)}>
-                            {v.winner.name}
-                          </Link>{" "}
-                          <span className="champ-code">{v.winner.code}</span>{" "}
+                          <PlayerName
+                            code={v.winner.code}
+                            name={v.winner.name}
+                            badge={false}
+                          />{" "}
+                          <PlayerCode code={v.winner.code} className="champ-code" />{" "}
                           beat {v.loser.name}
                         </span>
                         <span className="text-xs text-slate-500">
@@ -353,20 +372,20 @@ export default async function TournamentChampions({
                 title="Most Wins"
                 holders={r.mostWins}
                 unit="wins"
-                href={statsHref}
+                query={statsQuery}
               />
               <RecordCard
                 title="Most Draws"
                 holders={r.mostDraws}
                 unit="draws"
-                href={statsHref}
+                query={statsQuery}
               />
               <RecordCard
                 title="Highest Goal Difference"
                 holders={r.highestGoalDifference}
                 unit="goal difference"
                 signedValue
-                href={statsHref}
+                query={statsQuery}
               />
             </div>
             <p className="champ-note">
@@ -417,7 +436,7 @@ function RecordCard({
   unit,
   empty = "Not enough results yet",
   signedValue = false,
-  href,
+  query,
 }: {
   tone?: "cyan" | "green" | "orange" | "yellow" | "violet";
   icon?: React.ReactNode;
@@ -427,7 +446,7 @@ function RecordCard({
   unit: string;
   empty?: string;
   signedValue?: boolean;
-  href: (p: Who) => string;
+  query: string;
 }) {
   return (
     <article className={`champ-record tone-${tone}`}>
@@ -443,8 +462,13 @@ function RecordCard({
           <ul className="champ-holders">
             {holders.players.map((p) => (
               <li key={p.id}>
-                <Link href={href(p)}>{p.name}</Link>{" "}
-                <span className="champ-code">{p.code}</span>
+                <PlayerName
+                  code={p.code}
+                  name={p.name}
+                  query={query}
+                  badge={false}
+                />{" "}
+                <PlayerCode code={p.code} className="champ-code" />
                 {p.team && (
                   <span className="text-xs text-slate-500"> · {p.team}</span>
                 )}

@@ -17,6 +17,7 @@ import {
   type PublicTournament,
 } from "@/lib/tournaments";
 import { getLiveStatus, REFRESH_SECONDS } from "@/lib/live";
+import { PlayerCode, PlayerName } from "@/components/PlayerName";
 import { FORMAT_LABEL, formatChoice, PLACE_LABEL } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -218,7 +219,9 @@ export default async function Tournaments({
               }))}
               matches={played(fixtures)}
               links={Object.fromEntries(
-                players.map((p) => [p.id, `/players/${p.code}`]),
+                players
+                  .filter((p) => !p.isGuest)
+                  .map((p) => [p.id, `/players/${p.code}`]),
               )}
               cutoff={format === "league_knockout" ? t.qualifiers : null}
             />
@@ -251,7 +254,12 @@ export default async function Tournaments({
         <ul className="hub-players">
           {players.map((p) => (
             <li key={p.id}>
-              <Link href={`/players/${p.code}`} className="panel hub-player">
+              <PlayerName
+                code={p.code}
+                name={p.name}
+                badge={false}
+                className="panel hub-player"
+              >
                 <span className="hub-avatar" aria-hidden="true">
                   {p.name.slice(0, 2).toUpperCase()}
                 </span>
@@ -263,10 +271,10 @@ export default async function Tournaments({
                     )}
                   </strong>
                   <span className="block text-sm text-slate-400">
-                    {p.team ?? "—"} · {p.code}
+                    {p.team ?? "—"} · <PlayerCode code={p.code} />
                   </span>
                 </span>
-              </Link>
+              </PlayerName>
             </li>
           ))}
         </ul>
@@ -304,9 +312,11 @@ function PodiumStrip({
           <li key={i} className={`podium-card podium-${i + 1}`}>
             <Trophy aria-hidden="true" className="podium-icon" />
             <span className="podium-place">{PLACE_LABEL[i + 1]}</span>
-            <Link href={`/players/${who(id).code}`} className="podium-name">
-              {who(id).name}
-            </Link>
+            <PlayerName
+              code={who(id).code}
+              name={who(id).name}
+              className="podium-name"
+            />
           </li>
         ) : null,
       )}

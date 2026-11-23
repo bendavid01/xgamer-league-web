@@ -34,6 +34,16 @@ export type Home = {
   }[];
   coordinators: { discord_id: string; operations: string[]; active: boolean }[];
   audit: AuditRow[];
+  /** The five latest audit events (admins; empty for coordinators). */
+  recentActivity?: AuditRow[];
+  /** Pending registration reviews across live tournaments (main admins only). */
+  playerApprovals?: {
+    registered: number;
+    /** Registered applicants who set a password: approval activates their login. */
+    accounts: number;
+    guests: number;
+    returning: number;
+  } | null;
 };
 export type AuditRow = {
   id: number;
@@ -100,6 +110,8 @@ export type Workspace = {
   };
   applications: Application[];
   newPlayerRequests?: PendingNewPlayerRegistration[];
+  /** Main admins only: the XG ID the next registered approval would take (preview). */
+  nextAvailableXgId?: string | null;
   returningRequests?: PendingReturningRegistration[];
   fixtures: Match[];
   standings: {
@@ -172,6 +184,14 @@ export type ContactInfo = {
 export type PlayerDetailsData = {
   role: "admin" | "coordinator";
   contact: ContactInfo | null;
+  /** Main admins only: sign-in state for issuing claim and reset codes. */
+  account?: {
+    type: "registered" | "guest";
+    claimed: boolean;
+    nickname: string | null;
+    nicknameLocked: boolean;
+    lastLoginAt: string | null;
+  } | null;
   canEdit: {
     name: boolean;
     team: boolean;

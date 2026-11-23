@@ -10,6 +10,7 @@ import TournamentTile from "@/components/TournamentTile";
 import { getChampions, listTournaments } from "@/lib/tournaments";
 import { getLiveStatus, liveNow } from "@/lib/live";
 import { communityLinks } from "@/lib/community";
+import { PlayerName } from "@/components/PlayerName";
 import { championTitle } from "@/lib/labels";
 
 export const revalidate = 30;
@@ -125,12 +126,11 @@ async function HomeSections() {
                   </div>
                   <div className="champion-body">
                     <span className="champion-title">{championTitle(c)}</span>
-                    <Link
-                      href={`/players/${winner.code}`}
+                    <PlayerName
+                      code={winner.code}
+                      name={winner.name}
                       className="champion-name"
-                    >
-                      {winner.name}
-                    </Link>
+                    />
                     {winner.team && (
                       <span className="text-sm text-slate-400">
                         {winner.team}

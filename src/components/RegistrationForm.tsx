@@ -1,10 +1,25 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 
+type Tier = "registered" | "guest";
 type Result =
-  | { kind: "success"; reference?: string }
+  | { kind: "success"; reference?: string; tier?: Tier }
   | { kind: "error"; message: string }
   | null;
+
+/** Checked here for a quick answer; the server applies the same rules. */
+function accountProblem(data: FormData) {
+  const password = String(data.get("password") ?? "");
+  const nickname = String(data.get("displayNickname") ?? "").trim();
+  if ([...nickname].length < 2 || [...nickname].length > 24)
+    return "Display nicknames are 2–24 characters.";
+  if (password.length < 8 || password.length > 128)
+    return "Passwords are 8–128 characters.";
+  if (password !== data.get("confirmPassword"))
+    return "The two passwords don't match.";
+  return null;
+}
 
 export default function RegistrationForm({
   tournament,
@@ -14,6 +29,7 @@ export default function RegistrationForm({
 }) {
   const enabled = !!tournament;
   const [kind, setKind] = useState<"new" | "existing">("new");
+  const [tier, setTier] = useState<Tier>("registered");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result>(null);
 
@@ -29,9 +45,10 @@ export default function RegistrationForm({
               {result.reference}
             </code>
             <p className="text-slate-300 mt-4 leading-relaxed">
-              Share your reference privately with an organizer on Discord.
-              You&apos;ll receive your permanent XG ID if they approve your
-              application.
+              Share your reference privately with an organizer on Discord.{" "}
+              {result.tier === "guest"
+                ? "If they approve it, you play this tournament as a guest."
+                : "If they approve it, you receive your permanent XG ID and can sign in at /login with the password you chose."}
             </p>
           </>
         ) : (
@@ -52,6 +69,13 @@ export default function RegistrationForm({
         setBusy(true);
         setResult(null);
         const data = new FormData(event.currentTarget);
+        const registered = kind === "new" && tier === "registered";
+        const problem = registered ? accountProblem(data) : null;
+        if (problem) {
+          setResult({ kind: "error", message: problem });
+          setBusy(false);
+          return;
+        }
         try {
           const res = await fetch("/api/registrations", {
             method: "POST",
@@ -60,7 +84,18 @@ export default function RegistrationForm({
               kind,
               ...(kind === "existing"
                 ? { xgId: data.get("xgId") }
-                : { playerName: data.get("playerName") }),
+                : {
+                    playerName: data.get("playerName"),
+                    tier,
+                    ...(registered
+                      ? {
+                          password: data.get("password"),
+                          displayNickname: String(
+                            data.get("displayNickname") ?? "",
+                          ).trim(),
+                        }
+                      : {}),
+                  }),
               teamName: data.get("teamName"),
               phone: data.get("phone"),
               website: data.get("website") ?? "",
@@ -75,6 +110,7 @@ export default function RegistrationForm({
               ? {
                   kind: "success",
                   reference: kind === "new" ? body.reference : undefined,
+                  tier: kind === "new" ? tier : undefined,
                 }
               : {
                   kind: "error",
@@ -132,6 +168,70 @@ export default function RegistrationForm({
             </label>
           </div>
         </fieldset>
+        {kind === "new" && (
+          <fieldset className="tier-choice">
+            <legend className="mb-2 font-semibold">
+              How do you want to play?
+            </legend>
+            <label className="tier-option">
+              <input
+                type="radio"
+                name="tier"
+                value="registered"
+                checked={tier === "registered"}
+                onChange={() => {
+                  setTier("registered");
+                  setResult(null);
+                }}
+              />
+              <span>
+                <strong>
+                  Registered XG Player{" "}
+                  <span className="tier-tag">Recommended</span>
+                </strong>
+                <span className="block text-sm text-slate-400">
+                  Once approved: a permanent XG ID, public profile, career stats
+                  and a player hub login.
+                </span>
+              </span>
+            </label>
+            <label className="tier-option">
+              <input
+                type="radio"
+                name="tier"
+                value="guest"
+                checked={tier === "guest"}
+                onChange={() => {
+                  setTier("guest");
+                  setResult(null);
+                }}
+              />
+              <span>
+                <strong>Single-Tournament Guest</strong>
+                <span className="block text-sm text-slate-400">
+                  Play this tournament only. No account.
+                </span>
+              </span>
+            </label>
+          </fieldset>
+        )}
+        {kind === "new" && tier === "guest" && (
+          <p className="guest-warning" role="note">
+            <strong>Playing as a Guest?</strong> Your name will appear only on
+            this tournament&apos;s fixtures and standings. You will not receive
+            a permanent XG ID, public profile page, career stats, or all-time
+            rankings—stats only track once you hold an approved XG ID.
+          </p>
+        )}
+        {kind === "existing" && (
+          <p className="text-sm text-slate-400">
+            Have a player login?{" "}
+            <Link href="/login" className="insight-link">
+              Sign in at /login
+            </Link>{" "}
+            for 1-click entry.
+          </p>
+        )}
         {kind === "existing" ? (
           <label className="block">
             Permanent XG ID
@@ -147,7 +247,7 @@ export default function RegistrationForm({
           </label>
         ) : (
           <label className="block">
-            Player name
+            Gaming name
             <input
               key="playerName"
               required
@@ -159,6 +259,59 @@ export default function RegistrationForm({
               placeholder="The name you play as"
             />
           </label>
+        )}
+        {kind === "new" && tier === "registered" && (
+          <>
+            <label className="block">
+              Display nickname
+              <input
+                required
+                name="displayNickname"
+                minLength={2}
+                maxLength={24}
+                className="control-input"
+                autoComplete="nickname"
+                aria-describedby="nickname-hint"
+              />
+              <span
+                id="nickname-hint"
+                className="block mt-2 text-sm text-slate-400"
+              >
+                Shown on your profile. It locks once your account is approved.
+              </span>
+            </label>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <label className="block">
+                Password
+                <input
+                  required
+                  name="password"
+                  type="password"
+                  minLength={8}
+                  maxLength={128}
+                  className="control-input"
+                  autoComplete="new-password"
+                />
+              </label>
+              <label className="block">
+                Confirm password
+                <input
+                  required
+                  name="confirmPassword"
+                  type="password"
+                  minLength={8}
+                  maxLength={128}
+                  className="control-input"
+                  autoComplete="new-password"
+                />
+              </label>
+            </div>
+            <p className="text-sm text-slate-400">
+              At least 8 characters. Once you&apos;re approved you sign in with
+              your XG ID and this password. Share your eFootball ID with the
+              organizer after approval, as before.
+            </p>
+          </>
         )}
         <label className="block">
           Team name

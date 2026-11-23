@@ -150,14 +150,56 @@ function VerifiedPhoneField({ help }: { help: string }) {
   );
 }
 
+/** Tier of a first-time application (requests from before 014 are registered). */
+function TierBadge({ request }: { request: PendingNewPlayerRegistration }) {
+  return request.tier === "guest" ? (
+    <span className="om-tier om-tier-guest">Guest</span>
+  ) : (
+    <span className="om-tier om-tier-xg">Registered XG</span>
+  );
+}
+
+/** What approving does to the XG ID sequence and the player login. */
+function ApprovalOutcome({
+  request,
+  nextXgId,
+}: {
+  request: PendingNewPlayerRegistration;
+  nextXgId?: string | null;
+}) {
+  if (request.tier === "guest")
+    return (
+      <p className="notice text-sm">
+        Guest approval mints no XG ID. The player appears only in this
+        tournament&apos;s fixtures and standings.
+      </p>
+    );
+  return (
+    <p className="notice text-sm">
+      {nextXgId && (
+        <>
+          <span className="om-next-id">Next XG ID: {nextXgId}</span>{" "}
+        </>
+      )}
+      The XG ID is assigned when you click Approve
+      {nextXgId ? " (another approval first can take this number)" : ""}.{" "}
+      {request.accountReady
+        ? "Their player login activates at the same moment, with the password they chose."
+        : "They set up their login later with a claim code from Edit player details."}
+    </p>
+  );
+}
+
 function ReviewRequest({
   request,
   rosterOpen,
   act,
+  nextXgId,
 }: {
   request: PendingReturningRegistration | PendingNewPlayerRegistration;
   rosterOpen: boolean;
   act: Submit;
+  nextXgId?: string | null;
 }) {
   const [rejecting, setRejecting] = useState(false);
   const reject = rejecting || !rosterOpen;
@@ -165,8 +207,14 @@ function ReviewRequest({
   return (
     <details className="om-card">
       <summary className="cursor-pointer">
-        <strong>{returning ? request.code : request.name}</strong> ·{" "}
-        {request.team} ·{" "}
+        <strong>{returning ? request.code : request.name}</strong>
+        {!returning && (
+          <>
+            {" "}
+            <TierBadge request={request} />
+          </>
+        )}{" "}
+        · {request.team} ·{" "}
         <time dateTime={request.createdAt} className="text-slate-400">
           {new Date(request.createdAt).toLocaleString("en-IN", {
             timeZone: "Asia/Kolkata",
@@ -222,10 +270,26 @@ function ReviewRequest({
             View player history for {request.code} ↗
           </Link>
         ) : (
-          <p className="text-sm">
-            Application reference{" "}
-            <code className="break-all">{request.reference}</code>
-          </p>
+          <>
+            <p className="text-sm">
+              Application reference{" "}
+              <code className="break-all">{request.reference}</code>
+            </p>
+            {request.tier !== "guest" && (
+              <p className="text-sm">
+                Requested display nickname:{" "}
+                <strong>
+                  {request.nickname ?? "none (not set at signup)"}
+                </strong>
+                {request.nickname && (
+                  <span className="text-slate-400">
+                    {" "}
+                    · locks on approval if still free
+                  </span>
+                )}
+              </p>
+            )}
+          </>
         )}
         {rosterOpen && (
           <label className="block">
@@ -244,6 +308,9 @@ function ReviewRequest({
         )}
         {!reject && (
           <>
+            {!returning && (
+              <ApprovalOutcome request={request} nextXgId={nextXgId} />
+            )}
             {!returning && <PossibleMatches request={request} />}
             <VerifiedPhoneField
               help={
@@ -268,10 +335,13 @@ export function NewPlayerApplications({
   requests,
   rosterOpen,
   act,
+  nextXgId,
 }: {
   requests: PendingNewPlayerRegistration[];
   rosterOpen: boolean;
   act: Submit;
+  /** Preview of the next XG ID (main admins only); assigned on approval. */
+  nextXgId?: string | null;
 }) {
   return (
     <section
@@ -299,6 +369,7 @@ export function NewPlayerApplications({
                   request={request}
                   rosterOpen={rosterOpen}
                   act={act}
+                  nextXgId={nextXgId}
                 />
               </li>
             ))}
@@ -330,9 +401,9 @@ export default function ReturningPlayers({
       </h3>
       <p className="text-sm text-slate-400">
         Verify ownership using independent evidence, such as an established
-        organizer contact or a live identity check. The number must also be
-        the one on file for that XG ID, but a matching XG ID and phone number
-        alone are insufficient.
+        organizer contact or a live identity check. The number must also be the
+        one on file for that XG ID, but a matching XG ID and phone number alone
+        are insufficient.
       </p>
       {!rosterOpen && (
         <p className="notice">

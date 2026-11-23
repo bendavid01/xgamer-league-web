@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   Activity,
   CalendarClock,
+  CheckCircle2,
   ChevronRight,
   Inbox,
   MessageCircle,
@@ -14,10 +15,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { tournamentLabel } from "@/lib/labels";
-import { PHASE, formatLabel } from "./labels";
+import { ACTION_LABEL, PHASE, formatLabel } from "./labels";
 import type { Queues } from "./queues";
 import { pendingIn, unplayedIn, type Snapshots } from "./snapshots";
-import type { Home, TournamentTab } from "./types";
+import type { Home, TournamentTab, Workspace } from "./types";
 import { PageHead } from "./ui";
 import s from "./om.module.css";
 
@@ -89,6 +90,96 @@ export default function OmOverview({
   });
   const value = (n: number | null | undefined) =>
     !ready || n === null || n === undefined ? "—" : n;
+
+  // Needs attention: every queue with something waiting, each opening the
+  // place where it is handled.
+  const firstWith = (has: (w: Workspace) => boolean) =>
+    active.find((t) => {
+      const w = snaps.data.get(t.id);
+      return !!w && has(w);
+    })?.id ?? null;
+  const approvals = home.playerApprovals;
+  const rosterPending = [...snaps.data.values()].reduce(
+    (n, w) => n + w.applications.filter((a) => a.status === "pending").length,
+    0,
+  );
+  const queuesList: {
+    key: string;
+    label: string;
+    hint: string;
+    count: number;
+    go: () => void;
+  }[] = [
+    ...(approvals
+      ? [
+          {
+            key: "auth",
+            label: "XG Player Auth approvals",
+            hint: `${approvals.registered} registered (${approvals.accounts} with login ready) · ${approvals.guests} guest`,
+            count: approvals.registered + approvals.guests,
+            go: () =>
+              openTournament(
+                firstWith((w) => !!w.newPlayerRequests?.length),
+                "entries",
+              ),
+          },
+          {
+            key: "returning",
+            label: "Returning-player requests",
+            hint: "Existing XG IDs asking to enter",
+            count: approvals.returning,
+            go: () =>
+              openTournament(
+                firstWith((w) => !!w.returningRequests?.length),
+                "entries",
+              ),
+          },
+        ]
+      : []),
+    {
+      key: "roster",
+      label: "Pending roster entries",
+      hint: "Entries waiting for review, including 1-click player joins",
+      count: rosterPending,
+      go: () =>
+        openTournament(
+          firstWith((w) => w.applications.some((a) => a.status === "pending")),
+          "entries",
+        ),
+    },
+    ...(admin
+      ? [
+          {
+            key: "contacts",
+            label: "Open WhatsApp changes",
+            hint: queues.contacts?.forMe
+              ? `${queues.contacts.forMe} waiting for you as second admin`
+              : "Number changes in progress",
+            count: queues.contacts?.open ?? 0,
+            go: () => goPlayers("contacts"),
+          },
+          {
+            key: "teams",
+            label: "Team names to review",
+            hint: "Entries with no tournament team",
+            count: queues.teams ?? 0,
+            go: () => goPlayers("teams"),
+          },
+        ]
+      : []),
+    {
+      key: "fixtures",
+      label: "Unplayed fixtures",
+      hint: "League matches without a score",
+      count: unplayed,
+      go: () =>
+        leagues[0]
+          ? openTournament(leagues[0].t.id, "fixtures")
+          : openTournament(null),
+    },
+  ];
+  const waiting = queuesList.filter((q) => q.count > 0);
+  const recent = home.recentActivity ?? home.audit.slice(0, 5);
 
   return (
     <>
@@ -264,6 +355,99 @@ export default function OmOverview({
           </div>
         </section>
       </div>
+
+      <div className={s.overviewGrid}>
+        <section className="panel" aria-labelledby="ov-attention">
+          <div className={s.panelHead}>
+            <h2 id="ov-attention">Needs attention</h2>
+            <span className={s.panelHint}>Live queues</span>
+          </div>
+          {!ready ? (
+            <p className={s.empty}>Checking queues…</p>
+          ) : waiting.length ? (
+            <ul className={s.rowList}>
+              {waiting.map((q) => (
+                <li key={q.key}>
+                  <button
+                    type="button"
+                    className={`${s.row} ${s.ovRow}`}
+                    onClick={q.go}
+                  >
+                    <span className="min-w-0">
+                      <strong className={s.rowTitle}>{q.label}</strong>
+                      <span className={s.rowSub}>{q.hint}</span>
+                    </span>
+                    <span className={s.rowMeta}>
+                      <span className={s.badge} data-tone="warn">
+                        {q.count}
+                      </span>
+                      <ChevronRight
+                        size={16}
+                        aria-hidden="true"
+                        className={s.rowChevron}
+                      />
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className={s.allClear} role="status">
+              <CheckCircle2 size={18} aria-hidden="true" /> All clear. Nothing
+              is waiting for an organizer.
+            </p>
+          )}
+        </section>
+
+        {admin && (
+          <section className="panel" aria-labelledby="ov-activity">
+            <div className={s.panelHead}>
+              <h2 id="ov-activity">Recent activity</h2>
+              <button type="button" className={s.linkStrong} onClick={goAudit}>
+                View full log →
+              </button>
+            </div>
+            {recent.length ? (
+              <ol className={s.activity}>
+                {recent.map((a) => (
+                  <li key={a.id}>
+                    <span className={s.activityWhat}>
+                      {ACTION_LABEL[a.action] ?? a.summary ?? a.action}
+                    </span>
+                    <span className={s.rowSub}>
+                      {a.actor_name ?? roleName(a.actor_role)}
+                      {(a.affected ?? a.tournament_name) &&
+                        ` · ${a.affected ?? a.tournament_name}`}
+                    </span>
+                    <time className={s.activityWhen} dateTime={a.created_at}>
+                      {stamp(a.created_at)}
+                    </time>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className={s.empty}>No activity recorded yet.</p>
+            )}
+          </section>
+        )}
+      </div>
     </>
   );
 }
+
+const roleName = (role: string | null) =>
+  role === "player"
+    ? "Player"
+    : role === "coordinator"
+      ? "Coordinator"
+      : "Organizer";
+
+/** "23 Nov, 2:05 pm" in India time: short and unambiguous. */
+const stamp = (iso: string) =>
+  new Date(iso).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Kolkata",
+  });

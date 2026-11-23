@@ -43,6 +43,11 @@ export const ACTION_LABEL: Record<string, string> = {
   "contact.change_approve": "Approved WhatsApp number change",
   "contact.change_reject": "Rejected WhatsApp number change",
   "contact.change_cancel": "Cancelled WhatsApp number change",
+  "newPlayer.reject": "Rejected new-player application",
+  "returning.reject": "Rejected returning-player request",
+  "player.code.issue": "Issued player access code",
+  "player.account.claim": "Claimed XG account",
+  "player.password.reset": "Reset player password",
 };
 /** OM only. The public site never shows where a team name came from. */
 export const SOURCE_TAG: Record<TeamSource, string> = {

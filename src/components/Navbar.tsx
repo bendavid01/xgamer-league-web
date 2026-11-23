@@ -11,9 +11,9 @@ const items = [
   ["Community", "/community"],
   ["Rules", "/rules"],
 ];
-/** The Organizer Manager has its own topbar, so the public navbar stays off it. */
-const isWorkspace = (pathname: string) =>
-  pathname === "/admin" || pathname.startsWith("/admin/");
+/** Private workspaces (Organizer Manager, player hub) have their own chrome. */
+export const isWorkspace = (pathname: string) =>
+  ["/admin", "/dashboard"].some((w) => pathname === w || pathname.startsWith(w + "/"));
 /** Player profiles live under Tournaments. */
 const isCurrent = (pathname: string, href: string) =>
   href === "/tournaments"

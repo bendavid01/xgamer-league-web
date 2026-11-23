@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { db } from "./db";
+import { canReviewRegistration } from "./registration-review";
 import { actor, HttpError } from "./api";
 import { allowed, type Actor, type Operation } from "./access";
 import { decrypt, encrypt, fingerprint } from "./private-data";
@@ -425,8 +426,11 @@ export async function playerDetails(
     throw new HttpError(403, "This operation is not assigned to you.");
   const sql = db();
   const [p] =
-    await sql`select p.id,p.public_no,p.gaming_name,p.team_name,p.efootball_cipher,p.deleted_at
+    await sql`select p.id,p.public_no,p.gaming_name,p.team_name,p.efootball_cipher,p.deleted_at,
+        p.player_type,p.display_nickname,p.nickname_locked,
+        c.password_hash is not null as claimed,c.last_login_at
       from player p join application a on a.player_id=p.id
+      left join player_credential c on c.player_id=p.id
       where p.id=${playerId} and a.tournament_id=${tournament} and a.deleted_at is null`;
   if (!p) throw new HttpError(404, "This player isn't in this tournament.");
   const entries = admin
@@ -445,6 +449,19 @@ export async function playerDetails(
   return {
     role: user.role,
     contact,
+    // Sign-in state for the Account Access codes. Main admins only: they alone
+    // can issue claim and reset codes. Never includes the password hash.
+    account: canReviewRegistration(user)
+      ? {
+          type: p.player_type as "registered" | "guest",
+          claimed: !!p.claimed,
+          nickname: (p.display_nickname as string | null) ?? null,
+          nicknameLocked: !!p.nickname_locked,
+          lastLoginAt: p.last_login_at
+            ? (p.last_login_at as Date).toISOString()
+            : null,
+        }
+      : null,
     canEdit: {
       name: admin && !p.deleted_at,
       team: admin && !p.deleted_at,

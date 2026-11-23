@@ -78,6 +78,7 @@ export default function EntriesTab({
           requests={data.newPlayerRequests}
           rosterOpen={rosterOpen}
           act={act}
+          nextXgId={data.nextAvailableXgId}
         />
       )}
       {current === "returning" && data.returningRequests && (

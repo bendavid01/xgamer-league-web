@@ -325,9 +325,12 @@
 
 /* ─────────────── Content ─────────────── */
 
+/* Wide monitors: the workspace grows to 1560px and stays centred, so no dead strip. */
 .content {
-  max-width: 1240px;
-  padding: 28px 28px 64px;
+  width: 100%;
+  max-width: 1560px;
+  margin: 0 auto;
+  padding: 28px 32px 64px;
 }
 .pageHead {
   display: flex;
@@ -1319,4 +1322,115 @@ button.stat:hover {
     max-width: none;
     width: 100%;
   }
+}
+
+/* XG player auth queue: tier badges and the next-XG-ID preview. */
+.ws :global(.om-tier) {
+  display: inline-flex;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+.ws :global(.om-tier-xg) {
+  color: var(--om-cyan-2);
+  background: rgba(56, 189, 248, 0.14);
+}
+.ws :global(.om-tier-guest) {
+  color: #c9cfdd;
+  background: rgba(255, 255, 255, 0.08);
+}
+.ws :global(.om-next-id) {
+  display: inline-flex;
+  padding: 2px 10px;
+  border: 1px solid rgba(124, 232, 246, 0.35);
+  border-radius: 999px;
+  font-family: var(--om-font-mono), monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--om-cyan-2);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+/* Overview: Needs attention and Recent activity. */
+.allClear {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 22px 18px;
+  font-size: 14px;
+  color: var(--om-green);
+}
+.activity {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+.activity li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  padding: 10px 12px;
+}
+.activity li + li {
+  border-top: 1px solid var(--om-line);
+}
+.activityWhat {
+  font-size: 14px;
+  font-weight: 650;
+  color: #fff;
+}
+.activityWhen {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font-family: var(--om-font-mono), monospace;
+  font-size: 12px;
+  color: var(--om-dim);
+  white-space: nowrap;
+}
+.activity .rowSub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 599px) {
+  .activity li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .activityWhen {
+    grid-row: auto;
+    grid-column: 1;
+  }
+}
+
+/* Account access: the one-time code, shown once. */
+.ws :global(.om-code-panel) {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(124, 232, 246, 0.4);
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.07);
+}
+.ws :global(.om-code) {
+  padding: 4px 14px;
+  border-radius: 10px;
+  font-family: var(--om-font-mono), monospace;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: #fff;
+  background: rgba(8, 10, 16, 0.7);
+}
+.ws :global(.om-code-expiry) {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--om-amber);
+  background: rgba(245, 158, 11, 0.14);
 }

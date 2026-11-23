@@ -1,6 +1,6 @@
 "use client";
-import Link from "next/link";
 import { useState } from "react";
+import { PlayerName } from "@/components/PlayerName";
 
 export type HubPlayer = { name: string; code: string };
 export type HubMatch = {
@@ -77,21 +77,19 @@ export function MatchRow({ m }: { m: HubMatch }) {
     : null;
   return (
     <li className="hub-row">
-      <Link
-        href={`/players/${m.home.code}`}
+      <PlayerName
+        code={m.home.code}
+        name={m.home.name}
         className={`hub-name ${win === "home" ? "hub-win" : ""}`}
-      >
-        {m.home.name}
-      </Link>
+      />
       <span className={played ? "hub-score" : "hub-vs"}>
         {played ? `${m.homeScore} – ${m.awayScore}` : "vs"}
       </span>
-      <Link
-        href={`/players/${m.away.code}`}
+      <PlayerName
+        code={m.away.code}
+        name={m.away.name}
         className={`hub-name hub-away ${win === "away" ? "hub-win" : ""}`}
-      >
-        {m.away.name}
-      </Link>
+      />
     </li>
   );
 }

@@ -21,7 +21,9 @@ import {
   playerSessionFrom,
   sessionSecret,
   verifyPassword,
+  verifySession,
   type CodePurpose,
+  type PlayerSession,
 } from "./player-auth";
 import { nicknameTaken } from "./player-nickname";
 import { decrypt, fingerprint } from "./private-data";
@@ -253,32 +255,54 @@ export async function redeemOneTimeCode(
  * registered, active player with that XG ID, and the session is not older than
  * their current password (a reset signs out other devices).
  */
-export async function sessionPlayer(request: Request) {
-  requirePlayerAuthConfigured();
-  const session = playerSessionFrom(request);
+export type HubPlayer = {
+  id: string;
+  public_no: number;
+  gaming_name: string;
+  team_name: string | null;
+  display_nickname: string | null;
+  nickname_locked: boolean;
+  efootball_cipher: string | null;
+};
+
+async function playerForSession(session: PlayerSession) {
   const no = codeNumber(session.xgId);
-  const [player] = await db()<
-    {
-      id: string;
-      public_no: number;
-      gaming_name: string;
-      team_name: string | null;
-      display_nickname: string | null;
-      nickname_locked: boolean;
-      efootball_cipher: string | null;
-    }[]
-  >`select p.id,p.public_no,p.gaming_name,p.team_name,p.display_nickname,p.nickname_locked,p.efootball_cipher
+  const [player] = await db()<HubPlayer[]>`select p.id,p.public_no,p.gaming_name,p.team_name,p.display_nickname,p.nickname_locked,p.efootball_cipher
     from player p join player_credential c on c.player_id=p.id
     where p.id=${session.playerId} and p.public_no=${no} and p.player_type='registered'
       and p.deleted_at is null and c.password_hash is not null
       and floor(extract(epoch from c.password_changed_at)) <= ${session.iat}`;
+  return player ?? null;
+}
+
+export async function sessionPlayer(request: Request) {
+  requirePlayerAuthConfigured();
+  const session = playerSessionFrom(request);
+  const player = await playerForSession(session);
   if (!player) throw new HttpError(401, "Sign in with your XG ID.");
   return { session, player };
+}
+
+/**
+ * For server pages: the player a raw xg_player_session value belongs to, after
+ * the same checks as the API, or null (signed out, invalid, or not configured).
+ */
+export async function playerFromCookie(token: string | undefined) {
+  if (!playerAuthConfigured()) return null;
+  const session = verifySession(token);
+  return session ? playerForSession(session) : null;
 }
 
 /** GET /api/player/me: the signed-in player's own hub data. */
 export async function playerHub(request: Request) {
   const { player } = await sessionPlayer(request);
+  return hubData(player);
+}
+
+export type PlayerHubData = Awaited<ReturnType<typeof hubData>>;
+
+/** The hub for an already verified player (sessionPlayer or playerFromCookie). */
+export async function hubData(player: HubPlayer) {
   const sql = db();
   const code = playerCode(player.public_no);
   const entries = await sql<

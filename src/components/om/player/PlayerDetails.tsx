@@ -1,5 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { profileHref } from "@/components/PlayerName";
+import AccountAccess from "./AccountAccess";
 import Link from "next/link";
 import { useEditSender } from "../client";
 import { SOURCE_TAG } from "../labels";
@@ -80,7 +82,7 @@ export default function PlayerDetails({
           <span className="text-slate-400">
             Permanent XG ID · never changes
           </span>
-          {!d.player.removed && (
+          {!d.player.removed && profileHref(d.player.code) && (
             <Link
               href={`/players/${d.player.code}`}
               target="_blank"
@@ -98,6 +100,14 @@ export default function PlayerDetails({
       </p>
       <Feedback error={error} notice={notice} />
       {!d && !error && <p className="text-slate-400">Loading…</p>}
+      {d?.account && !d.player.removed && (
+        <AccountAccess
+          playerId={playerId}
+          name={d.player.gaming_name}
+          account={d.account}
+          changed={load}
+        />
+      )}
       {d && (
         <fieldset disabled={busy} className="space-y-5">
           {d.player.removed && (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Medal, Trophy } from "lucide-react";
 import { getProfile, type CareerEntry } from "@/lib/profile";
 import { codeNumber, playerCode } from "@/lib/codes";
+import { PlayerName } from "@/components/PlayerName";
 import { FORMAT_LABEL, ordinal, PLACE_LABEL } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
@@ -141,12 +142,14 @@ export default async function PlayerProfile({
                     {m.gf} – {m.ga}
                   </span>
                   <span className="hub-name hub-away">
-                    <Link
-                      href={`/players/${m.opponent.code}?t=${encodeURIComponent(focus.id)}`}
+                    <PlayerName
+                      code={m.opponent.code}
+                      name={m.opponent.name}
+                      query={`?t=${encodeURIComponent(focus.id)}`}
                       className="hover:text-cyan-300"
                     >
                       {m.home ? "vs" : "@"} {m.opponent.name}
-                    </Link>
+                    </PlayerName>
                     <span className="block text-xs text-slate-500">
                       Round {m.round}
                     </span>
@@ -247,12 +250,11 @@ export default async function PlayerProfile({
                   {m.tournamentLabel} · R{m.round}
                 </span>
                 <span className="hub-vs">{m.home ? "vs" : "@"}</span>
-                <Link
-                  href={`/players/${m.opponent.code}`}
+                <PlayerName
+                  code={m.opponent.code}
+                  name={m.opponent.name}
                   className="hub-name hub-away"
-                >
-                  {m.opponent.name}
-                </Link>
+                />
               </li>
             ))}
           </ul>
@@ -277,14 +279,16 @@ export default async function PlayerProfile({
               </thead>
               <tbody>
                 {headToHead.map((r) => (
-                  <tr key={r.code} className="border-b border-slate-800/60">
+                  <tr
+                    key={r.isGuest ? `guest:${r.name}` : r.code}
+                    className="border-b border-slate-800/60"
+                  >
                     <th scope="row" className="px-4 py-3 text-left">
-                      <Link
-                        href={`/players/${r.code}`}
+                      <PlayerName
+                        code={r.code}
+                        name={r.name}
                         className="hover:text-cyan-300"
-                      >
-                        {r.name}
-                      </Link>
+                      />
                     </th>
                     {[r.p, r.w, r.d, r.l, r.gf, r.ga].map((n, i) => (
                       <td key={i} className="px-4 font-mono text-slate-300">
@@ -314,12 +318,13 @@ export default async function PlayerProfile({
                   {m.gf} – {m.ga}
                 </span>
                 <span className="hub-name hub-away">
-                  <Link
-                    href={`/players/${m.opponent.code}`}
+                  <PlayerName
+                    code={m.opponent.code}
+                    name={m.opponent.name}
                     className="hover:text-cyan-300"
                   >
                     {m.home ? "vs" : "@"} {m.opponent.name}
-                  </Link>
+                  </PlayerName>
                   <span className="block text-xs text-slate-500">
                     {m.tournamentLabel} · Round {m.round}
                   </span>

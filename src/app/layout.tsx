@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import RouteMotion from "@/components/RouteMotion";
 import Navbar from "@/components/Navbar";
+import PublicOnly from "@/components/PublicOnly";
 import Link from "next/link";
 import IntroLoader, { IntroPrepaint } from "@/components/IntroLoader";
 import {
@@ -72,37 +73,39 @@ export default async function RootLayout({
           <main id="content" className="flex-grow">
             <RouteMotion>{children}</RouteMotion>
           </main>
-          <footer className="border-t border-slate-800 py-8">
-            <div className="page-shell mb-8 flex flex-wrap justify-between gap-8">
-              <Link href="/" aria-label="XGamer home">
-                <Brand />
-              </Link>
-              <div
-                className="flex flex-wrap gap-x-5 gap-y-3 max-w-xl"
-                aria-label="Official social channels"
-              >
-                {communityLinks.map((link) => (
-                  <a
-                    key={link.name}
-                    href={link.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="footer-social"
-                  >
-                    {link.name}
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                ))}
+          <PublicOnly>
+            <footer className="border-t border-slate-800 py-8">
+              <div className="page-shell mb-8 flex flex-wrap justify-between gap-8">
+                <Link href="/" aria-label="XGamer home">
+                  <Brand />
+                </Link>
+                <div
+                  className="flex flex-wrap gap-x-5 gap-y-3 max-w-xl"
+                  aria-label="Official social channels"
+                >
+                  {communityLinks.map((link) => (
+                    <a
+                      key={link.name}
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="footer-social"
+                    >
+                      {link.name}
+                      <span className="sr-only"> (opens in a new tab)</span>
+                    </a>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="page-shell flex flex-wrap justify-between gap-5 text-sm text-slate-500">
-              <p>© 2026 X-Gamer Pro League · Built for the game.</p>
-              <div className="flex gap-5">
-                <Link href="/rules">Rules</Link>
-                <Link href="/admin">Organizers</Link>
+              <div className="page-shell flex flex-wrap justify-between gap-5 text-sm text-slate-500">
+                <p>© 2026 X-Gamer Pro League · Built for the game.</p>
+                <div className="flex gap-5">
+                  <Link href="/rules">Rules</Link>
+                  <Link href="/admin">Organizers</Link>
+                </div>
               </div>
-            </div>
-          </footer>
+            </footer>
+          </PublicOnly>
         </div>
       </body>
     </html>
