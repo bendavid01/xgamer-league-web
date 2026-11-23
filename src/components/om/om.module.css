@@ -559,13 +559,21 @@ button.stat:hover {
 }
 
 /* Panels and rows */
-.overviewGrid {
+/* Two independent columns (about 63% / 37%): each stacks its own panels, so a
+   short panel never leaves a gap while its neighbour is taller. */
+.overviewCols {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-  /* Each panel keeps its own height, so neither carries empty space. */
+  grid-template-columns: minmax(0, 63fr) minmax(0, 37fr);
   align-items: start;
-  gap: 16px;
+  gap: 20px;
   margin-top: 20px;
+}
+.mainColumn,
+.sideColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
 }
 .panelHead {
   display: flex;
@@ -681,10 +689,10 @@ button.stat:hover {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  min-height: 132px;
-  padding: 16px 16px 14px;
+  min-height: 140px;
+  padding: 18px 18px 16px;
   overflow: hidden;
   border: 1px solid var(--om-line);
   border-radius: 14px;
@@ -693,7 +701,11 @@ button.stat:hover {
     var(--om-card);
   box-shadow: var(--om-glass);
   text-align: left;
-  transition: border-color 0.15s;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    transform 0.15s;
 }
 /* Thin accent along the top edge: violet by default, amber when it needs action. */
 .kpi::before {
@@ -718,6 +730,37 @@ button.stat:hover {
 }
 .kpi:hover {
   border-color: var(--om-violet-2);
+  background-color: #151a26;
+  transform: translateY(-1px);
+}
+.kpi:active {
+  transform: none;
+}
+/* The "opens something" arrow, top right: quiet until hover or focus. */
+.kpiGo {
+  position: absolute;
+  top: 16px;
+  right: 14px;
+  color: #4b5266;
+  transition:
+    color 0.15s,
+    transform 0.15s;
+}
+.kpi:hover .kpiGo,
+.kpi:focus-visible .kpiGo {
+  color: var(--om-cyan-2);
+  transform: translate(2px, -2px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .kpi,
+  .kpiGo {
+    transition: none;
+  }
+  .kpi:hover,
+  .kpi:hover .kpiGo,
+  .kpi:focus-visible .kpiGo {
+    transform: none;
+  }
 }
 .kpi:focus-visible {
   outline: 2px solid var(--om-cyan-2);
@@ -728,6 +771,7 @@ button.stat:hover {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  padding-right: 20px;
   font-size: 12.5px;
   font-weight: 650;
   line-height: 1.25;
@@ -1247,8 +1291,8 @@ button.stat:hover {
 
 /* ─────────────── Small screens ─────────────── */
 
-@media (max-width: 1100px) {
-  .overviewGrid {
+@media (max-width: 1024px) {
+  .overviewCols {
     grid-template-columns: minmax(0, 1fr);
   }
 }
